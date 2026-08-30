@@ -162,3 +162,21 @@ button:hover{background:#223047}
   text-align:right;
   font-size:11px;
 }
+
+/* v2.03 keeps the expanded live-ranking panel from v2.02. */
+
+/* v2.04 match highlights */
+.match-awards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}
+.award-card{padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:8px;background:rgba(255,255,255,.045);display:flex;flex-direction:column;gap:3px}
+.award-card span{font-size:10px;font-weight:900;letter-spacing:.06em;opacity:.72}
+.award-card b{font-size:14px}
+.award-card small{font-size:11px;opacity:.82}
+.highlight-title{font-size:13px;font-weight:900;margin:10px 0 6px}
+.highlight-timeline{display:grid;gap:5px;max-height:150px;overflow:auto;margin-bottom:12px}
+.highlight-row{display:grid;grid-template-columns:32px 1fr;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.04);font-size:11px}
+.highlight-row span{font-weight:900;opacity:.65}
+.highlight-row b{font-weight:700}
+.highlight-empty{font-size:11px;opacity:.6;padding:8px}
+@media(max-width:900px){.match-awards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* v2.05: race engine performance/balance pass; visual layout retained. */

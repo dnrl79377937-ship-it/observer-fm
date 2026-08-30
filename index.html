@@ -13,9 +13,9 @@
   <header class="topbar">
     <div>
       <h1>OBSERVER AVOIDANCE FM</h1>
-      <p>v2.02 · 추월/몸싸움 AI · 스마트 중계 완성 · 순위창 확장 · OBS 650</p>
+      <p>v2.05 · 레이스 밸런스/성능 최종 다듬기 · 50Hz 시뮬레이션 · OBS 620</p>
     </div>
-    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v2.02</div>
+    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v2.05</div>
     <div class="controls">
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
@@ -28,7 +28,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v2.02 · SCOURGE → SCOUT → WRAITH · OBS 650</span>
+        <span id="cameraLabel">v2.05 · SCOURGE → SCOUT → WRAITH · OBS 620</span>
         <span id="clock">00:00.0</span>
       </div>
       <div id="teamScoreBoard" class="team-score-board"></div>
@@ -60,6 +60,9 @@
       <button id="resultClose" class="closeBtn">×</button>
       <h2>4vs4 · 3라운드 팀전 결과</h2>
       <div id="teamResultSummary"></div>
+      <div id="matchAwards" class="match-awards"></div>
+      <div class="highlight-title">경기 하이라이트</div>
+      <div id="highlightTimeline" class="highlight-timeline"></div>
       <div class="tableWrap">
         <table class="resultTable">
           <thead><tr><th>개인총점순위</th><th>팀</th><th>선수</th><th>1R 순위/점수</th><th>2R 순위/점수</th><th>3R 순위/점수</th><th>총점</th></tr></thead>
@@ -69,6 +72,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=20201"></script>
+  <script src="game.js?v=20501"></script>
 </body>
 </html>

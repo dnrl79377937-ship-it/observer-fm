@@ -13,12 +13,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 650;
+  const OBSERVER_COUNT = 620;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.02";
+  const BUILD_ID = "v2.05";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -33,7 +33,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
   const PLAYER_HIT_RADIUS = 0.36;     // unchanged collision feel
-  const PLAYER_VISUAL_SCALE = 0.69292265625;   // v14 visual size
+  const PLAYER_VISUAL_SCALE = 0.5889842578125;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
   const OBS_SPEED_RATIO = 0.684;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
@@ -130,6 +130,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   let teamTotals={A:0,B:0};
   let playerTournament={};
   let roundHistory=[];
+  let tournamentHighlights=[];
   let roundTransitioning=false;
 
   function shuffledIndexes(){
@@ -151,6 +152,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     currentRound=1;
     teamTotals={A:0,B:0};
     roundHistory=[];
+    tournamentHighlights=[];
     playerTournament={};
     names.forEach((name,i)=>{
       playerTournament[i]={name,team:teamAssignments[i],total:0,rounds:[]};
@@ -187,7 +189,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           + ((stats.endurance-85)/14)*0.030
           + ((stats.luck-85)/14)*0.012
           + Math.random()*0.035
-        ) * 1.267875,
+        ) * 1.3946625,
         desiredOffset:(i-3.5)*0.48,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1],
@@ -209,6 +211,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         avoidPlanSpeedMul:1,
         avoidPlanUntil:0,
         avoidPlanRisk:0,
+        avoidLastSide:0,
+        avoidSideLockUntil:0,
+        avoidRecoverUntil:0,
+        avoidRecoverOffset:0,
         packPlanOffset:0,
         packPlanUntil:0,
         resumeEaseUntil:0,
@@ -508,19 +514,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
-  function localPlayerContext(p,range=13){
-    const out=localPlayerBuffers[p.index];
-    out.length=0;
-    const pp=currentProgress(p);
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p || q.done) continue;
-      const gap=currentProgress(q)-pp;
-      if(gap>-4 && gap<range) out.push({q,gap});
-    }
-    return out;
-  }
-
   function escapeCorridorBias(p,s,nearby){
     // Look at several threats as one obstacle field instead of dodging only the
     // nearest observer. Positive/negative scores represent safer road sides.
@@ -651,20 +644,23 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const corridorBias=escapeCorridorBias(p,s,nearby);
 
     // Fast pre-check. If nothing is remotely threatening, keep the racing line.
-    let nearest=Infinity;
-    let nearestFuture=Infinity;
+    let nearestSq=Infinity;
+    let nearestFutureSq=Infinity;
     const px3=p.x+s.ux*p.speed*AVOID_PREDICT_SEC;
     const py3=p.y+s.uy*p.speed*AVOID_PREDICT_SEC;
     for(const o of nearby){
-      const d=Math.hypot(o.x-p.x,o.y-p.y);
-      if(d<nearest) nearest=d;
+      const ndx=o.x-p.x, ndy=o.y-p.y;
+      const d2=ndx*ndx+ndy*ndy;
+      if(d2<nearestSq) nearestSq=d2;
       const ox=predictedObserverX(o,AVOID_PREDICT_SEC);
       const oy=predictedObserverY(o,AVOID_PREDICT_SEC);
       const fdx=ox-px3, fdy=oy-py3;
-      const fd=Math.sqrt(fdx*fdx+fdy*fdy);
-      if(fd<nearestFuture) nearestFuture=fd;
+      const fd2=fdx*fdx+fdy*fdy;
+      if(fd2<nearestFutureSq) nearestFutureSq=fd2;
     }
-    if(nearest>15.5 && nearestFuture>12.0){
+    const nearest=Math.sqrt(nearestSq);
+    const nearestFuture=Math.sqrt(nearestFutureSq);
+    if(nearestSq>240.25 && nearestFutureSq>144.0){
       p.avoidPlanUntil=0;
       return null;
     }
@@ -725,9 +721,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     // Persist 320–560 ms. Very dangerous situations re-plan sooner.
     const emergency=best.minClear<2.7 || nearest<5.0;
+    const chosenSide=Math.sign(best.targetOff);
+    if(!emergency && chosenSide!==0 && p.avoidLastSide!==0 &&
+       chosenSide!==p.avoidLastSide && now<p.avoidSideLockUntil){
+      best.targetOff=Math.abs(best.targetOff)*p.avoidLastSide;
+      best.score+=1.8;
+    }
+    if(Math.sign(best.targetOff)!==0){
+      p.avoidLastSide=Math.sign(best.targetOff);
+      p.avoidSideLockUntil=now+(emergency?170:430);
+    }
+
     const react=(p.stats.reaction+p.stats.prediction)/2;
     const smooth=(p.stats.control+p.stats.stability)/2;
-    const baseHold=430+(smooth-85)*5;
+    const baseHold=500+(smooth-85)*5;
     if(Math.abs(corridorBias)>.12){
       const roadHalf=Math.max(1.8,widths[Math.min(p.seg,widths.length-1)]*.55);
       best.targetOff=best.targetOff*.72+corridorBias*roadHalf*.28;
@@ -744,75 +751,27 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
-  function closeRivalContext(p,si){
-    const s=segs[Math.min(si,segs.length-1)];
-    const myProg=currentProgress(p);
-    const myOff=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-    let rival=null, bestGap=999, rivalOff=0, rivalProg=0;
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p || q.done) continue;
-      const qp=currentProgress(q);
-      const gap=Math.abs(qp-myProg);
-      if(gap<2.25 && gap<bestGap){
-        bestGap=gap; rival=q; rivalProg=qp;
-        rivalOff=(q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny;
-      }
-    }
-    if(!rival) return null;
-    return {rival,gap:bestGap,myProg,rivalProg,myOff,rivalOff};
-  }
-
-  function battleLaneAdjustment(p,si,baseOff){
-    const c=closeRivalContext(p,si);
-    if(!c) return baseOff;
-
-    const half=Math.max(1.8,widths[si]*0.56);
-    const aggression=(p.stats.aggression-72)/27;
-    const pressure=(p.stats.pressure-72)/27;
-    const control=(p.stats.control-72)/27;
-    const risk=(p.stats.riskControl-72)/27;
-    const inside=cornerInsideSide(si);
-
-    let side=c.rivalOff>=c.myOff ? -1 : 1;
-    const style=p.drivingStyle.name;
-
-    if(inside!==0 &&
-       (style==="attacker" || style==="opportunist" || style==="apexHunter" || aggression>.68) &&
-       Math.abs(c.rivalOff-inside*half)>half*.30){
-      side=inside;
-    }
-
-    if(style==="safeReader" || style==="patient"){
-      side=c.myOff>=0 ? 1 : -1;
-    }
-
-    const alongside=c.gap<1.05;
-    let commit=.38+aggression*.22+pressure*.12+control*.08-risk*.05;
-    if(alongside) commit+=.12;
-    if(c.rivalProg>c.myProg) commit+=.06;
-    commit=Math.max(.34,Math.min(.88,commit));
-
-    const attackTarget=side*half*commit;
-    const blend=alongside?.44:.30;
-    return baseOff*(1-blend)+attackTarget*blend;
-  }
-
   function packContextOffset(p,si,now){
     const s=segs[Math.min(si,segs.length-1)];
     const half=Math.max(1.8,widths[si]*0.56);
 
     if(now<p.packPlanUntil) return p.packPlanOffset;
 
-    const context=localPlayerContext(p,12.5);
+    const myProg=currentProgress(p);
     let nearestAhead=null, nearestGap=999;
-    for(let i=0;i<context.length;i++){
-      const e=context[i];
-      if(e.gap>0 && e.gap<nearestGap){ nearestAhead=e.q; nearestGap=e.gap; }
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done) continue;
+      const gap=currentProgress(q)-myProg;
+      if(gap>0 && gap<12.5 && gap<nearestGap){
+        nearestAhead=q;
+        nearestGap=gap;
+      }
     }
+
     if(!nearestAhead){
       p.packPlanOffset=0;
-      p.packPlanUntil=now+260;
+      p.packPlanUntil=now+300;
       return 0;
     }
 
@@ -824,23 +783,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const control=(p.stats.control-72)/27;
     const inside=cornerInsideSide(si);
 
-    // Prefer the open side. Opportunists/attackers exploit an open inside lane.
+    // Players are non-solid. This is only a tactical passing-line choice:
+    // racers may still overlap completely with no push, collision, or slowdown.
     let side=(qOff>=myOff)?-1:1;
     if(inside!==0 && Math.abs(qOff-inside*half)>half*.34 &&
        (p.drivingStyle.name==="opportunist" || p.drivingStyle.name==="attacker" || aggression>.62)){
       side=inside;
     }
 
-    let commitment=.42;
-    if(p.drivingStyle.name==="safeReader" || p.drivingStyle.name==="patient") commitment=.34;
-    else if(p.drivingStyle.name==="attacker" || p.drivingStyle.name==="opportunist") commitment=.72;
-    else if(p.drivingStyle.name==="controller") commitment=.48;
-    commitment+=aggression*.10+pressure*.07+control*.04;
-    if(nearestGap<4.0) commitment+=.10;
+    let commitment=.40;
+    if(p.drivingStyle.name==="safeReader" || p.drivingStyle.name==="patient") commitment=.32;
+    else if(p.drivingStyle.name==="attacker" || p.drivingStyle.name==="opportunist") commitment=.69;
+    else if(p.drivingStyle.name==="controller") commitment=.46;
 
-    p.packPlanOffset=side*half*Math.min(.92,commitment);
-    p.packPlanOffset=battleLaneAdjustment(p,si,p.packPlanOffset);
-    p.packPlanUntil=now+(nearestGap<2.25?210:300)+Math.random()*150;
+    commitment+=aggression*.09+pressure*.06+control*.035;
+    if(nearestGap<3.2) commitment+=.08;
+
+    p.packPlanOffset=side*half*Math.min(.90,commitment);
+    p.packPlanUntil=now+(nearestGap<2.25?250:340)+Math.random()*130;
     return p.packPlanOffset;
   }
 
@@ -868,7 +828,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let bestOff=0;
     let bestScore=Infinity;
 
-    const maxAhead=Math.min(segs.length-1,si+5);
+    const routeRead=(p.stats.routeReading-72)/27;
+    const maxAhead=Math.min(segs.length-1,si+4+Math.round(routeRead*3));
     for(const c of candidates){
       const off=c*half;
       let px=p.x, py=p.y;
@@ -877,7 +838,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Cost of getting from the current position onto this candidate line.
       const entryX=s.b[0]+s.nx*off;
       const entryY=s.b[1]+s.ny*off;
-      score += Math.hypot(entryX-px,entryY-py);
+      const edx=entryX-px, edy=entryY-py; score += Math.sqrt(edx*edx+edy*edy);
       px=entryX; py=entryY;
 
       // Look through several future segments and compare total path length.
@@ -889,11 +850,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const turn=prev.ux*next.uy-prev.uy*next.ux;
         const h=Math.max(1.6,widths[j]*0.56);
 
-        let futureOff=off*0.52;
+        let futureOff=off*(0.58-routeRead*.10);
         if(Math.abs(turn)>0.025){
-          // Evaluate the physically shorter inside line for the upcoming corner.
           const inside=(turn>0 ? 1 : -1);
-          futureOff=inside*h*0.96;
+          const apexCommit=0.86+routeRead*.115;
+          const nextApex=inside*h*Math.min(.985,apexCommit);
+          const prep=0.70+routeRead*.20;
+          futureOff=futureOff*(1-prep)+nextApex*prep;
         }
 
         const wx=seg.b[0]+seg.nx*futureOff;
@@ -932,16 +895,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return bestOff;
   }
 
-  function playerBattleSeparation(p,si,targetOff){
-    const c=closeRivalContext(p,si);
-    if(!c || c.gap>1.15) return targetOff;
-    const half=Math.max(1.8,widths[si]*0.54);
-    if(Math.abs(c.myOff-c.rivalOff)>=half*.28) return targetOff;
-    const dir=c.myOff<=c.rivalOff?-1:1;
-    const strength=(1-c.gap/1.15)*half*.13;
-    return Math.max(-half*.94,Math.min(half*.94,targetOff+dir*strength));
-  }
-
   function stabilizeDrivingLine(p,si,targetOff){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
     const density=nearbyObservers(p.x,p.y,15).length;
@@ -964,9 +917,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     if(now>=p.humanModeUntil){
       const roll=Math.random();
-      if(roll<.12) p.humanMode=1;       // compact weave
-      else if(roll<.19) p.humanMode=2;  // short wait
-      else if(roll<.26) p.humanMode=3;  // wide safety line
+      if(roll<.10) p.humanMode=1;       // compact weave
+      else if(roll<.15) p.humanMode=2;  // short wait
+      else if(roll<.22) p.humanMode=3;  // wide safety line
       else p.humanMode=0;
       p.humanModeUntil=now+420+Math.random()*680;
       p.humanPhase+=1.11;
@@ -976,11 +929,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(p.humanMode===1){
       off+=Math.sin(now*.012+p.humanPhase)*half*(.055+(1-control)*.09);
     }else if(p.humanMode===2){
-      speedMul=.925+reaction*.035+prediction*.025;
+      speedMul=.945+reaction*.028+prediction*.020;
     }else if(p.humanMode===3){
       const side=baseOff>=0?1:-1;
       off+=side*half*(.07+(1-risk)*.08);
-      speedMul=.972;
+      speedMul=.982;
     }
 
     if(now>=p.decisionErrorUntil){
@@ -995,7 +948,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function optimizedLookAheadTarget(p,si,now){
-    const maxAhead=Math.min(segs.length-1,si+4);
+    const routeRead=(p.stats.routeReading-72)/27;
+    const maxAhead=Math.min(segs.length-1,si+4+Math.round(routeRead*2));
     const plannedOff=plannedRacingOffset(p,si,now);
 
     // Aim farther ahead than one centerline point. This is what lets the racer
@@ -1081,7 +1035,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // follows the optimized racing line most of the time.
     const lineError=(100-p.profile.line)/100;
     const precision=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/300;
-    const precisionNoise=0.010+(1-precision)*0.20;
+    const precisionNoise=0.007+(1-precision)*0.225;
     targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*precisionNoise;
 
     // High inside-line racers visibly hold a tighter apex; lower line skill leaves
@@ -1095,7 +1049,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*(0.40-insideCommit*0.12)+skillApex*(0.60+insideCommit*0.12);
     }
 
-    targetOff=playerBattleSeparation(p,si,targetOff);
     targetOff=stabilizeDrivingLine(p,si,targetOff);
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
@@ -1116,12 +1069,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
     }
     if(!avoid && p.avoidPlanUntil && now>=p.avoidPlanUntil){
-      // Once the threat is gone, recover the optimal racing line promptly instead
-      // of drifting on the old evasive lane.
+      p.avoidRecoverOffset=p.avoidPlanOffset;
+      const recovery=(p.stats.recovery-72)/27;
+      p.avoidRecoverUntil=now+(260-recovery*75);
       p.avoidPlanOffset=targetOff;
       p.avoidPlanSpeedMul=1;
       p.avoidPlanRisk=0;
       p.avoidPlanUntil=0;
+    }
+    if(!avoid && now<p.avoidRecoverUntil){
+      const recovery=(p.stats.recovery-72)/27;
+      const duration=Math.max(150,260-recovery*75);
+      const remain=Math.max(0,Math.min(1,(p.avoidRecoverUntil-now)/duration));
+      targetOff=targetOff*(1-remain*.30)+p.avoidRecoverOffset*(remain*.30);
     }
     if(!avoid && p.controlMode==="zigzag"){
       targetOff += Math.sin(now*0.020+p.index)*half*(0.50+controlSkill*0.10);
@@ -1199,7 +1159,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     rescueIfStuck(p,now);
 
-    // Collision check: actual contact = guaranteed stop outside invincible safe zones.
+    // Players are non-solid and may overlap completely.
+    // Collision here is observer-only: player-player contact never pushes, slows, or stops anyone.
+    // Collision check: actual observer contact = guaranteed stop outside invincible safe zones.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
       for(const o of nearbyObservers(p.x,p.y,PLAYER_HIT_RADIUS+1.0)){
         if(Math.abs(o.x-p.x)>PLAYER_HIT_RADIUS || Math.abs(o.y-p.y)>PLAYER_HIT_RADIUS) continue;
@@ -1364,8 +1326,28 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       teamTotals[team]+=pts;
       playerTournament[p.index].total+=pts;
       playerTournament[p.index].rounds.push({round:currentRound,rank:idx+1,points:pts,time:p.finishTime});
-      result.players.push({index:p.index,name:p.name,team,rank:idx+1,points:pts,time:p.finishTime});
+      result.players.push({
+        index:p.index,name:p.name,team,rank:idx+1,points:pts,time:p.finishTime,
+        collisions:p.match.collisions||0,
+        overtakes:p.match.overtakes||0,
+        avoids:p.match.avoids||0,
+        leadMs:p.match.leadMs||0,
+        bestSector:p.sectorTimes&&p.sectorTimes.length?Math.min(...p.sectorTimes):null
+      });
     });
+
+    const roundWinner=result.players[0];
+    if(roundWinner){
+      tournamentHighlights.push({round:currentRound,type:"WIN",text:`WIN · ${roundWinner.name} · ${formatTime(roundWinner.time)}`});
+    }
+    const topPass=[...result.players].sort((a,b)=>b.overtakes-a.overtakes || a.rank-b.rank)[0];
+    if(topPass&&topPass.overtakes>0){
+      tournamentHighlights.push({round:currentRound,type:"OVERTAKE",text:`BEST OVERTAKE · ${topPass.name} · ${topPass.overtakes}회`});
+    }
+    const clean=[...result.players].filter(x=>x.collisions===0).sort((a,b)=>a.rank-b.rank)[0];
+    if(clean){
+      tournamentHighlights.push({round:currentRound,type:"CLEAN",text:`CLEAN RACE · ${clean.name} · 무충돌 ${clean.rank}위`});
+    }
 
     roundHistory.push(result);
     renderTeamScore();
@@ -1417,8 +1399,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     el.innerHTML=`<b>RACE DIAGNOSTICS</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms<br>OBS ${observers.length} · collisions ${collisions} · overtakes ${raceTotalOvertakes}<br>leader changes ${raceLeaderChanges} · finishes ${finishes}/8 · avg ${avg}`;
   }
 
-  const SIM_STEP_MS = 1000/60;
-  const MAX_SIM_STEPS = 3;
+  const SIM_STEP_MS = 1000/50;
+  const MAX_SIM_STEPS = 2;
   let simClock=0;
   let simAccumulator=0;
 
@@ -1462,7 +1444,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     render(ts);
 
-    if(ts-lastRankingRender>=220){
+    if(ts-lastRankingRender>=300){
       const rankingDt=ts-lastRankingRender;
       updateMatchRanks(rankingDt);
       updateSectors(ts);
@@ -1867,12 +1849,65 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     modal.classList.remove("hidden");
   }
 
+  function buildMatchAwards(){
+    const all=[];
+    for(const r of roundHistory){
+      for(const p of r.players) all.push({...p,round:r.round});
+    }
+    if(!all.length) return [];
+
+    const agg=new Map();
+    for(const x of all){
+      let a=agg.get(x.index);
+      if(!a){
+        a={index:x.index,name:x.name,team:x.team,points:0,wins:0,overtakes:0,collisions:0,avoids:0,leadMs:0,bestSector:Infinity,rankSum:0,rounds:0};
+        agg.set(x.index,a);
+      }
+      a.points+=x.points;
+      a.wins+=x.rank===1?1:0;
+      a.overtakes+=x.overtakes||0;
+      a.collisions+=x.collisions||0;
+      a.avoids+=x.avoids||0;
+      a.leadMs+=x.leadMs||0;
+      if(x.bestSector!=null) a.bestSector=Math.min(a.bestSector,x.bestSector);
+      a.rankSum+=x.rank;
+      a.rounds++;
+    }
+    const arr=[...agg.values()];
+    const mvp=[...arr].sort((a,b)=>
+      (b.points+b.wins*4+b.overtakes*.7+b.leadMs/12000-b.collisions*1.2)-
+      (a.points+a.wins*4+a.overtakes*.7+a.leadMs/12000-a.collisions*1.2)
+    )[0];
+    const pass=[...arr].sort((a,b)=>b.overtakes-a.overtakes || a.rankSum/a.rounds-b.rankSum/b.rounds)[0];
+    const clean=[...arr].sort((a,b)=>a.collisions-b.collisions || a.rankSum/a.rounds-b.rankSum/b.rounds)[0];
+    const sector=[...arr].filter(a=>Number.isFinite(a.bestSector)).sort((a,b)=>a.bestSector-b.bestSector)[0];
+
+    const result=[
+      {label:"RACE MVP",name:mvp.name,value:`${mvp.points>0?"+":""}${mvp.points}점 · ${mvp.wins}승`},
+      {label:"BEST OVERTAKER",name:pass.name,value:`추월 ${pass.overtakes}회`},
+      {label:"CLEAN RACE",name:clean.name,value:`충돌 ${clean.collisions}회 · 평균 ${(clean.rankSum/clean.rounds).toFixed(1)}위`}
+    ];
+    if(sector) result.push({label:"BEST SECTOR",name:sector.name,value:formatTime(sector.bestSector)});
+    return result;
+  }
+
   function showMatchResults(){
     const panel=document.getElementById("resultPanel");
     const body=document.getElementById("resultBody");
     const teamSummary=document.getElementById("teamResultSummary");
 
     const winner=teamTotals.A===teamTotals.B ? "무승부" : (teamTotals.A>teamTotals.B ? "A팀 승리" : "B팀 승리");
+    const awards=buildMatchAwards();
+    const awardsEl=document.getElementById("matchAwards");
+    const timelineEl=document.getElementById("highlightTimeline");
+    if(awardsEl){
+      awardsEl.innerHTML=awards.map(a=>`<div class="award-card"><span>${a.label}</span><b>${a.name}</b><small>${a.value}</small></div>`).join("");
+    }
+    if(timelineEl){
+      timelineEl.innerHTML=tournamentHighlights.length
+        ? tournamentHighlights.map(h=>`<div class="highlight-row"><span>R${h.round}</span><b>${h.text}</b></div>`).join("")
+        : `<div class="highlight-empty">기록된 하이라이트가 없습니다.</div>`;
+    }
     teamSummary.innerHTML=`<div class="winner">${winner}</div>
       <div class="final-team-score"><span>A팀 <b>${teamTotals.A}</b></span><span>B팀 <b>${teamTotals.B}</b></span></div>
       <div class="round-score-list">${roundHistory.map(r=>`<span>${r.round}R · A ${r.team.A} : ${r.team.B} B</span>`).join("")}</div>`;
