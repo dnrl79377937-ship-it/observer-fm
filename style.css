@@ -294,3 +294,49 @@ button:hover{background:#223047}
 /* v2.29 start/finish final: millisecond crossing interpolation; no base-speed boost. */
 
 /* v2.30 RACE ENGINE MASTER: stable result API/schema; gameplay unchanged. */
+
+/* v2.31 HUD overlap fix + readability */
+.lead-battle{
+  top:108px;
+  z-index:32;
+  max-width:min(620px,72%);
+  white-space:nowrap;
+}
+.race-event{
+  top:146px;
+  z-index:32;
+}
+@media(max-width:850px){
+  .lead-battle{top:106px;max-width:74%;font-size:11px;padding:6px 10px}
+  .race-event{top:140px;font-size:11px}
+}
+
+/* v2.31 minor rendering performance hints */
+#rankingList{contain:layout style}
+.rank-row{contain:layout style}
+
+/* v2.32 visual statistics */
+.visual-dashboard{margin:16px 0 22px;padding:14px;border:1px solid rgba(255,255,255,.13);border-radius:14px;background:linear-gradient(180deg,rgba(17,27,42,.72),rgba(5,10,17,.52))}
+.visual-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:12px}
+.visual-head h3{margin:2px 0 0;font-size:20px}.visual-head small{opacity:.62}
+.visual-kicker{font-size:10px;font-weight:900;letter-spacing:.14em;opacity:.62}
+.visual-podium{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.podium-card{position:relative;display:grid;grid-template-columns:72px 1fr;align-items:center;gap:10px;min-height:92px;padding:10px;border:1px solid rgba(255,255,255,.13);border-radius:12px;background:rgba(255,255,255,.035);overflow:hidden}
+.podium-card.p1{border-width:2px}.podium-rank{position:absolute;right:9px;top:7px;font-size:12px;font-weight:950;opacity:.78}
+.podium-avatar{width:68px;height:68px;border-radius:12px;object-fit:cover}.podium-copy{display:flex;flex-direction:column;gap:2px}.podium-copy b{font-size:17px}.podium-copy span,.podium-copy small{font-size:11px;opacity:.68}.podium-copy strong{font-size:20px}
+.visual-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.visual-card{padding:11px;border:1px solid rgba(255,255,255,.11);border-radius:11px;background:rgba(0,0,0,.18);min-width:0}
+.route-visual-card{grid-column:1/-1}
+.visual-card-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}.visual-card-head span{font-size:10px;opacity:.6}
+#rankChart,#performanceChart,#allRouteCanvas{display:block;width:100%;height:auto;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:#050a11}
+#allRouteCanvas{max-height:520px;object-fit:contain}
+.visual-legend{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:8px;font-size:10px}
+.visual-legend span{display:inline-flex;align-items:center;gap:5px;opacity:.82}.visual-legend i{width:8px;height:8px;border-radius:50%}
+.legend-avatar{width:18px;height:18px;border-radius:5px}
+.route-round-picks{display:flex;gap:6px;margin-bottom:8px}.route-round-picks button{padding:5px 9px;border-radius:7px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:inherit;cursor:pointer}.route-round-picks button.active{background:rgba(255,255,255,.16)}
+.player-avatar,.table-avatar,.analysis-avatar,.award-avatar,.rating-avatar,.mvp-avatar,.profile-avatar{object-fit:cover}
+.table-player{display:flex;align-items:center;gap:7px;white-space:nowrap}.table-avatar{width:28px;height:28px;border-radius:7px}
+.profile-hero{display:flex;align-items:center;gap:14px;margin-bottom:12px;padding:12px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.11)}.profile-avatar{width:82px;height:82px;border-radius:14px}.profile-hero div{display:flex;flex-direction:column}.profile-hero b{font-size:22px}.profile-hero span{opacity:.72}.profile-hero small{font-size:16px;font-weight:900;margin-top:4px}
+.analysis-player{display:flex!important;align-items:center;gap:8px}.analysis-avatar{width:38px;height:38px;border-radius:9px}.award-avatar{width:42px;height:42px;border-radius:9px;margin-bottom:4px}
+.rating-player{display:flex;align-items:center;gap:7px}.rating-avatar{width:34px;height:34px;border-radius:8px}.mvp-avatar{width:74px;height:74px;border-radius:14px;margin-bottom:6px}
+@media(max-width:900px){.visual-grid{grid-template-columns:1fr}.visual-podium{grid-template-columns:1fr}.visual-head{align-items:start;flex-direction:column}.route-visual-card{grid-column:auto}}

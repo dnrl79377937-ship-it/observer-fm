@@ -18,7 +18,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.30";
+  const BUILD_ID = "v2.32";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -2196,10 +2196,10 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const frac=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
     const g12=broadcastGapSeconds(p1,p2),g23=broadcastGapSeconds(p2,p3);
     const strip=document.getElementById("broadcastStrip");
-    if(strip) strip.innerHTML=`<div><span>${frac>=.82?"FINAL SECTOR":"RACE LIVE"}</span><b>${p1.name}</b></div>
-      <div><span>P2 GAP</span><b>${g12==null?"--":g12.toFixed(2)+"s"}</b></div>
-      <div><span>P3 GAP</span><b>${g23==null?"--":g23.toFixed(2)+"s"}</b></div>
-      <div><span>LEAD CHANGES</span><b>${raceLeaderChanges}</b></div>`;
+    if(strip) strip.innerHTML=`<div><span>${frac>=.82?"마지막 구간":"실시간 선두"}</span><b>${p1.name}</b></div>
+      <div><span>1위 ↔ 2위 격차</span><b>${g12==null?"--":g12.toFixed(2)+"초"}</b></div>
+      <div><span>2위 ↔ 3위 격차</span><b>${g23==null?"--":g23.toFixed(2)+"초"}</b></div>
+      <div><span>선두 교체</span><b>${raceLeaderChanges}회</b></div>`;
     if(frac>=.82&&g12!=null&&g12<.28)
       setBroadcastStory(`final-${p1.index}-${p2.index}`,"FINAL BATTLE",`${p1.name} vs ${p2.name}`,`${g12.toFixed(2)}s · 결승까지 초접전`,now,1500);
     else if(g12!=null&&g23!=null&&g12<.38&&g23<.38)
@@ -2683,16 +2683,27 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
     const lineW=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
 
+    // v2.31: use the already-maintained observer spatial grid for render culling.
+    // We visit only buckets intersecting the camera instead of checking all 600.
     visibleObserverRender.length=0;
-    for(let i=0;i<observers.length;i++){
-      const o=observers[i];
-      if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
-      visibleObserverRender.push(i);
+    const gx0=Math.max(0,Math.floor(minX/OBS_GRID_SIZE));
+    const gx1=Math.min(OBS_GRID_COLS-1,Math.floor(maxX/OBS_GRID_SIZE));
+    const gy0=Math.max(0,Math.floor(minY/OBS_GRID_SIZE));
+    const gy1=Math.min(OBS_GRID_ROWS-1,Math.floor(maxY/OBS_GRID_SIZE));
+    for(let gy=gy0;gy<=gy1;gy++){
+      for(let gx=gx0;gx<=gx1;gx++){
+        const bucket=observerGrid[gy*OBS_GRID_COLS+gx];
+        for(let bi=0;bi<bucket.length;bi++){
+          const o=bucket[bi];
+          if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
+          visibleObserverRender.push(o);
+        }
+      }
     }
 
     ctx.beginPath();
     for(let vi=0;vi<visibleObserverRender.length;vi++){
-      const o=observers[visibleObserverRender[vi]];
+      const o=visibleObserverRender[vi];
       const x=(o.x-view.sx)*view.scale;
       const y=(o.y-view.sy)*view.scale;
       ctx.moveTo(x+r*1.20,y);
@@ -2706,7 +2717,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     ctx.beginPath();
     for(let vi=0;vi<visibleObserverRender.length;vi++){
-      const o=observers[visibleObserverRender[vi]];
+      const o=visibleObserverRender[vi];
       const x=(o.x-view.sx)*view.scale;
       const y=(o.y-view.sy)*view.scale;
       ctx.moveTo(x+r*.50,y);
@@ -2978,6 +2989,31 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     }
   }
 
+  const rankRowCache=new Map();
+
+  function rankRowFor(index){
+    let c=rankRowCache.get(index);
+    if(c) return c;
+    const row=document.createElement("div");
+    row.className="rank-row";
+    row.innerHTML=`<span class="rank-no"></span><span class="rank-trend"></span>
+      <span class="team-mini"></span><button class="rank-name player-link"></button>
+      <span class="rank-gap"></span>`;
+    const no=row.querySelector(".rank-no");
+    const trend=row.querySelector(".rank-trend");
+    const team=row.querySelector(".team-mini");
+    const name=row.querySelector(".rank-name");
+    const gap=row.querySelector(".rank-gap");
+    name.dataset.player=String(index);
+    name.addEventListener("click",()=>{
+      const idx=Number(name.dataset.player);
+      if(players[idx]) openPlayerCard(players[idx]);
+    });
+    c={row,no,trend,team,name,gap};
+    rankRowCache.set(index,c);
+    return c;
+  }
+
   function renderRanking(){
     const ordered=[...players].sort((a,b)=>{
       if(a.done && b.done) return a.finishTime-b.finishTime;
@@ -2986,30 +3022,35 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       if(Math.abs(diff)<0.20) return a.index-b.index;
       return diff;
     });
+    if(!ordered.length) return;
     const frag=document.createDocumentFragment();
     const leaderProg=currentProgress(ordered[0]);
 
-    ordered.forEach((p,i)=>{
-      const row=document.createElement("div");
-      row.className="rank-row";
-      let gap;
-      if(p.done) gap=formatTime(p.finishTime);
-      else if(i===0) gap="LEADER";
+    for(let i=0;i<ordered.length;i++){
+      const p=ordered[i], c=rankRowFor(p.index);
+      let gapText;
+      if(p.done) gapText=formatTime(p.finishTime);
+      else if(i===0) gapText="선두";
       else{
         const distGap=Math.max(0,leaderProg-currentProgress(p));
-        gap=`+${(distGap/Math.max(1,ordered[0].speed||1)).toFixed(2)}s`;
+        gapText=`+${(distGap/Math.max(1,ordered[0].speed||1)).toFixed(2)}초`;
       }
       const rank=i+1, oldRank=previousUiRanks.get(p.index);
-      const trend=oldRank==null?"":rank<oldRank?"▲":rank>oldRank?"▼":"";
+      const trendText=oldRank==null?"":rank<oldRank?"▲":rank>oldRank?"▼":"";
       previousUiRanks.set(p.index,rank);
       const eta=(i===0&&!p.done)?estimatedFinishSeconds(p):null;
-      const etaText=eta?` · ETA ${eta.toFixed(2)}s`:"";
-      row.innerHTML=`<span class="rank-no">${rank}</span><span class="rank-trend">${trend}</span><span class="team-mini team-${p.team.toLowerCase()}">${p.team}</span><button class="rank-name player-link" data-player="${p.index}">${p.name}</button><span class="rank-gap">${gap}${etaText}</span>`;
-      row.querySelector(".player-link").addEventListener("click",()=>openPlayerCard(p));
-      frag.appendChild(row);
-    });
+      const etaText=eta?` · 예상 ${eta.toFixed(2)}초`:"";
 
-    rankingEl.replaceChildren(frag);
+      c.no.textContent=String(rank);
+      c.trend.textContent=trendText;
+      c.team.textContent=p.team;
+      c.team.className=`team-mini team-${p.team.toLowerCase()}`;
+      c.name.textContent=p.name;
+      c.gap.textContent=gapText+etaText;
+      frag.appendChild(c.row);
+    }
+    // Existing nodes are simply reordered; listeners/DOM nodes are reused.
+    rankingEl.appendChild(frag);
   }
 
   function statLabel(k){
@@ -3024,6 +3065,47 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const labels={apexHunter:"인코스 공격형",safeReader:"안전 예측형",attacker:"공격형",lineMaster:"최단라인형",
       balanced:"밸런스형",controller:"컨트롤형",patient:"신중형",opportunist:"기회포착형"};
     return labels[style]||style;
+  }
+
+
+  const avatarCache=new Map();
+  const avatarHair=["#dfe9ff","#161b2b","#8b2530","#d7a15b","#24415f","#e56c42","#593866","#2c3146"];
+  const avatarSkin=["#f0c7a6","#d8a47f","#edc2a4","#c98f6b","#e4b38e","#bc8566","#efc7a8","#d69c78"];
+
+  function playerAvatar(index){
+    if(avatarCache.has(index)) return avatarCache.get(index);
+    const name=names[index]||"?";
+    const hair=avatarHair[index%avatarHair.length], skin=avatarSkin[index%avatarSkin.length];
+    const accent=colors[index%colors.length];
+    const initials=name.slice(0,2).toUpperCase();
+    const fringe=index%4;
+    const hairPath=[
+      "M18 33 Q25 5 52 10 Q78 8 83 35 Q72 24 60 27 Q46 13 18 33Z",
+      "M15 34 Q18 7 50 9 Q80 10 84 36 Q70 20 58 24 L52 12 L45 28 Q30 20 15 34Z",
+      "M16 33 Q26 4 55 9 Q76 10 84 35 Q67 24 57 30 Q50 16 43 31 Q28 23 16 33Z",
+      "M17 35 Q22 8 51 8 Q78 8 84 35 L66 25 L58 13 L49 30 L38 17 L30 31Z"
+    ][fringe];
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#09111c"/><stop offset="1" stop-color="${accent}"/></linearGradient></defs>
+      <rect width="96" height="96" rx="18" fill="url(#g)"/>
+      <circle cx="48" cy="42" r="25" fill="${skin}"/>
+      <path d="${hairPath}" fill="${hair}"/>
+      <path d="M27 45 Q35 40 41 44" fill="none" stroke="#18202c" stroke-width="2" stroke-linecap="round"/>
+      <path d="M55 44 Q62 40 69 45" fill="none" stroke="#18202c" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="36" cy="47" r="2.6" fill="#15202d"/><circle cx="61" cy="47" r="2.6" fill="#15202d"/>
+      <path d="M42 58 Q48 62 55 58" fill="none" stroke="#8c5148" stroke-width="2" stroke-linecap="round"/>
+      <path d="M20 96 Q23 70 48 70 Q73 70 78 96Z" fill="${accent}" opacity=".88"/>
+      <circle cx="48" cy="48" r="43" fill="none" stroke="${accent}" stroke-width="3" opacity=".55"/>
+      <text x="48" y="89" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="800" fill="white">${initials}</text>
+    </svg>`;
+    const uri="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+    avatarCache.set(index,uri);
+    return uri;
+  }
+
+  function avatarHtml(index,cls="player-avatar"){
+    const name=names[index]||"선수";
+    return `<img class="${cls}" src="${playerAvatar(index)}" alt="${name} 캐릭터">`;
   }
 
   function overallOf(p){
@@ -3074,6 +3156,10 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const entries=Object.entries(p.stats).sort((a,b)=>b[1]-a[1]);
     title.textContent=`${p.name} · OVR ${overallOf(p)} · ${styleLabel(p.drivingStyle.style)}`;
     body.innerHTML=`
+      <div class="profile-hero">
+        ${avatarHtml(p.index,"profile-avatar")}
+        <div><b>${p.name}</b><span>${teamLabel(p.team)} · ${styleLabel(p.drivingStyle.style)}</span><small>OVR ${overallOf(p)}</small></div>
+      </div>
       <div class="profileSummary">
         <div><b>소속팀</b><span>${teamLabel(p.team)}</span></div>
         <div><b>주행 성향</b><span>${styleLabel(p.drivingStyle.style)}</span></div>
@@ -3276,7 +3362,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     body.innerHTML=rows.map(a=>{
       const rate=a.controls?`${a.controlRate.toFixed(0)}%`:"-";
       return `<tr>
-        <td><button class="trace-player player-link" data-player="${a.index}">${a.name}</button></td>
+        <td><div class="table-player">${avatarHtml(a.index,"table-avatar")}<button class="trace-player player-link" data-player="${a.index}">${a.name}</button></div></td>
         <td>${a.controls} / ${rate}</td>
         <td>${a.zigzag}</td><td>${a.backcon}</td><td>${a.stopcon}</td><td>${a.wide}</td>
         <td>${a.avgInside.toFixed(0)}%</td>
@@ -3418,7 +3504,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
         ${data.reports.map((a,i)=>`
           <article class="analysis-card ${i===0?"best":""}">
             <div class="analysis-head">
-              <div><span>${teamLabel(a.team)}</span><b>${a.name}</b></div>
+              <div class="analysis-player">${avatarHtml(a.index,"analysis-avatar")}<div><span>${teamLabel(a.team)}</span><b>${a.name}</b></div></div>
               <strong>${a.avgRating.toFixed(1)}</strong>
             </div>
             <p>${a.summary}</p>
@@ -3428,6 +3514,130 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
           </article>`).join("")}
       </div>`;
   }
+
+
+  function prepChart(canvas){
+    if(!canvas) return null;
+    const ctx=canvas.getContext("2d");
+    const w=canvas.width,h=canvas.height;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle="rgba(4,9,16,.86)";
+    ctx.fillRect(0,0,w,h);
+    return {ctx,w,h};
+  }
+
+  function drawRankChart(){
+    const canvas=document.getElementById("rankChart");
+    const legend=document.getElementById("rankLegend");
+    const c=prepChart(canvas); if(!c) return;
+    const {ctx,w,h}=c, L=56,R=24,T=28,B=42;
+    ctx.strokeStyle="rgba(255,255,255,.12)";ctx.lineWidth=1;
+    ctx.font="12px system-ui";ctx.fillStyle="rgba(255,255,255,.65)";
+    ctx.textAlign="right";ctx.textBaseline="middle";
+    for(let rank=1;rank<=8;rank++){
+      const y=T+(rank-1)*(h-T-B)/7;
+      ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();
+      ctx.fillText(`${rank}위`,L-10,y);
+    }
+    ctx.textAlign="center";ctx.textBaseline="top";
+    for(let r=1;r<=3;r++){
+      const x=L+(r-1)*(w-L-R)/2;
+      ctx.fillText(`${r}R`,x,h-B+13);
+    }
+
+    for(let idx=0;idx<players.length;idx++){
+      const pts=[];
+      for(let r=1;r<=3;r++){
+        const rd=roundHistory.find(q=>q.round===r);
+        const x=rd?.players.find(q=>q.index===idx);
+        if(x) pts.push({r,rank:x.rank});
+      }
+      if(!pts.length) continue;
+      ctx.strokeStyle=colors[idx];ctx.fillStyle=colors[idx];ctx.lineWidth=3;
+      ctx.beginPath();
+      pts.forEach((p,i)=>{
+        const x=L+(p.r-1)*(w-L-R)/2;
+        const y=T+(p.rank-1)*(h-T-B)/7;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+      pts.forEach(p=>{
+        const x=L+(p.r-1)*(w-L-R)/2,y=T+(p.rank-1)*(h-T-B)/7;
+        ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();
+      });
+    }
+    if(legend) legend.innerHTML=players.map(p=>`<span><i style="background:${colors[p.index]}"></i>${avatarHtml(p.index,"legend-avatar")}${p.name}</span>`).join("");
+  }
+
+  function drawPerformanceChart(){
+    const canvas=document.getElementById("performanceChart");
+    const c=prepChart(canvas); if(!c) return;
+    const {ctx,w,h}=c;
+    const rows=aggregateMatchRatings().slice().sort((a,b)=>b.rating-a.rating);
+    const left=120,right=26,top=22,rowH=(h-top-18)/rows.length;
+    ctx.font="12px system-ui";ctx.textBaseline="middle";
+    rows.forEach((a,i)=>{
+      const y=top+i*rowH+rowH/2;
+      ctx.fillStyle="rgba(255,255,255,.12)";
+      ctx.fillRect(left,y-8,w-left-right,16);
+      const ratingWidth=(w-left-right)*Math.max(0,Math.min(1,(a.rating-4)/6));
+      ctx.fillStyle=colors[a.index];
+      ctx.fillRect(left,y-8,ratingWidth,16);
+      ctx.fillStyle="#fff";ctx.textAlign="right";ctx.fillText(a.name,left-12,y);
+      ctx.textAlign="left";ctx.fillText(`${a.rating.toFixed(1)}  ·  추월 ${a.overtakes}  ·  충돌 ${a.collisions}`,left+ratingWidth+8,y);
+    });
+  }
+
+  function drawAllRoutes(roundNum=3){
+    const canvas=document.getElementById("allRouteCanvas");
+    const legend=document.getElementById("routeLegend");
+    const c=prepChart(canvas); if(!c) return;
+    const {ctx,w,h}=c;
+    if(map.complete){
+      ctx.globalAlpha=.66;ctx.drawImage(map,0,0,w,h);ctx.globalAlpha=1;
+    }
+    const rd=roundHistory.find(r=>r.round===roundNum);
+    if(!rd) return;
+    const sx=w/MAP_W, sy=h/MAP_H;
+    for(const x of rd.players){
+      if(!x.trace?.length) continue;
+      ctx.strokeStyle=colors[x.index];ctx.lineWidth=2.5;ctx.globalAlpha=.92;
+      ctx.beginPath();
+      x.trace.forEach((pt,i)=>{
+        const px=pt[0]*sx,py=pt[1]*sy;
+        if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+      });
+      ctx.stroke();ctx.globalAlpha=1;
+      const end=x.trace[x.trace.length-1];
+      ctx.fillStyle=colors[x.index];ctx.beginPath();ctx.arc(end[0]*sx,end[1]*sy,4.5,0,Math.PI*2);ctx.fill();
+    }
+    if(legend) legend.innerHTML=rd.players.map(x=>`<span><i style="background:${colors[x.index]}"></i>${avatarHtml(x.index,"legend-avatar")}${x.name}</span>`).join("");
+    document.querySelectorAll("#routeRoundPicks button").forEach(b=>b.classList.toggle("active",Number(b.dataset.round)===roundNum));
+  }
+
+  function renderVisualDashboard(){
+    const podium=document.getElementById("visualPodium");
+    const picks=document.getElementById("routeRoundPicks");
+    if(!podium||!picks) return;
+    const ratings=aggregateMatchRatings();
+    const scoreRows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || (ratings.find(x=>x.name===b.name)?.rating||0)-(ratings.find(x=>x.name===a.name)?.rating||0));
+    podium.innerHTML=scoreRows.slice(0,3).map((pt,i)=>{
+      const idx=names.indexOf(pt.name);
+      const rt=ratings.find(x=>x.index===idx);
+      const medal=i===0?"1위":i===1?"2위":"3위";
+      return `<article class="podium-card p${i+1}">
+        <div class="podium-rank">${medal}</div>
+        ${avatarHtml(idx,"podium-avatar")}
+        <div class="podium-copy"><b>${pt.name}</b><span>${teamLabel(pt.team)}</span><strong>${pt.total>0?"+":""}${pt.total}점</strong><small>평점 ${rt?rt.rating.toFixed(1):"-"} · 추월 ${rt?.overtakes||0}</small></div>
+      </article>`;
+    }).join("");
+    picks.innerHTML=[1,2,3].map(r=>`<button data-round="${r}">${r}R 경로</button>`).join("");
+    picks.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>drawAllRoutes(Number(b.dataset.round))));
+    drawRankChart();
+    drawPerformanceChart();
+    drawAllRoutes(roundHistory.length?roundHistory[roundHistory.length-1].round:3);
+  }
+
 
   function showMatchResults(){
     const panel=document.getElementById("resultPanel");
@@ -3442,11 +3652,15 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const timelineEl=document.getElementById("highlightTimeline");
     const autoEl=document.getElementById("autoHighlightClips");
     if(awardsEl){
-      awardsEl.innerHTML=awards.map(a=>`<div class="award-card"><span>${a.label}</span><b>${a.name}</b><small>${a.value}</small></div>`).join("");
+      awardsEl.innerHTML=awards.map(a=>{
+        const idx=names.indexOf(a.name);
+        return `<div class="award-card">${avatarHtml(idx,"award-avatar")}<span>${a.label}</span><b>${a.name}</b><small>${a.value}</small></div>`;
+      }).join("");
     }
     if(ratingEl){
       const mvp=ratings[0];
       ratingEl.innerHTML=`<div class="rating-mvp">
+          ${mvp?avatarHtml(mvp.index,"mvp-avatar"):""}
           <span>MATCH MVP</span>
           <b>${mvp?mvp.name:"-"}</b>
           <strong>${mvp?mvp.rating.toFixed(1):"-"}</strong>
@@ -3454,7 +3668,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
         </div>
         <div class="rating-grid">${ratings.map((a,i)=>`
           <div class="rating-card ${i===0?"mvp":""}">
-            <span>${i+1}. ${a.name}</span>
+            <div class="rating-player">${avatarHtml(a.index,"rating-avatar")}<span>${i+1}. ${a.name}</span></div>
             <b>${a.rating.toFixed(1)}</b>
             <small>${ratingGrade(a.rating)} · BEST ${a.best.toFixed(1)} · 추월 ${a.overtakes} · 충돌 ${a.collisions}</small>
           </div>`).join("")}
@@ -3492,7 +3706,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       return `<tr>
         <td>${i+1}</td>
         <td><span class="team-mini team-${pt.team.toLowerCase()}">${pt.team}</span></td>
-        <td><button class="result-name player-link" data-player="${names.indexOf(pt.name)}">${pt.name}</button></td>
+        <td><div class="table-player">${avatarHtml(names.indexOf(pt.name),"table-avatar")}<button class="result-name player-link" data-player="${names.indexOf(pt.name)}">${pt.name}</button></div></td>
         <td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
         <td><b>${pt.total>0?"+":""}${pt.total}</b></td>
       </tr>`;
@@ -3502,6 +3716,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     });
     renderTelemetryPanel();
     renderMatchAnalysis();
+    renderVisualDashboard();
     panel.classList.remove("hidden");
   }
 
