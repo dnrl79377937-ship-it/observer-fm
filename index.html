@@ -13,13 +13,13 @@
   <header class="topbar">
     <div>
       <h1>OBSERVER AVOIDANCE FM</h1>
-      <p>v2.43 · SPECIAL INSIDE ROUTE · 특수 인코스/점수판/일시정지 · OBS 650</p>
+      <p>v2.50 · RACE INTELLIGENCE · NEAR MISS/시그니처/위험판단/ELO · OBS 650</p>
     </div>
-    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v2.43</div>
+    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v2.50</div>
     <div class="controls">
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
-      <button id="resultBtn">경기 통계</button> <button id="balanceBtn" class="secondaryBtn">밸런스 테스트</button> <button id="replayBtn" class="secondaryBtn">리플레이</button>
+      <button id="resultBtn">경기 통계</button> <button id="eloBtn" class="secondaryBtn">ELO 랭킹</button> <button id="balanceBtn" class="secondaryBtn">밸런스 테스트</button> <button id="replayBtn" class="secondaryBtn">리플레이</button>
       <button id="seasonResetBtn">시즌 초기화</button>
     </div>
   </header>
@@ -28,7 +28,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v2.43 · SCOURGE → SCOUT → WRAITH · OBS 650</span>
+        <span id="cameraLabel">v2.50 · SCOURGE → SCOUT → WRAITH · OBS 650</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
         <span id="clock">00:00.0</span>
@@ -45,17 +45,23 @@
     <aside class="ranking">
       <h2>실시간 순위</h2>
       <div id="rankingList"></div>
+      <section class="live-rating-box">
+        <div class="live-rating-head"><b>실시간 평점</b><span>10.0 만점 · 종합 경기력</span></div>
+        <div id="liveRatingList" class="live-rating-list"></div>
+      </section>
       <section class="live-stats-box">
         <div class="live-stats-head"><b>실시간 경기 통계</b><span id="liveStatsPhase">대기</span></div>
         <div id="liveStatsSummary" class="live-stats-summary"></div>
         <div id="liveStatsLeaders" class="live-stats-leaders"></div>
-        <div id="liveStatsRace" class="live-stats-race"></div>
+        <div id="liveStatsRace" class="live-stats-race"></div><div id="liveDanger" class="live-danger"></div>
         <div id="liveStatsPlayers" class="live-stats-players"></div>
       </section>
     </aside>
   </main>
 
-
+  <div id="eloPanel" class="overlay hidden"><div class="modalCard elo-card"><button id="eloClose" class="closeBtn">×</button>
+  <div class="elo-title"><div><span>ELO POWER RANKING</span><h2>통합 ELO 랭킹</h2></div><small>평균순위 최우선 · 전체 누적 경기 데이터</small></div>
+  <div id="eloRankingList" class="elo-ranking-list"></div><div class="elo-formula-note">평균순위 55% · 승률/Top3 14% · 평균평점 9% · 회피/NEAR MISS 9% · 추월 5% · 무충돌 5% · 선두유지 3%</div></div></div>
   <div id="playerModal" class="overlay hidden">
     <div class="modalCard">
       <button id="playerModalClose" class="closeBtn">×</button>
@@ -102,7 +108,7 @@
         </div>
       </section>
 
-      <div class="qa-final-strip">v2.43 MASTER · RESULT SCHEMA v1 · OBS 650 · 8 PLAYERS · NON-SOLID · 50Hz · 300% LEADER CAM</div>
+      <div class="qa-final-strip">v2.50 MASTER · RESULT SCHEMA v1 · OBS 650 · 8 PLAYERS · NON-SOLID · 50Hz · 300% LEADER CAM</div>
       <div class="highlight-title">선수 경기 평점</div>
       <div id="matchRatings" class="match-ratings"></div>
       <div class="highlight-title">경기 분석 리포트</div>
@@ -140,7 +146,7 @@
   <div id="balancePanel" class="overlay hidden">
     <div class="modalCard balanceCard">
       <button id="balanceClose" class="closeBtn">×</button>
-      <h2>v2.43 · 자동 밸런스 테스트</h2>
+      <h2>v2.50 · 자동 밸런스 테스트</h2>
       <p class="balance-note"><b>실전 누적</b>은 실제 레이스 엔진에서 끝난 라운드를 저장합니다. 아래 빠른 반복 테스트는 밸런스 방향을 빠르게 확인하는 근사 시뮬레이션입니다.</p>
       <div class="balance-section-head"><b>실전 경기 누적 대시보드</b><button id="liveBalanceReset">실전 기록 초기화</button></div>
       <div id="liveBalanceSummary" class="balance-summary"></div>
@@ -172,7 +178,7 @@
   <div id="replayPanel" class="overlay hidden">
     <div class="modalCard replayCard">
       <button id="replayClose" class="closeBtn">×</button>
-      <h2>v2.43 · 경기 리플레이</h2>
+      <h2>v2.50 · 경기 리플레이</h2>
       <div id="replayRounds" class="replay-rounds"></div>
       <canvas id="replayCanvas" width="771" height="534"></canvas>
       <div class="highlight-title">자동 하이라이트</div>
@@ -191,6 +197,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=24301"></script>
+  <script src="game.js?v=25001"></script>
 </body>
 </html>

@@ -20,10 +20,10 @@
   const MAP_W = 257, MAP_H = 178;
   const OBSERVER_COUNT = 650;
   const HIT_CHANCE = 1.00;
-  const STUN_MS = 2000;
+  const STUN_MS = 2300;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.43";
+  const BUILD_ID = "v2.50";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -95,6 +95,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     opportunist:{apex:1.08,safety:.96,pass:1.10,patience:.94,control:"backcon"}
   };
   function identityOf(p){return drivingIdentity[p.drivingStyle?.style]||drivingIdentity.balanced;}
+  const signatureMoves={apexHunter:{label:"WALL APEX",inside:1.24,skim:1.18},safeReader:{label:"SAFE ARC",inside:.82,skim:1.04},attacker:{label:"THREAD ATTACK",inside:1.08,skim:1.30},lineMaster:{label:"PERFECT LINE",inside:1.30,skim:1.14},balanced:{label:"ADAPTIVE",inside:1,skim:1},controller:{label:"CONTROL CUT",inside:.90,skim:1.06},patient:{label:"WAIT & CUT",inside:.92,skim:1.08},opportunist:{label:"GAP HUNTER",inside:1.16,skim:1.26}};
+  function signatureOf(p){return signatureMoves[p.drivingStyle?.style]||signatureMoves.balanced;}
 
 
   const profiles = playerStats.map(s => ({
@@ -284,9 +286,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           drivingStyle.style==="patient" ? -.62 :
           drivingStyle.style==="safeReader" ? -.82 : 0
         ),
-        creativeRouteBudget:.30, creativeRouteUsed:0, creativeMode:0,
+        creativeRouteBudget:.38, creativeRouteUsed:0, creativeMode:0,
         creativeModeUntil:0, creativeCooldown:900+Math.random()*1200,
         creativeSide:Math.random()<.5?-1:1, creativePhase:Math.random()*Math.PI*2,
+        routeIdentityBias:Math.max(-.78,Math.min(.78,(Math.random()*1.20-.60)+(drivingStyle.attack-drivingStyle.safety)*.42)),
+        routeIdentityPhase:Math.random()*Math.PI*2,
+        skimDodgeCooldown:0,
+        liveRatingHistory:[],lastRatingSampleAt:0,
         x:20.5, y:154.8 + (i-3.5)*0.48,
         steerX:1, steerY:0,
         seg:0,
@@ -302,7 +308,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.464395625,
         desiredOffset:(i-3.5)*0.48,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1],
+        hitFxUntil:0, hitGrayUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1],
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -362,6 +368,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         resumeEaseUntil:0,
         match:{
           collisions:0,stops:0,avoids:0,overtakes:0,leadMs:0,
+          nearMisses:0,extremeNearMisses:0,lastNearMissAt:0,dangerExposureMs:0,
           controlAttempts:0,controlSuccesses:0,
           controlByType:{
             zigzag:{attempts:0,successes:0},
@@ -780,18 +787,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const skill=((p.stats.insideLine-72)/27)*.45+((p.stats.routeReading-72)/27)*.30+
       ((p.stats.cornering-72)/27)*.25;
     const localDanger=nearbyObservers(p.x,p.y,15).length;
-    const useChance=Math.max(.34,Math.min(.84,.48+skill*.26+(p.linePersonality||0)*.10-(localDanger>=7?.10:0)));
-    if(Math.random()>useChance*.055) return off;
+    // v2.45: special inside shortcuts are a real preferred racing option,
+    // especially for strong inside-line/route-reading racers.
+    const useChance=Math.max(.56,Math.min(.985,(.66+skill*.24+(p.linePersonality||0)*.12-(localDanger>=8?.07:0))*signatureOf(p).inside));
+    if(Math.random()>useChance*.095) return off;
     const normalHalf=Math.max(1.8,widths[si]*.72);
-    const specialHalf=Math.max(normalHalf,widths[si]*(1.02+skill*.10));
-    return off*.28+(side*specialHalf)*.72;
+    const specialHalf=Math.max(normalHalf,widths[si]*(1.08+skill*.105));
+    return off*.16+(side*specialHalf)*.84;
   }
 
   function clampSpecialRoadOffset(si,lateral){
     const normalHalf=Math.max(1.8,widths[si]*ROAD_MARGIN);
     const side=specialInsideSide(si);
     if(!side) return Math.max(-normalHalf,Math.min(normalHalf,lateral));
-    const specialHalf=Math.max(normalHalf,widths[si]*1.16);
+    const specialHalf=Math.max(normalHalf,widths[si]*1.20);
     const lo=side<0?-specialHalf:-normalHalf;
     const hi=side>0? specialHalf: normalHalf;
     return Math.max(lo,Math.min(hi,lateral));
@@ -1171,6 +1180,47 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const compactSkill=(reactionNorm+predictionNorm+controlNorm)/3;
     const evadeNorm=(evadeSkill-72)/27;
     const half=Math.max(3.6,widths[si]*(0.675-compactSkill*0.070+evadeNorm*0.035)*p.drivingStyle.safety);
+
+    // v2.45 DIAGONAL SKIM DODGE:
+    // When an observer is directly ahead, prefer a quick diagonal slip-by instead
+    // of braking/stop-control. Both sides are risk-tested; avoidance remains safe.
+    let frontThreat=null,frontAlong=Infinity,frontLat=0;
+    for(const o of nearby){
+      const dx=o.x-p.x,dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy;
+      const lat=dx*s.nx+dy*s.ny;
+      if(along>0 && along<10.2 && Math.abs(lat)<3.4 && along<frontAlong){
+        frontThreat=o;frontAlong=along;frontLat=lat;
+      }
+    }
+    if(frontThreat && now>=p.skimDodgeCooldown){
+      const skimChance=Math.min(.985,(.78+reactionNorm*.08+predictionNorm*.06+controlNorm*.04)*signatureOf(p).skim);
+      if(Math.random()<skimChance){
+        const sidePref=frontLat>=0?-1:1;
+        const skimMag=half*(.48+compactSkill*.12);
+        const candA=Math.max(-half*.98,Math.min(half*.98,p.desiredOffset+sidePref*skimMag));
+        const candB=Math.max(-half*.98,Math.min(half*.98,p.desiredOffset-sidePref*skimMag*.88));
+        const riskA=candidateAvoidanceRisk(p,s,candA,.97,nearby);
+        const riskB=candidateAvoidanceRisk(p,s,candB,.95,nearby);
+        const chosen=riskA.score<=riskB.score
+          ? {targetOff:candA,speedMul:.97,risk:riskA}
+          : {targetOff:candB,speedMul:.95,risk:riskB};
+        if(chosen.risk.minClear>.80 || Math.min(riskA.score,riskB.score)<210){
+          p.avoidPlanOffset=chosen.targetOff;
+          p.avoidPlanSpeedMul=chosen.speedMul;
+          p.avoidPlanRisk=chosen.risk.score;
+          p.avoidLastSide=Math.sign(chosen.targetOff-p.desiredOffset)||sidePref;
+          p.avoidExitSide=p.avoidLastSide;
+          p.avoidExitUntil=now+430;
+          p.avoidSideLockUntil=now+250;
+          p.avoidPlanUntil=now+210+Math.random()*120;
+          p.skimDodgeCooldown=now+360+Math.random()*340;
+          p.match.avoids++;
+          return {mode:"planned",targetOff:chosen.targetOff,speedMul:chosen.speedMul,risk:chosen.risk.score,skim:true};
+        }
+      }
+      p.skimDodgeCooldown=now+180+Math.random()*220;
+    }
 
     // Candidate lanes + speed choices. The planner chooses the safest path that
     // costs the least race time. Stop is evaluated only as an emergency option.
@@ -1637,7 +1687,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Dense fields temporarily raise the creative-route allowance and reduce
     // the trigger threshold. Normal sections remain close to the v2.41 70/30 mix.
     const denseBoost=danger>=8?.16:danger>=5?.11:danger>=3?.055:0;
-    const targetCreative=progress*Math.min(.46,p.creativeRouteBudget+denseBoost);
+    const targetCreative=progress*Math.min(.55,p.creativeRouteBudget+denseBoost);
     const triggerSlack=danger>=5?.040:.018;
     if(now>=p.creativeModeUntil && now>=p.creativeCooldown && p.creativeRouteUsed+triggerSlack<targetCreative){
       const roll=Math.random();
@@ -1649,10 +1699,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p.creativeSide=Math.random()<.5?-1:1;
       const dense=danger>=5;
       p.creativeModeUntil=now+(dense?720:520)+Math.random()*(dense?1350:1150);
-      p.creativeCooldown=now+(dense?620:1050)+Math.random()*(dense?980:1650);
+      p.creativeCooldown=now+(dense?560:820)+Math.random()*(dense?900:1280);
     }
     if(now<p.creativeModeUntil){
-      p.creativeRouteUsed=Math.min(.46,p.creativeRouteUsed+(danger>=5?.00245:.0018));
+      p.creativeRouteUsed=Math.min(.55,p.creativeRouteUsed+(danger>=5?.00265:.00215));
       const inside=cornerInsideSide(si);
       if(p.creativeMode===1){
         // WALL APEX: on a real corner, hug the legal road edge as tightly as possible.
@@ -1870,6 +1920,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       off+=Math.sin(now*.018+p.index)*half*(.025+(1-stability)*.045);
       speedMul*=.988;
     }
+    // v2.45: persistent individual route identity keeps racers from stacking
+    // on the same optimized line even when no observer forces a deviation.
+    const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*.10;
+    const identityBias=(p.routeIdentityBias||0)*half*.24;
+    off=off*.79 + identityBias + identityWave;
     off=creativeRouteAdjustment(p,si,now,off);
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
@@ -2044,8 +2099,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const plannedOff=plannedRacingOffset(p,si,now);
     const packOff=packContextOffset(p,si,now);
     // Players are non-solid. Pack logic only adds subtle tactical route variety.
-    const packWeight=Math.min(0.22,0.07+(p.drivingStyle.pack-0.90)*0.36);
-    targetOff=targetOff*0.16+plannedOff*(0.84-packWeight)+packOff*packWeight;
+    const packWeight=Math.min(0.25,0.08+(p.drivingStyle.pack-0.90)*0.40);
+    const identityWeight=.13;
+    const identityOff=(p.routeIdentityBias||0)*Math.max(1.8,widths[si]*.54);
+    targetOff=targetOff*.12+plannedOff*(.75-packWeight-identityWeight)+packOff*packWeight+identityOff*identityWeight;
       // Kart-style cornering: aggressively approach the inside/apex on turns.
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
@@ -2287,6 +2344,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
 
     rescueIfStuck(p,now);
 
+    // v2.50 danger + near miss telemetry.
+    if(!safeAt(p.x,p.y)){let nearestObsSq=Infinity;for(const o of nearbyObservers(p.x,p.y,3)){const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;if(d2<nearestObsSq)nearestObsSq=d2;}if(nearestObsSq<10.24)p.match.dangerExposureMs+=dt;const hitSq=PLAYER_HIT_RADIUS*PLAYER_HIT_RADIUS;if(nearestObsSq>hitSq&&nearestObsSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){p.match.nearMisses++;if(nearestObsSq<.3844)p.match.extremeNearMisses++;p.match.lastNearMissAt=now;addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestObsSq<.3844?2:1);}}
+
     // Players are non-solid and may overlap completely.
     // Collision here is observer-only: player-player contact never pushes, slows, or stops anyone.
     // Collision check: actual observer contact = guaranteed stop outside invincible safe zones.
@@ -2297,6 +2357,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
         if(cdx*cdx+cdy*cdy<PLAYER_HIT_RADIUS*PLAYER_HIT_RADIUS){
           p.hits++;
           p.hitFxUntil=now+240;
+          p.hitGrayUntil=now+STUN_MS;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.match.collisions++;
@@ -2522,7 +2583,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
         index:p.index,name:p.name,team,rank:idx+1,points:pts,time:p.finishTime,
         collisions:p.match.collisions||0,
         overtakes:p.match.overtakes||0,
-        avoids:p.match.avoids||0,
+        avoids:p.match.avoids||0,nearMisses:p.match.nearMisses||0,extremeNearMisses:p.match.extremeNearMisses||0,dangerExposureMs:p.match.dangerExposureMs||0,
         leadMs:p.match.leadMs||0,
         controlAttempts:p.match.controlAttempts||0,
         controlSuccesses:p.match.controlSuccesses||0,
@@ -2641,7 +2702,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
     if(CAMERA_ZOOM!==3.0) issues.push(`CAM ${CAMERA_ZOOM}`);
     if(PLAYER_HIT_RADIUS!==0.36) issues.push(`HIT ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
-    if(STUN_MS!==2000) issues.push(`STUN ${STUN_MS}`);
+    if(STUN_MS!==2300) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==1000) issues.push(`INV ${INV_MS}`);
     if(Math.abs(ROAD_MARGIN-.90)>.0001) issues.push(`ROAD ${ROAD_MARGIN}`);
     return issues.length?`QA CHECK ${issues.join("·")}`:"QA PASS · MASTER";
@@ -3001,13 +3062,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
       const size=r*2.65;
       ctx.save();
       ctx.rotate(p.visualAngle);
-      const stunLeft=Math.max(0,p.stunUntil-now);
-      if(stunLeft>0){
-        // Unit image only fades from gray back to its normal red/blue sprite.
-        // Nickname/team label is drawn after this restore and keeps its original color.
-        const gray=Math.max(0,Math.min(1,stunLeft/STUN_MS));
-        ctx.filter=`grayscale(${Math.round(gray*100)}%) saturate(${Math.round((1-gray)*100)}%) brightness(${Math.round(78+22*(1-gray))}%)`;
-        ctx.shadowColor="rgba(170,170,170,.34)";
+      const grayLeft=Math.max(0,(p.hitGrayUntil||p.stunUntil)-now);
+      if(grayLeft>0){
+        // v2.44: observer contact makes the UNIT itself unmistakably gray for the full stun.
+        // Nickname/rank/team UI stays in its normal colors.
+        ctx.filter="grayscale(100%) saturate(0%) brightness(60%) contrast(112%)";
+        ctx.shadowColor="rgba(95,95,95,.72)";
       }else{
         ctx.filter="none";
         ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : "rgba(77,141,255,.45)";
@@ -3017,9 +3077,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
       ctx.filter="none";
       ctx.restore();
     }else{
-      const grayMix=Math.max(0,Math.min(1,(p.stunUntil-now)/STUN_MS));
+      const grayMix=((p.hitGrayUntil||p.stunUntil)>now)?1:0;
       if(grayMix>0){
-        const base=p.team==="A"?[255,77,77]:[77,141,255], g=132;
+        const base=p.team==="A"?[255,77,77]:[77,141,255], g=82;
         const rr=Math.round(base[0]*(1-grayMix)+g*grayMix),gg=Math.round(base[1]*(1-grayMix)+g*grayMix),bb=Math.round(base[2]*(1-grayMix)+g*grayMix);
         ctx.fillStyle=`rgb(${rr},${gg},${bb})`;
       }else ctx.fillStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";
@@ -3082,13 +3142,13 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
 
   function blankSeasonRow(){
     return {starts:0,wins:0,top3:0,finishes:0,totalRank:0,totalTime:0,bestTime:null,
-      collisions:0,stops:0,avoids:0,overtakes:0,leadMs:0,distance:0};
+      collisions:0,stops:0,avoids:0,overtakes:0,leadMs:0,distance:0,nearMisses:0,extremeNearMisses:0,dangerExposureMs:0,totalRating:0,cleanRaces:0};
   }
 
   function loadSeason(){
     try{
       const data=JSON.parse(localStorage.getItem(SEASON_KEY)||"{}");
-      for(const n of names) if(!data[n]) data[n]=blankSeasonRow();
+      for(const n of names){if(!data[n])data[n]=blankSeasonRow();else data[n]=Object.assign(blankSeasonRow(),data[n]);}
       return data;
     }catch(e){
       const data={}; for(const n of names) data[n]=blankSeasonRow(); return data;
@@ -3099,29 +3159,10 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
     try{ localStorage.setItem(SEASON_KEY,JSON.stringify(data)); }catch(e){}
   }
 
-  function recordSeasonResults(){
-    if(seasonRecorded || !players.length || !players.every(p=>p.done)) return;
-    const season=loadSeason();
-    const ordered=[...players].sort((a,b)=>a.finishTime-b.finishTime);
-    ordered.forEach((p,idx)=>{
-      const s=season[p.name]||blankSeasonRow();
-      const rank=idx+1;
-      s.starts++; s.totalRank+=rank; s.finishes++;
-      if(rank===1) s.wins++;
-      if(rank<=3) s.top3++;
-      s.totalTime+=p.finishTime||0;
-      s.bestTime=s.bestTime==null ? p.finishTime : Math.min(s.bestTime,p.finishTime);
-      s.collisions+=p.match.collisions;
-      s.stops+=p.match.stops;
-      s.avoids+=p.match.avoids;
-      s.overtakes+=p.match.overtakes;
-      s.leadMs+=p.match.leadMs;
-      s.distance+=p.match.distance;
-      season[p.name]=s;
-    });
-    saveSeason(season);
-    seasonRecorded=true;
-  }
+  function recordSeasonResults(){if(seasonRecorded||roundHistory.length<3)return;const season=loadSeason();for(const round of roundHistory)for(const x of round.players){const s=season[x.name]||blankSeasonRow();s.starts++;s.totalRank+=x.rank;s.finishes++;if(x.rank===1)s.wins++;if(x.rank<=3)s.top3++;s.totalTime+=x.time||0;s.bestTime=s.bestTime==null?x.time:Math.min(s.bestTime,x.time);s.collisions+=x.collisions||0;if(!x.collisions)s.cleanRaces++;s.avoids+=x.avoids||0;s.overtakes+=x.overtakes||0;s.leadMs+=x.leadMs||0;s.distance+=x.distance||0;s.nearMisses+=x.nearMisses||0;s.extremeNearMisses+=x.extremeNearMisses||0;s.dangerExposureMs+=x.dangerExposureMs||0;s.totalRating+=x.rating||0;season[x.name]=s;}saveSeason(season);seasonRecorded=true;renderEloRanking();}
+
+  function eloMetrics(s){const n=Math.max(1,s.starts||0),avgRank=(s.totalRank||0)/n,rankPower=(8-avgRank)/7,winRate=(s.wins||0)/n,top3Rate=(s.top3||0)/n,avgRating=(s.totalRating||0)/n,avoid=(s.avoids||0)/Math.max(1,(s.avoids||0)+(s.collisions||0)),nm=Math.min(1,(s.nearMisses||0)/(n*8)),ov=Math.min(1,(s.overtakes||0)/(n*4)),clean=(s.cleanRaces||0)/n,lead=Math.min(1,(s.leadMs||0)/(n*18000));const power=rankPower*.55+(winRate*.55+top3Rate*.45)*.14+Math.max(0,Math.min(1,(avgRating-4)/6))*.09+(avoid*.68+nm*.32)*.09+ov*.05+clean*.05+lead*.03;return{avgRank,winRate,top3Rate,avgRating,avoid,elo:Math.round(1000+power*1000)}}
+  function renderEloRanking(){const box=document.getElementById("eloRankingList");if(!box)return;const s=loadSeason(),rows=names.map(name=>({name,s:s[name],m:eloMetrics(s[name])})).sort((a,b)=>b.m.elo-a.m.elo||a.m.avgRank-b.m.avgRank);box.innerHTML=rows.map((r,i)=>`<div class="elo-row"><div class="elo-rank">${i+1}</div><div class="elo-name"><b>${r.name}</b><small>${signatureMoves[drivingStyles[names.indexOf(r.name)].style].label}</small></div><div class="elo-score">${r.m.elo}</div><div class="elo-data">평균 ${r.s.starts?r.m.avgRank.toFixed(2):"--"}위 · ${r.s.starts}경기 · 승률 ${(r.m.winRate*100).toFixed(1)}% · Top3 ${(r.m.top3Rate*100).toFixed(1)}%<br>평점 ${r.s.starts?r.m.avgRating.toFixed(2):"--"} · 회피율 ${(r.m.avoid*100).toFixed(1)}% · NM ${r.s.nearMisses||0} · 충돌 ${r.s.collisions||0} · 추월 ${r.s.overtakes||0}</div></div>`).join("")}
 
   function resetSeason(){
     if(!confirm("v31 시즌 누적 기록을 전부 초기화할까요?")) return;
@@ -3239,9 +3280,50 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
 
 
   let lastLiveStatsRender=0;
+  function playerDangerStatus(p){const raw=nearbyObservers(p.x,p.y,13),s=segs[Math.min(p.seg,segs.length-1)];let front=0,close=0;for(const o of raw){const dx=o.x-p.x,dy=o.y-p.y;if(dx*dx+dy*dy<49)close++;if(dx*s.ux+dy*s.uy>0&&Math.abs(dx*s.nx+dy*s.ny)<4.2)front++;}const score=close+front*1.6;return score>=9?"극위험":score>=5?"위험":score>=2?"주의":"안전";}
+
+  function livePerformanceRating(p,ordered,now=performance.now()){
+    const rank=Math.max(1,ordered.indexOf(p)+1);
+    const progress=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
+    const m=p.match||{};
+    const avoidAttempts=Math.max(1,(m.avoids||0)+(m.collisions||0));
+    const avoidRate=(m.avoids||0)/avoidAttempts;
+    const controlRate=(m.controlAttempts||0)>0 ? (m.controlSuccesses||0)/(m.controlAttempts||1) : .72;
+    const rankScore=(8-rank)/7;
+    const passScore=Math.min(1,(m.overtakes||0)/5);
+    const collisionPenalty=Math.min(1,(m.collisions||0)/3);
+    const leadScore=Math.min(1,(m.leadMs||0)/Math.max(1000,(now-raceStart)));
+    const gainScore=Math.max(0,Math.min(1,(m.maxRankGain||0)/5));
+
+    // Integrated live performance: survival/avoidance has the largest weight.
+    // Current rank matters, but cannot by itself create an elite rating.
+    const composite=
+      avoidRate*.30 +
+      rankScore*.20 +
+      controlRate*.14 +
+      passScore*.11 +
+      leadScore*.08 +
+      gainScore*.07 +
+      progress*.10 -
+      collisionPenalty*.18;
+    return Math.max(4.0,Math.min(10.0,5.15+composite*4.85));
+  }
+
+  function renderLiveRatings(now=performance.now()){
+    const box=document.getElementById("liveRatingList");
+    if(!box)return;
+    const ordered=liveOrderedPlayers();
+    if(!ordered.length){box.innerHTML="";return;}
+    // Keep ranking order for scanability, but score is independently calculated.
+    box.innerHTML=ordered.map(p=>{
+      const rating=livePerformanceRating(p,ordered,now);if(now-(p.lastRatingSampleAt||0)>=900){p.lastRatingSampleAt=now;p.liveRatingHistory.push(rating);if(p.liveRatingHistory.length>24)p.liveRatingHistory.shift();}const h=p.liveRatingHistory.length?p.liveRatingHistory:[rating];const pts=h.map((v,i)=>`${(h.length===1?117:i*117/(h.length-1)).toFixed(1)},${(20-Math.max(0,Math.min(1,(v-4)/6))*18).toFixed(1)}`).join(" ");return `<div class="live-rating-row"><span class="live-rating-name">${p.name}</span><svg class="rating-spark" viewBox="0 0 118 22"><line class="rating-baseline" x1="0" y1="20" x2="118" y2="20"/><polyline points="${pts}"/></svg><strong class="live-rating-value">${rating.toFixed(1)}</strong></div>`;
+    }).join("");
+  }
+
   function renderLiveStats(now=performance.now()){
     if(now-lastLiveStatsRender<950)return;
     lastLiveStatsRender=now;
+    renderLiveRatings(now);
     const summary=document.getElementById("liveStatsSummary");
     const leaders=document.getElementById("liveStatsLeaders");
     const raceBox=document.getElementById("liveStatsRace");
@@ -3253,7 +3335,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
     const overtakes=players.reduce((s,p)=>s+(p.match?.overtakes||0),0);
     const avoids=players.reduce((s,p)=>s+(p.match?.avoids||0),0);
     const controls=players.reduce((s,p)=>s+(p.match?.controlAttempts||0),0);
-    const stops=players.reduce((s,p)=>s+(p.match?.stops||0),0);
+    const stops=players.reduce((s,p)=>s+(p.match?.stops||0),0);const nearMisses=players.reduce((s,p)=>s+(p.match?.nearMisses||0),0);
     const p1=ordered[0],p2=ordered[1];
     const gap=broadcastGapSeconds(p1,p2);
     const eta=estimatedFinishSeconds(p1,now);
@@ -3264,7 +3346,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
     const prog=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
     if(phase)phase.textContent=`${currentRound}R · ${Math.round(prog*100)}%`;
 
-    summary.innerHTML=`<div><span>충돌</span><b>${collisions}</b></div><div><span>추월</span><b>${overtakes}</b></div><div><span>회피</span><b>${avoids}</b></div><div><span>컨트롤</span><b>${controls}</b></div><div><span>스탑</span><b>${stops}</b></div><div><span>선두교체</span><b>${raceLeaderChanges}</b></div>`;
+    summary.innerHTML=`<div><span>충돌</span><b>${collisions}</b></div><div><span>추월</span><b>${overtakes}</b></div><div><span>회피</span><b>${avoids}</b></div><div><span>컨트롤</span><b>${controls}</b></div><div><span>스탑</span><b>${stops}</b></div><div><span>선두교체</span><b>${raceLeaderChanges}</b></div><div><span>NEAR MISS</span><b>${nearMisses}</b></div>`;
 
     const row=(label,p,val)=>`<div class="live-stat-leader"><span>${label}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><strong>${val}</strong></div>`;
     leaders.innerHTML=row("추월",bestPass,bestPass.match?.overtakes||0)+
@@ -3272,6 +3354,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
       row("선두",bestLead,`${((bestLead.match?.leadMs||0)/1000).toFixed(1)}초`)+
       row("상승",bestGain,`+${bestGain.match?.maxRankGain||0}`);
 
+    const dangerBox=document.getElementById("liveDanger");if(dangerBox)dangerBox.innerHTML=`<span>선두 주변 위험도</span><b>${playerDangerStatus(p1)}</b>`;
     raceBox.innerHTML=`<div><span>현재 선두</span><b>${p1.name}</b></div>
       <div><span>1↔2 격차</span><b>${gap==null?"--":gap.toFixed(2)+"초"}</b></div>
       <div><span>선두 예상기록</span><b>${eta==null?"--":eta.toFixed(2)+"초"}</b></div>
@@ -3279,8 +3362,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
 
     playerBox.innerHTML=ordered.slice(0,5).map((p,i)=>{
       const line=p.linePersonality>.45?"인코스":p.linePersonality<-.45?"안전/외곽":"균형";
-      const creative=Math.min(46,Math.round((p.creativeRouteUsed||0)*100));
-      return `<div class="live-player-stat"><span>${i+1}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><small>${line}</small><em>변칙 ${creative}% · 추월 ${p.match?.overtakes||0} · 충돌 ${p.match?.collisions||0}</em></div>`;
+      const creative=Math.min(55,Math.round((p.creativeRouteUsed||0)*100));
+      return `<div class="live-player-stat"><span>${i+1}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><small>${line}</small><em>${signatureOf(p).label} · NM ${p.match?.nearMisses||0} · 추월 ${p.match?.overtakes||0} · 충돌 ${p.match?.collisions||0}</em></div>`;
     }).join("");
   }
 
@@ -4377,6 +4460,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff);
     replaySpeed=Number(b.dataset.replaySpeed)||1;
   }));
   document.getElementById("resultBtn").addEventListener("click",showMatchResults);
+  document.getElementById("eloBtn").addEventListener("click",()=>{renderEloRanking();document.getElementById("eloPanel").classList.remove("hidden")});
+  document.getElementById("eloClose").addEventListener("click",()=>document.getElementById("eloPanel").classList.add("hidden"));
   document.getElementById("balanceBtn").addEventListener("click",openBalanceTest);
   document.querySelectorAll("[data-balance-count]").forEach(btn=>{
     btn.addEventListener("click",()=>{
