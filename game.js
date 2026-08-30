@@ -16,8 +16,18 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v31.1";
+  const BUILD_ID = "v32";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
+
+  const unitSprites={
+    1:{A:new Image(),B:new Image()},
+    2:{A:new Image(),B:new Image()},
+    3:{A:new Image(),B:new Image()}
+  };
+  unitSprites[1].A.src="scourge_a.png"; unitSprites[1].B.src="scourge_b.png";
+  unitSprites[2].A.src="scout_a.png";   unitSprites[2].B.src="scout_b.png";
+  unitSprites[3].A.src="wraith_a.png";  unitSprites[3].B.src="wraith_b.png";
+
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
   const PLAYER_HIT_RADIUS = 0.36;     // unchanged collision feel
@@ -389,17 +399,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   const OBS_GRID_SIZE = 22;
-  let observerGrid = new Map();
+  const OBS_GRID_COLS = Math.ceil(MAP_W/OBS_GRID_SIZE);
+  const OBS_GRID_ROWS = Math.ceil(MAP_H/OBS_GRID_SIZE);
+  const observerGrid = Array.from({length:OBS_GRID_COLS*OBS_GRID_ROWS},()=>[]);
 
   function rebuildObserverGrid(){
-    observerGrid.clear();
-    for(const o of observers){
-      const gx=Math.floor(o.x/OBS_GRID_SIZE);
-      const gy=Math.floor(o.y/OBS_GRID_SIZE);
-      const key=gx+","+gy;
-      let bucket=observerGrid.get(key);
-      if(!bucket){ bucket=[]; observerGrid.set(key,bucket); }
-      bucket.push(o);
+    for(let i=0;i<observerGrid.length;i++) observerGrid[i].length=0;
+    for(let i=0;i<observers.length;i++){
+      const o=observers[i];
+      let gx=Math.floor(o.x/OBS_GRID_SIZE);
+      let gy=Math.floor(o.y/OBS_GRID_SIZE);
+      if(gx<0) gx=0; else if(gx>=OBS_GRID_COLS) gx=OBS_GRID_COLS-1;
+      if(gy<0) gy=0; else if(gy>=OBS_GRID_ROWS) gy=OBS_GRID_ROWS-1;
+      observerGrid[gy*OBS_GRID_COLS+gx].push(o);
     }
   }
 
@@ -444,8 +456,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const maxY=Math.floor((y+r)/OBS_GRID_SIZE);
     for(let gx=minX;gx<=maxX;gx++){
       for(let gy=minY;gy<=maxY;gy++){
-        const bucket=observerGrid.get(gx+","+gy);
-        if(!bucket) continue;
+        if(gx<0||gy<0||gx>=OBS_GRID_COLS||gy>=OBS_GRID_ROWS) continue;
+        const bucket=observerGrid[gy*OBS_GRID_COLS+gx];
         for(let i=0;i<bucket.length;i++) out.push(bucket[i]);
       }
     }
@@ -1040,39 +1052,43 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   let lastRankingRender=0;
 
   function updateCamera(dt){
-    const active=[];
-    for(const p of players){
-      if(!p.done) active.push({p,prog:currentProgress(p)});
+    let top=null, topProg=-Infinity;
+    let held=null, heldProg=-Infinity;
+    let second=null, secondProg=-Infinity;
+
+    for(let i=0;i<players.length;i++){
+      const p=players[i];
+      if(p.done) continue;
+      const prog=currentProgress(p);
+      if(p.index===cameraLeaderId){ held=p; heldProg=prog; }
+      if(prog>topProg){
+        second=top; secondProg=topProg;
+        top=p; topProg=prog;
+      }else if(prog>secondProg){
+        second=p; secondProg=prog;
+      }
     }
-    active.sort((a,b)=>b.prog-a.prog);
-    if(!active.length) return;
+    if(!top) return;
 
     const now=performance.now();
-    const top=active[0].p;
-    let leader=top;
-    const heldEntry=active.find(e=>e.p.index===cameraLeaderId);
-    const held=heldEntry?heldEntry.p:null;
-
-    if(held && now<cameraLeaderHoldUntil){
-      const topProg=active[0].prog;
-      const gap=topProg-heldEntry.prog;
-      if(gap<8.0) leader=held;
+    let leader=top, leaderProg=topProg;
+    if(held && now<cameraLeaderHoldUntil && topProg-heldProg<8.0){
+      leader=held; leaderProg=heldProg;
     }
-    if(!held || leader===top && top.index!==cameraLeaderId){
+    if(!held || (leader===top && top.index!==cameraLeaderId)){
       cameraLeaderId=leader.index;
       cameraLeaderHoldUntil=now+1100;
     }
 
-    let tx=leader.x,ty=leader.y;
-    const secondEntry=active.find(e=>e.p!==leader);
-    const second=secondEntry?secondEntry.p:null;
-    if(second){
-      const leaderEntry=active.find(e=>e.p===leader);
-      const leaderProg=leaderEntry?leaderEntry.prog:currentProgress(leader);
-      if(Math.abs(leaderProg-secondEntry.prog)<1.6){
-      tx=leader.x*.94+second.x*.06;
-        ty=leader.y*.94+second.y*.06;
-      }
+    let tx=leader.x, ty=leader.y;
+    let followSecond=second;
+    let followSecondProg=secondProg;
+    if(leader!==top){
+      followSecond=top; followSecondProg=topProg;
+    }
+    if(followSecond && Math.abs(leaderProg-followSecondProg)<1.6){
+      tx=leader.x*.94+followSecond.x*.06;
+      ty=leader.y*.94+followSecond.y*.06;
     }
     const a=Math.min(0.085,dt*0.0028);
     camX+=(tx-camX)*a; camY+=(ty-camY)*a;
@@ -1143,12 +1159,13 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     lastTs=ts;
 
     updateObservers(ts,dt);
-    if((Math.floor(ts/16)%3)===0) rebuildObserverGrid();
+    if((Math.floor(ts/16)%4)===0) rebuildObserverGrid();
     for(const p of players) updatePlayer(p,ts,dt);
-    updateMatchRanks(dt);
     updateCamera(dt);
     render(ts);
     if(ts-lastRankingRender>=220){
+      const rankingDt=ts-lastRankingRender;
+      updateMatchRanks(rankingDt);
       renderRanking();
       lastRankingRender=ts;
     }
@@ -1204,18 +1221,20 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       ctx.globalAlpha=1;
     }
 
-    ctx.fillStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";
-    ctx.strokeStyle="#07111a";
-    ctx.lineWidth=3;
-    ctx.beginPath();
-    if(currentRound===1){
-      ctx.arc(0,0,r,0,Math.PI*2);
-    }else if(currentRound===2){
-      ctx.rect(-r,-r,r*2,r*2);
+    const sprite=unitSprites[currentRound]?.[p.team];
+    if(sprite && sprite.complete && sprite.naturalWidth){
+      const size=r*2.65;
+      ctx.save();
+      ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.60)" : "rgba(77,141,255,.60)";
+      ctx.shadowBlur=Math.max(4,r*.35);
+      ctx.drawImage(sprite,-size/2,-size/2,size,size);
+      ctx.restore();
     }else{
-      ctx.moveTo(0,-r*1.15);ctx.lineTo(r*1.05,r*.88);ctx.lineTo(-r*1.05,r*.88);ctx.closePath();
+      ctx.fillStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";
+      ctx.strokeStyle="#07111a";
+      ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
     }
-    ctx.fill();ctx.stroke();
 
     ctx.fillStyle="#07111a";
     ctx.font=`900 ${Math.max(12,r*.85)}px system-ui`;
@@ -1240,6 +1259,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     ctx.restore();
   }
 
+  const renderOrder=[];
+
   function render(ts){
     const W=canvas.width,H=canvas.height;
     ctx.clearRect(0,0,W,H);
@@ -1260,12 +1281,15 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       drawObserver(o,view);
     }
 
-    const ordered=players.map(p=>({p,prog:currentProgress(p)})).sort((a,b)=>b.prog-a.prog);
-    ordered.forEach((e,i)=>drawPlayer(e.p,view,i+1));
+    renderOrder.length=0;
+    for(let i=0;i<players.length;i++) renderOrder.push(players[i]);
+    renderOrder.sort((a,b)=>currentProgress(b)-currentProgress(a));
+    for(let i=0;i<renderOrder.length;i++) drawPlayer(renderOrder[i],view,i+1);
 
     const elapsed=raceStart ? Math.max(0,(ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
-    cameraLabel.textContent=`${BUILD_ID} · OBS ${observers.length} · 화면 ${visibleObs} · 300%`;
+    const unitName=currentRound===1?"SCOURGE":currentRound===2?"SCOUT":"WRAITH";
+    cameraLabel.textContent=`${BUILD_ID} · ${unitName} · OBS ${observers.length} · 화면 ${visibleObs} · 300%`;
   }
 
   let prevRanks=new Map();
