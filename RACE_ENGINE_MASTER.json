@@ -1,5 +1,5 @@
 {
-  "build": "v2.30",
+  "build": "v2.80",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -15,5 +15,6 @@
     "player_player_collision": false,
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
-  }
+  },
+  "notes": "5-round standings repair, team-score rebuild, tighter race spread, Korean ELO traits, simplified stats, OBS 550, HIT 0.36, aggressive optimized-inside/yellow priority, cropped map width 172, performance pass."
 }

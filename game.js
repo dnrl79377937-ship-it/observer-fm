@@ -17,13 +17,13 @@
   const startBtn = document.getElementById("startBtn");
   const restartBtn = document.getElementById("restartBtn");
 
-  const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 650;
+  const MAP_W = 172, MAP_H = 178;
+  const OBSERVER_COUNT = 550;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2300;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v2.63";
+  const BUILD_ID = "v2.80";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -39,7 +39,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.34;     // unchanged collision feel
+  const PLAYER_HIT_RADIUS = 0.36;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.50;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
   const OBS_SPEED_RATIO = 0.684;         // observer speed ≈ 90% of player speed
@@ -92,7 +92,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     attacker:{apex:1.06,safety:.91,pass:1.15,patience:.86,control:"backcon"},
     lineMaster:{apex:1.12,safety:1.02,pass:1.04,patience:1.03,control:"zigzag"},
     balanced:{apex:1,safety:1,pass:1,patience:1,control:"zigzag"},
-    controller:{apex:.98,safety:1.10,pass:.94,patience:1.10,control:"stopcon"},
+    controller:{apex:.98,safety:1.10,pass:.94,patience:1.10,control:"zigzag"},
     patient:{apex:.97,safety:1.08,pass:.96,patience:1.16,control:"wide"},
     opportunist:{apex:1.08,safety:.96,pass:1.10,patience:.94,control:"backcon"}
   };
@@ -206,7 +206,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         leaderChanges:r.leaderChanges||0,totalOvertakes:r.totalOvertakes||0,
         photoFinish:photoFinishArchive[r.round]?clonePlain(photoFinishArchive[r.round]):null,
         players:(r.players||[]).map(x=>({index:x.index,name:x.name,team:x.team,rank:x.rank,
-          points:x.points,timeMs:x.time,rating:x.rating,collisions:x.collisions,
+          points:x.points,timeMs:x.time,rating:x.rating,collisions:x.collisions,deathPoints:clonePlain(x.deathPoints||[]),
           overtakes:x.overtakes,avoids:x.avoids,leadMs:x.leadMs,
           controlAttempts:x.controlAttempts,controlSuccesses:x.controlSuccesses,
           controlByType:clonePlain(x.controlByType||{}),passPlans:clonePlain(x.passPlans||{}),
@@ -254,6 +254,29 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function teamLabel(team){ return team==="A" ? "A팀" : "B팀"; }
 
+  function rebuildTournamentStandings(){
+    const totals={A:0,B:0};
+    const rebuilt={};
+    names.forEach((name,i)=>{
+      rebuilt[i]={name,team:teamAssignments[i]||"A",total:0,rounds:[]};
+    });
+    for(const r of roundHistory){
+      totals.A+=Number(r.team?.A||0);
+      totals.B+=Number(r.team?.B||0);
+      for(const x of (r.players||[])){
+        const row=rebuilt[x.index];
+        if(!row) continue;
+        row.team=x.team;
+        row.total+=Number(x.points||0);
+        row.rounds.push({
+          round:r.round,rank:x.rank,points:x.points,time:x.time,rating:x.rating||0
+        });
+      }
+    }
+    teamTotals=totals;
+    playerTournament=rebuilt;
+  }
+
 
   function safeAt(x,y){
     return (
@@ -271,13 +294,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const paceNorm=(pf.pace-90)/10;
       const consistency=(stats.consistency-72)/27;
       const luck=(stats.luck-72)/27;
-      const formSpread=.055-consistency*.022;
+      const formSpread=.030-consistency*.012;
       const formRoll=(Math.random()+Math.random()+Math.random()-1.5)/1.5;
-      const raceForm=Math.max(.955,Math.min(1.045,1+formRoll*formSpread+(luck-.5)*.006));
+      const raceForm=Math.max(.978,Math.min(1.022,1+formRoll*formSpread+(luck-.5)*.004));
       // v2.55: survival-minded racers trade distance for safety.
       const survivalNorm=Math.max(0,Math.min(1,
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
-      const wideDetourRace=Math.random()<.13;
+      const wideDetourRace=Math.random()<.07;
       const wideDetourSide=Math.random()<.5?-1:1;
       return {
         index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
@@ -373,6 +396,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         startLaunchUntil:0,
         startReactionMs:0,
         startExecution:1,
+        livePressure:0,
+        newPB:false,
+        newMapRecord:false,
         clutchDecisionUntil:0,
         clutchLineOffset:0,
         clutchSpeedMul:1,
@@ -387,6 +413,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         match:{
           collisions:0,stops:0,avoids:0,overtakes:0,leadMs:0,
           nearMisses:0,extremeNearMisses:0,lastNearMissAt:0,dangerExposureMs:0,
+          deathPoints:[],
           controlAttempts:0,controlSuccesses:0,
           controlByType:{
             zigzag:{attempts:0,successes:0},
@@ -511,6 +538,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     render(0);
     renderRanking();
     renderTeamScore();
+    renderRecordBoard();
   }
 
   function reset(){
@@ -593,11 +621,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const consistency=(p.stats.consistency-72)/27;
         const skill=(start*.34+reaction*.25+accel*.16+focus*.13+pressure*.12);
 
-        // Reaction delay is small (tens of milliseconds) but visible in close starts.
-        // Better reaction/focus/start stats reduce it; consistency narrows the random swing.
-        const reactionNoise=(Math.random()-.5)*(34-consistency*12);
-        p.startReactionMs=Math.max(18,Math.min(115,
-          94-reaction*30-focus*18-start*13-pressure*7+reactionNoise-(p.raceForm-1)*90));
+        // v2.7 explicit start reaction: 0.045–0.220 s.
+        const reactionNoise=(Math.random()-.5)*(46-consistency*14);
+        p.startReactionMs=Math.max(45,Math.min(220,
+          186-reaction*42-focus*28-start*30-pressure*16+reactionNoise-(p.raceForm-1)*110));
         p.startExecution=Math.max(.965,Math.min(1.035,
           .985+skill*.043+(p.raceForm-1)*.18+(Math.random()-.5)*(.014-consistency*.004)));
 
@@ -628,9 +655,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const id=identityOf(p);
     if(id.control && w[id.control]!=null && id.control!=="stopcon") w[id.control]*=1.16;
     // v2.51: stopcon is an emergency last resort only.
-    w.stopcon*=.035;
-    w.zigzag*=1.22;
-    w.backcon*=1.28;
+    w.stopcon*=.006;
+    w.zigzag*=1.42;
+    w.backcon*=1.08;
     return w;
   }
 
@@ -753,8 +780,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         }
         const sideEscapeOpen=Math.min(leftBlock,rightBlock)===0;
         const r=Math.random();
-        const backLimit=sideEscapeOpen?.125:.235;
-        if(r<.002){
+        const backLimit=sideEscapeOpen?.075:.165;
+        if(r<.00025){
           beginControl(p,"stopcon",now,80+Math.random()*70,true,immediate.id);
           p.reactiveControlCooldown=3200+Math.random()*2700;
         }else if(r<backLimit){
@@ -771,7 +798,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(nearAhead){
         const zigChance=Math.min(.92,.62+reaction*.10+prediction*.10+pressure*.05);
         if(Math.random()<zigChance){
-          const nearMode=Math.random()<.804?"zigzag":"backcon";
+          const nearMode=Math.random()<.89?"zigzag":"backcon";
           beginControl(p,nearMode,now,310+Math.random()*260,true,nearAhead.id,
             nearMode==="backcon"?"tap":null);
           p.reactiveControlCooldown=1500+Math.random()*1900;return;
@@ -784,7 +811,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(nearAhead && p.controlMode==="normal"&&p.controlCooldown<=0){
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
       // v2.53: nearby-but-not-urgent movement strongly favors zigzag; backcon is rare.
-      const mode=Math.random()<.972?"zigzag":"backcon";
+      const mode=Math.random()<.986?"zigzag":"backcon";
       let duration=mode==="backcon"?290+Math.random()*150:300+Math.random()*220;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -830,14 +857,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const deepHalf=Math.max(normalHalf,widths[si]*(1.16+skill*.070));
     if(p.wideDetourRace){
       // 8% race choice: reject the fastest hidden line, but take only a moderately wider path.
-      return off*.42 + (-side)*normalHalf*.68;
+      return off*.50 + (-side)*normalHalf*.56;
     }
     // v2.55: deep inside remains the primary fast line, but survival specialists
     // sacrifice some apex depth for extra observer clearance.
     const survival=p.survivalNorm||0;
-    const clearCommit=Math.max(.88,Math.min(.998,
-      .982+skill*.018+(p.linePersonality||0)*.016-survival*.10+(p.cleanConfidence||0)*.040));
-    const dangerFade=localDanger>=8?.50:localDanger>=5?.75:localDanger>=2?.94:1;
+    const clearCommit=Math.max(.975,Math.min(.9995,
+      .995+skill*.006+(p.linePersonality||0)*.006-survival*.025+(p.cleanConfidence||0)*.018));
+    const dangerFade=localDanger>=8?.62:localDanger>=5?.84:localDanger>=2?.975:1;
     const commit=clearCommit*dangerFade;
     return off*(1-commit)+(side*deepHalf)*commit;
   }
@@ -847,7 +874,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // It is checked independently from generic line personality so other route
     // variety logic cannot casually wash it out. Real observer danger still overrides later.
     const side=specialInsideSide(si);
-    if(!side || p.wideDetourRace) return baseOff;
+    if(!side) return baseOff;
     const local=playerNearbyObservers(p,13.5);
     let frontDanger=0;
     const s=segs[Math.min(si,segs.length-1)];
@@ -858,24 +885,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     const skill=Math.max(0,Math.min(1,
       (((p.stats.insideLine+p.stats.routeReading+p.stats.cornering)/3)-72)/27));
-    const safeEnough=frontDanger===0 || (frontDanger===1 && skill>.66);
+    const safeEnough=frontDanger<=1 || (frontDanger===2 && skill>.76);
     if(now<p.yellowPriorityUntil && safeEnough) return p.yellowPriorityOffset;
     if(!safeEnough) return baseOff;
 
     const deep=specialInsideTarget(p,si,now,baseOff);
-    const commit=Math.min(.97,.82+skill*.10+(p.cleanConfidence||0)*.05);
+    const commit=Math.min(.999,.965+skill*.025+(p.cleanConfidence||0)*.018);
     p.yellowPriorityOffset=baseOff*(1-commit)+deep*commit;
-    p.yellowPriorityUntil=now+360+Math.random()*240;
+    p.yellowPriorityUntil=now+760+Math.random()*420;
     return p.yellowPriorityOffset;
   }
 
 
   function clampSpecialRoadOffset(si,lateral,p=null){
-    const detourBoost=p&&p.wideDetourRace?1.045:1;
+    const detourBoost=p&&p.wideDetourRace?1.025:1;
     const normalHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*detourBoost);
     const side=specialInsideSide(si);
     if(!side) return Math.max(-normalHalf,Math.min(normalHalf,lateral));
-    const specialHalf=Math.max(normalHalf,widths[si]*1.27);
+    const specialHalf=Math.max(normalHalf,widths[si]*1.34);
     const lo=side<0?-specialHalf:-normalHalf;
     const hi=side>0? specialHalf: normalHalf;
     return Math.max(lo,Math.min(hi,lateral));
@@ -925,7 +952,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
-  const OBS_GRID_SIZE = 19;
+  const OBS_GRID_SIZE = 17;
   const OBS_GRID_COLS = Math.ceil(MAP_W/OBS_GRID_SIZE);
   const OBS_GRID_ROWS = Math.ceil(MAP_H/OBS_GRID_SIZE);
   const observerGrid = Array.from({length:OBS_GRID_COLS*OBS_GRID_ROWS},()=>[]);
@@ -947,7 +974,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const threatObserverBuffers = Array.from({length:8},()=>[]);
   const threatDistanceBuffers = Array.from({length:8},()=>[]);
 
-  function nearestThreats(raw,p,limit=8){
+  function nearestThreats(raw,p,limit=6){
     const obs=threatObserverBuffers[p.index];
     const ds=threatDistanceBuffers[p.index];
     obs.length=0; ds.length=0;
@@ -992,17 +1019,40 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return out;
   }
 
-  // v2.62 performance: one broad observer-grid scan per player/simulation step.
-  // All narrower player queries reuse that snapshot instead of rescanning grid buckets.
+  // v2.7 performance: clustered racers share one broad observer-grid lookup.
   let playerNearbyFrameSerial=0;
-  const playerNearbyFrameCache=Array.from({length:8},()=>({frame:-1,broad:[],ranges:Object.create(null)}));
+  const playerNearbyFrameCache=Array.from({length:8},()=>({frame:-1,cellKey:"",broad:[],ranges:Object.create(null)}));
+  let sharedNearbyFrame=-1;
+  const sharedNearbyCells=new Map();
+
   function playerNearbyObservers(p,r){
+    if(sharedNearbyFrame!==playerNearbyFrameSerial){
+      sharedNearbyFrame=playerNearbyFrameSerial;
+      sharedNearbyCells.clear();
+    }
+    const gx=Math.max(0,Math.min(OBS_GRID_COLS-1,Math.floor(p.x/OBS_GRID_SIZE)));
+    const gy=Math.max(0,Math.min(OBS_GRID_ROWS-1,Math.floor(p.y/OBS_GRID_SIZE)));
+    const cellKey=gx+":"+gy;
+    let shared=sharedNearbyCells.get(cellKey);
+    if(!shared){
+      const cx=(gx+.5)*OBS_GRID_SIZE, cy=(gy+.5)*OBS_GRID_SIZE;
+      const rr=AVOID_SCAN_RADIUS+OBS_GRID_SIZE*.76;
+      const raw=nearbyObservers(cx,cy,rr);
+      shared=[];
+      for(let i=0;i<raw.length;i++) shared.push(raw[i]);
+      sharedNearbyCells.set(cellKey,shared);
+    }
     const cache=playerNearbyFrameCache[p.index];
-    if(cache.frame!==playerNearbyFrameSerial){
+    if(cache.frame!==playerNearbyFrameSerial || cache.cellKey!==cellKey){
       cache.frame=playerNearbyFrameSerial;
-      const broad=nearbyObservers(p.x,p.y,AVOID_SCAN_RADIUS);
+      cache.cellKey=cellKey;
       cache.broad.length=0;
-      for(let i=0;i<broad.length;i++) cache.broad.push(broad[i]);
+      cache.ranges=Object.create(null);
+      const broadR2=AVOID_SCAN_RADIUS*AVOID_SCAN_RADIUS;
+      for(let i=0;i<shared.length;i++){
+        const o=shared[i],dx=o.x-p.x,dy=o.y-p.y;
+        if(dx*dx+dy*dy<=broadR2) cache.broad.push(o);
+      }
     }
     if(r>=AVOID_SCAN_RADIUS-.001) return cache.broad;
     const key=String(r);
@@ -1016,37 +1066,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     return arr;
   }
-
-
-  function predictedObserverX(o,t){
-    const vx=o.phase==="move" ? (o.vx||0) : 0;
-    return Math.max(2.5,Math.min(MAP_W-2.5,o.x+vx*t));
-  }
-
-  function predictedObserverY(o,t){
-    const vy=o.phase==="move" ? (o.vy||0) : 0;
-    return Math.max(2.5,Math.min(MAP_H-2.5,o.y+vy*t));
-  }
-
-  const OBS_PRED_X = AVOID_HORIZONS.map(()=>new Float32Array(OBSERVER_COUNT));
-  const OBS_PRED_Y = AVOID_HORIZONS.map(()=>new Float32Array(OBSERVER_COUNT));
-
-  function precomputeObserverPredictions(){
-    for(let hi=0;hi<AVOID_HORIZONS.length;hi++){
-      const t=AVOID_HORIZONS[hi];
-      const px=OBS_PRED_X[hi], py=OBS_PRED_Y[hi];
-      for(let i=0;i<observers.length;i++){
-        const o=observers[i];
-        const vx=o.phase==="move" ? (o.vx||0) : 0;
-        const vy=o.phase==="move" ? (o.vy||0) : 0;
-        let x=o.x+vx*t, y=o.y+vy*t;
-        if(x<2.5) x=2.5; else if(x>MAP_W-2.5) x=MAP_W-2.5;
-        if(y<2.5) y=2.5; else if(y>MAP_H-2.5) y=MAP_H-2.5;
-        px[i]=x; py[i]=y;
-      }
-    }
-  }
-
 
   function escapeCorridorBias(p,s,nearby){
     // Look at several threats as one obstacle field instead of dodging only the
@@ -1218,7 +1237,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
         // v2.53: moving observers get extra safety margin. A stopped observer is
         // predictable, so the racer is allowed to cut slightly closer to it.
-        const motionRisk=o.phase==="move" ? 1.18 : .84;
+        const phaseRemain=Math.max(0,((o.phaseUntil||observerPredictionNow)-observerPredictionNow)/1000);
+        const motionRisk=o.phase==="move"
+          ? (phaseRemain<.70 ? .94 : 1.18)
+          : (phaseRemain<.38 ? 1.34 : .82);
         if(d2<4.0) danger += (4.0-d2)*118*motionRisk;
         else if(d2<16.0) danger += (16.0-d2)*12.4*motionRisk;
         else if(d2<49.0) danger += (49.0-d2)*0.80*motionRisk;
@@ -1293,7 +1315,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Keep only the closest relevant threats in the expensive prediction matrix.
     // 660 observers remain simulated/rendered, but distant ones no longer multiply
     // avoidance cost for every racer.
-    const nearby=nearestThreats(nearbyRaw,p,7);
+    const nearby=nearestThreats(nearbyRaw,p,6);
     const predictionNorm=(p.stats.prediction-72)/27;
     const corridorBias=escapeCorridorBias(p,s,nearby);
     const clusterPlan=observerClusterPlan(p,s,nearby);
@@ -1427,28 +1449,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
     }
 
-    // Compare against stopping, but impose a substantial time-loss penalty so
-    // the racer stops only when moving choices are genuinely unsafe.
-    const stopRisk=candidateAvoidanceRisk(p,s,p.desiredOffset,0,nearby);
-    const stopCandidate={
-      mode:"stop",
-      targetOff:p.desiredOffset,
-      speedMul:0,
-      // v2.26: stopping is the last resort. Recent stop usage raises its cost,
-      // reducing stop-go-stop loops when a moving corridor exists.
-      score:stopRisk.score + 28.0 + (p.tacticalRisk||0)*16.0
-        + (p.drivingStyle.attack-1)*18
-        - (p.drivingStyle.safety-1)*12
-        + ((p.stats.braking-85)/14)*-1.8
-        + ((p.match.stops||0)>0 ? Math.min(6,p.match.stops*1.1) : 0),
-      minClear:stopRisk.minClear
-    };
-
+    // v2.7 moving-avoidance only: the generic planner must never create an
+    // unexplained full stop. Full stopping is reserved for the extremely rare
+    // explicit stopcon or a real observer collision.
     const riskClearance=Math.max(.98,1.15-(p.tacticalRisk||0)*.22+(p.survivalNorm||0)*.24);
-    const movingUnsafe=!best || best.minClear<riskClearance || best.score>275;
-    if(movingUnsafe && (!best || stopCandidate.score<best.score*.82)){
-      best=stopCandidate;
+    if(!best){
+      best={mode:"planned",targetOff:p.desiredOffset,speedMul:.82,score:999,minClear:0};
     }
+    if(best.speedMul<=0) best.speedMul=.72;
 
     // No meaningful danger: don't disturb the optimal racing line.
     if(best && best.minClear>8.8 && best.score<8.0 && nearest>10.5){
@@ -1488,7 +1496,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     p.avoidPlanSpeedMul=best.speedMul;
     p.avoidPlanRisk=best.score;
     p.match.avoids++;
-    if(best.mode==="stop") p.match.stops++;
     const clusterHold=clusterPlan.confidence>.30 ? 120+clusterPlan.confidence*170 : 0;
     p.avoidPlanUntil=now+(emergency
       ? Math.max(185,265-(react-85)*4)+Math.random()*65
@@ -1496,6 +1503,40 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return best;
   }
 
+
+
+  function racerPressureLevel(p){
+    if(!p || p.done) return 0;
+    const my=currentProgress(p);
+    let nearest=999;
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done) continue;
+      const gap=Math.abs(currentProgress(q)-my);
+      if(gap<nearest) nearest=gap;
+    }
+    return Math.max(0,Math.min(1,(5.0-nearest)/4.6));
+  }
+
+  function pressureLineAdjustment(p,si,now,baseOff){
+    const pressureLevel=racerPressureLevel(p);
+    p.livePressure=pressureLevel;
+    if(pressureLevel<=.02) return baseOff;
+    const pressureSkill=(p.stats.pressure-72)/27;
+    const focus=(p.stats.focus-72)/27;
+    const consistency=(p.stats.consistency-72)/27;
+    const aggression=(p.stats.aggression-72)/27;
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
+    const composure=Math.max(0,Math.min(1,pressureSkill*.48+focus*.32+consistency*.20));
+    const wobble=pressureLevel*(1-composure)*half*.055;
+    let off=baseOff+Math.sin(now*.0063+p.index*1.71)*wobble;
+    const side=cornerInsideSide(si)||Math.sign(futureInsideBias(si));
+    if(side && composure>.60 && aggression>.55){
+      const attack=pressureLevel*(.025+.035*aggression);
+      off=off*(1-attack)+(side*half*.96)*attack;
+    }
+    return off;
+  }
 
   function liveRaceSituation(p){
     const my=currentProgress(p);
@@ -1856,6 +1897,31 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {target:0,weight:0,seq};
   }
 
+
+  function linkedCornerTarget(p,si,baseOff){
+    const seq=racingCornerSequence(si);
+    if(seq.currentSide===0 || seq.nextSide===0 || seq.nextIndex<0) return baseOff;
+    const s=segs[Math.min(si,segs.length-1)];
+    const along=Math.max(0,Math.min(s.L,(p.x-s.a[0])*s.ux+(p.y-s.a[1])*s.uy));
+    const phase=s.L?along/s.L:1;
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+    const read=(p.stats.routeReading-72)/27;
+    const corner=(p.stats.cornering-72)/27;
+    const inside=(p.stats.insideLine-72)/27;
+    const skill=Math.max(0,Math.min(1,(read+corner+inside)/3));
+    if(seq.currentSide===seq.nextSide){
+      const linked=seq.currentSide*half*Math.min(.997,.91+skill*.075);
+      const w=phase>.45 ? (.34+.28*skill) : (.16+.15*skill);
+      return baseOff*(1-w)+linked*w;
+    }
+    if(phase>.54){
+      const prep=-seq.nextSide*half*(.48+.26*skill);
+      const w=Math.min(.62,.24+(phase-.54)*.72+.18*skill);
+      return baseOff*(1-w)+prep*w;
+    }
+    return baseOff;
+  }
+
   function creativeRouteAdjustment(p,si,now,baseOff){
     const progress=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
@@ -1893,7 +1959,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(p.creativeMode===4){
         // v2.51: old creative stop is replaced by a moving escape.
         if(danger>=3 && p.controlMode==="normal" && now>=p.controlCooldown){
-          beginControl(p,Math.random()<.944?"zigzag":"backcon",now,260+Math.random()*220,true,-1);
+          beginControl(p,Math.random()<.972?"zigzag":"backcon",now,260+Math.random()*220,true,-1);
           p.controlCooldown=now+1200+Math.random()*1100;
         }
         return baseOff*.88;
@@ -2090,7 +2156,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(p.wideDetourRace){
       // v2.60: 8% detour is intentionally sub-optimal, but no longer an extreme wall-hugging lap.
       const outer=inside!==0?-inside:(p.wideDetourSide||1);
-      off=off*.40 + outer*half*.70;
+      off=off*.48 + outer*half*.58;
     }else if(survival>.12){
       const outer=inside!==0?-inside:(p.wideDetourSide||1);
       const safetyWide=Math.max(0,(survival-.12)/.88);
@@ -2357,11 +2423,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*.38+clutchPlan.off*.62;
     }
 
+    targetOff=linkedCornerTarget(p,si,targetOff);
     targetOff=tacticalSituationOffset(p,si,now,targetOff);
     targetOff=tacticalVariantOffset(p,si,now,targetOff);
     targetOff=stabilizeDrivingLine(p,si,targetOff);
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
+    targetOff=pressureLineAdjustment(p,si,now,targetOff);
     targetOff=specialInsideTarget(p,si,now,targetOff);
     targetOff=yellowRoadPriorityTarget(p,si,now,targetOff);
 
@@ -2379,10 +2447,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const avoid=chooseAvoidance(p,s,now);
     if(avoid){
       if(avoid.mode==="stop"){
-        speedMul=0;
+        speedMul*=.72;
       }else{
-        const urgency=Math.max(0,Math.min(1,(80-(avoid.risk||0))/80));
-        targetOff=targetOff*0.12+avoid.targetOff*0.88;
+        const yellowActive=now<(p.yellowPriorityUntil||0) && specialInsideSide(si)!==0;
+        const emergency=(avoid.minClear||99)<1.15 || (avoid.risk||0)>155;
+        if(yellowActive && !emergency){
+          // v2.80: normal avoidance may bend the optimized inside line, but it
+          // no longer completely erases it. Only a real danger can force exit.
+          targetOff=p.yellowPriorityOffset*.72+avoid.targetOff*.28;
+        }else{
+          targetOff=targetOff*.12+avoid.targetOff*.88;
+        }
         speedMul*=avoid.speedMul;
       }
     }
@@ -2454,8 +2529,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
 targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const steerControl=(p.stats.control-72)/27;
+    // v2.7 anti-freeze: outside collision / explicit backcon / explicit stopcon,
+    // every active racer keeps meaningful forward motion.
+    if(now>=p.stunUntil && p.controlMode!=="stopcon" && p.controlMode!=="backcon" && speedMul<.62){
+      speedMul=.62;
+    }
+
     const steerTurn=cornerIntensity(si);
-    const steerEase=Math.min(.082,dt*(.00245+steerControl*.00055+steerTurn*.00045));
+    const yellowSteerBoost=(now<(p.yellowPriorityUntil||0) && specialInsideSide(si)!==0)?1.38:1;
+    const steerEase=Math.min(.105,dt*(.00245+steerControl*.00055+steerTurn*.00045)*yellowSteerBoost);
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
@@ -2498,7 +2580,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       p.continuousRunMs=0;
     }
     const runFactor=Math.max(0,Math.min(1,(p.continuousRunMs||0)/2600));
-    p.continuousRunMul=1+runFactor*.07;
+    p.continuousRunMul=1+runFactor*.05;
     if(speedMul>0) speedMul*=p.continuousRunMul;
 
     const step=p.speed*speedMul*dt/1000;
@@ -2566,6 +2648,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       }
       const preciseNow=now-dt*(1-crossFrac);
       p.finishTime=Math.max(0,preciseNow-raceStart);
+      registerFinishRecord(p,p.finishTime);
       const finished=players.filter(q=>q.done&&q.finishTime!=null).sort((a,b)=>a.finishTime-b.finishTime);
       if(finished.length===1)setBroadcastStory(`finish-${p.index}`,"FINISH",`${p.name} 1위 확정`,formatTime(p.finishTime),now,2400);
       else if(finished.length===2){
@@ -2598,6 +2681,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.match.collisions++;
+          p.match.deathPoints.push({
+            round:currentRound,
+            t:Math.max(0,now-raceStart),
+            progressPct:+(100*Math.max(0,Math.min(1,currentProgress(p)/routeLength))).toFixed(1),
+            x:+p.x.toFixed(2),y:+p.y.toFixed(2)
+          });
           p.cleanConfidenceMs=0;
           p.cleanConfidence=0;
           p.continuousRunMs=0;
@@ -2823,6 +2912,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       result.players.push({
         index:p.index,name:p.name,team,rank:idx+1,points:pts,time:p.finishTime,
         collisions:p.match.collisions||0,
+        deathPoints:(p.match.deathPoints||[]).map(d=>({...d})),
         overtakes:p.match.overtakes||0,
         avoids:p.match.avoids||0,nearMisses:p.match.nearMisses||0,extremeNearMisses:p.match.extremeNearMisses||0,dangerExposureMs:p.match.dangerExposureMs||0,
         leadMs:p.match.leadMs||0,
@@ -2894,6 +2984,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     }
 
     roundHistory.push(result);
+    rebuildTournamentStandings();
     recordLiveBalanceRound(result);
     renderTeamScore();
 
@@ -2916,6 +3007,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   function renderTeamScore(){
     const el=document.getElementById("teamScoreBoard");
     if(!el) return;
+    if(roundHistory.length) rebuildTournamentStandings();
     el.innerHTML=`<div class="team-score team-a"><b>A팀</b><span>${teamTotals.A}점</span></div>
       <div class="round-badge">${currentRound} / 5 ROUND</div>
       <div class="team-score team-b"><b>B팀</b><span>${teamTotals.B}점</span></div>`;
@@ -2966,9 +3058,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
 
   function captureReplayFrame(now){
-    if(!raceStart || now-replayLastCapture<100) return; // 10 fps replay data
+    if(!raceStart || now-replayLastCapture<120) return; // ~8.3 fps replay data
     replayLastCapture=now;
-    if(replayFrames.length>=1200) return;
+    if(replayFrames.length>=900) return;
     replayFrames.push({
       t:Math.max(0,now-raceStart),
       p:players.map(p=>[+p.x.toFixed(2),+p.y.toFixed(2),p.done?1:0,currentProgress(p)]),
@@ -3046,7 +3138,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(!replayPlaying) return;
     if(!replayLastTs) replayLastTs=ts;
     const dt=ts-replayLastTs; replayLastTs=ts;
-    setReplayCursor(replayCursor+dt*replaySpeed);
+    replaySpeed=1; setReplayCursor(replayCursor+dt);
     if(replayCursor>=replayDuration()){
       replayPlaying=false;
       const b=document.getElementById("replayPlay");
@@ -3077,7 +3169,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         const h=markers[Number(b.dataset.hi)];
         b.addEventListener("click",()=>{
           replayFocusId=h.playerId??-1;
-          replaySpeed=h.type==="PHOTO_FINISH"?.5:1;
+          replaySpeed=1;
           setReplayCursor(Math.max(0,h.t-1400));
         });
       });
@@ -3105,7 +3197,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       }));
     }
     renderReplayHighlights();
-    if(slow) replaySpeed=.5;
+    replaySpeed=1;
     setReplayCursor(seekMs==null?0:seekMs);
     panel.classList.remove("hidden");
   }
@@ -3115,12 +3207,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     playerNearbyFrameSerial++;
     simTickCounter++;
 
-    // v2.07: deterministic 10Hz observer lookup/prediction refresh.
+    // v2.7: deterministic ~7.1Hz observer lookup/prediction refresh.
     // Explicit ticks avoid duplicate refreshes caused by timestamp rounding.
-    if(simTickCounter>=5){
+    if(simTickCounter>=7){
       simTickCounter=0;
       rebuildObserverGrid();
-      precomputeObserverPredictions();
+      precomputeObserverPredictions(now);
     }
 
     for(let i=0;i<players.length;i++) updatePlayer(players[i],now,dt);
@@ -3306,24 +3398,15 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       const grayUntil=Math.max(p.hitGrayUntil||0,p.stunUntil||0);
       const grayLeft=Math.max(0,grayUntil-now);
       if(grayLeft>0){
-        // v2.61: collision stun is ALWAYS rendered as deep gray.
-        // Use both filter + source-atop tint so browsers that inconsistently apply
-        // canvas filters still show the actual unit in dark gray for the full stun.
-        ctx.filter="grayscale(100%) saturate(0%) brightness(48%) contrast(118%)";
-        ctx.shadowColor="rgba(55,55,55,.90)";
+        // v2.7: gray the actual sprite only; never draw a gray rectangle.
+        ctx.filter="grayscale(100%) saturate(0%) brightness(42%) contrast(120%)";
+        ctx.shadowColor="rgba(45,45,45,.92)";
       }else{
         ctx.filter="none";
         ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : "rgba(77,141,255,.45)";
       }
       ctx.shadowBlur=Math.max(3,r*.28);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
-      if(grayLeft>0){
-        ctx.filter="none";
-        ctx.globalCompositeOperation="source-atop";
-        ctx.fillStyle="rgba(48,48,48,.68)";
-        ctx.fillRect(-size/2,-size/2,size,size);
-        ctx.globalCompositeOperation="source-over";
-      }
       ctx.filter="none";
       ctx.restore();
     }else{
@@ -3363,18 +3446,23 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
   const renderOrder=[];
 
+  const MINI_CROP={x:4,y:12,w:168,h:164};
   function renderMiniMap(){
     const mc=document.getElementById("miniMap");
     if(!mc||!map.complete)return;
     const mx=mc.getContext("2d"),W=mc.width,H=mc.height;
     mx.clearRect(0,0,W,H);
-    mx.globalAlpha=.72;mx.drawImage(map,0,0,W,H);mx.globalAlpha=1;
-    const sx=W/MAP_W,sy=H/MAP_H;
+    mx.globalAlpha=.78;
+    mx.drawImage(map,MINI_CROP.x,MINI_CROP.y,MINI_CROP.w,MINI_CROP.h,0,0,W,H);
+    mx.globalAlpha=1;
+    const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
     for(let i=0;i<players.length;i++){
       const p=players[i];
-      mx.beginPath();mx.arc(p.x*sx,p.y*sy,2.7,0,Math.PI*2);
+      const x=(p.x-MINI_CROP.x)*sx,y=(p.y-MINI_CROP.y)*sy;
+      if(x<0||y<0||x>W||y>H) continue;
+      mx.beginPath();mx.arc(x,y,2.45,0,Math.PI*2);
       mx.fillStyle=p.color;mx.fill();
-      mx.lineWidth=.8;mx.strokeStyle="rgba(0,0,0,.9)";mx.stroke();
+      mx.lineWidth=.75;mx.strokeStyle="rgba(0,0,0,.92)";mx.stroke();
     }
   }
 
@@ -3400,6 +3488,45 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     clockEl.textContent=formatTime(elapsed);
     lastVisibleObs=visibleObs;
     renderMiniMap();
+  }
+
+  const RECORD_KEY="observerFM_v27_records";
+
+  function blankRecordBook(){
+    const playersRec={}; for(const n of names) playersRec[n]=null;
+    return {map:null,mapName:"",players:playersRec};
+  }
+  function loadRecordBook(){
+    try{
+      const raw=JSON.parse(localStorage.getItem(RECORD_KEY)||"null")||blankRecordBook();
+      const base=blankRecordBook();
+      base.map=Number.isFinite(raw.map)?raw.map:null;
+      base.mapName=raw.mapName||"";
+      for(const n of names){
+        const v=raw.players&&raw.players[n];
+        base.players[n]=Number.isFinite(v)?v:null;
+      }
+      return base;
+    }catch(e){ return blankRecordBook(); }
+  }
+  function saveRecordBook(book){try{localStorage.setItem(RECORD_KEY,JSON.stringify(book));}catch(e){}}
+  function registerFinishRecord(p,timeMs){
+    const book=loadRecordBook();
+    const oldPB=book.players[p.name];
+    p.newPB=oldPB==null || timeMs<oldPB;
+    if(p.newPB) book.players[p.name]=timeMs;
+    p.newMapRecord=book.map==null || timeMs<book.map;
+    if(p.newMapRecord){book.map=timeMs;book.mapName=p.name;}
+    saveRecordBook(book);
+    renderRecordBoard();
+  }
+  function renderRecordBoard(){
+    const el=document.getElementById("recordBoard"); if(!el)return;
+    const book=loadRecordBook();
+    const leader=[...players].sort((a,b)=>currentProgress(b)-currentProgress(a))[0];
+    const leaderPB=leader?book.players[leader.name]:null;
+    el.innerHTML=`<div><span>MAP RECORD</span><b>${book.map==null?"--":formatTime(book.map)}</b><small>${book.mapName||""}</small></div>
+      <div><span>선두 PB</span><b>${leaderPB==null?"--":formatTime(leaderPB)}</b><small>${leader?leader.name:""}</small></div>`;
   }
 
   let prevRanks=new Map();
@@ -3428,7 +3555,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   function recordSeasonResults(){if(seasonRecorded||roundHistory.length<5)return;const season=loadSeason();for(const round of roundHistory)for(const x of round.players){const s=season[x.name]||blankSeasonRow();s.starts++;s.totalRank+=x.rank;s.finishes++;if(x.rank===1)s.wins++;if(x.rank<=3)s.top3++;s.totalTime+=x.time||0;s.bestTime=s.bestTime==null?x.time:Math.min(s.bestTime,x.time);s.collisions+=x.collisions||0;if(!x.collisions)s.cleanRaces++;s.avoids+=x.avoids||0;s.overtakes+=x.overtakes||0;s.leadMs+=x.leadMs||0;s.distance+=x.distance||0;s.nearMisses+=x.nearMisses||0;s.extremeNearMisses+=x.extremeNearMisses||0;s.dangerExposureMs+=x.dangerExposureMs||0;s.totalRating+=x.rating||0;season[x.name]=s;}saveSeason(season);seasonRecorded=true;renderEloRanking();}
 
   function eloMetrics(s){const n=Math.max(1,s.starts||0),avgRank=(s.totalRank||0)/n,rankPower=(8-avgRank)/7,winRate=(s.wins||0)/n,top3Rate=(s.top3||0)/n,avgRating=(s.totalRating||0)/n,avoid=(s.avoids||0)/Math.max(1,(s.avoids||0)+(s.collisions||0)),nm=Math.min(1,(s.nearMisses||0)/(n*8)),ov=Math.min(1,(s.overtakes||0)/(n*4)),clean=(s.cleanRaces||0)/n,lead=Math.min(1,(s.leadMs||0)/(n*18000));const power=rankPower*.55+(winRate*.55+top3Rate*.45)*.14+Math.max(0,Math.min(1,(avgRating-4)/6))*.09+(avoid*.68+nm*.32)*.09+ov*.05+clean*.05+lead*.03;return{avgRank,winRate,top3Rate,avgRating,avoid,elo:Math.round(1000+power*1000)}}
-  function renderEloRanking(){const box=document.getElementById("eloRankingList");if(!box)return;const s=loadSeason(),rows=names.map(name=>({name,s:s[name],m:eloMetrics(s[name])})).sort((a,b)=>b.m.elo-a.m.elo||a.m.avgRank-b.m.avgRank);box.innerHTML=rows.map((r,i)=>`<div class="elo-row"><div class="elo-rank">${i+1}</div><div class="elo-name"><b>${r.name}</b><small>${signatureMoves[drivingStyles[names.indexOf(r.name)].style].label}</small></div><div class="elo-score">${r.m.elo}</div><div class="elo-data">평균 ${r.s.starts?r.m.avgRank.toFixed(2):"--"}위 · ${r.s.starts}경기 · 승률 ${(r.m.winRate*100).toFixed(1)}% · Top3 ${(r.m.top3Rate*100).toFixed(1)}%<br>평점 ${r.s.starts?r.m.avgRating.toFixed(2):"--"} · 회피율 ${(r.m.avoid*100).toFixed(1)}% · NM ${r.s.nearMisses||0} · 충돌 ${r.s.collisions||0} · 추월 ${r.s.overtakes||0}</div></div>`).join("")}
+  function renderEloRanking(){const box=document.getElementById("eloRankingList");if(!box)return;const s=loadSeason(),rows=names.map(name=>({name,s:s[name],m:eloMetrics(s[name])})).sort((a,b)=>b.m.elo-a.m.elo||a.m.avgRank-b.m.avgRank);box.innerHTML=rows.map((r,i)=>`<div class="elo-row"><div class="elo-rank">${i+1}</div><div class="elo-name"><b>${r.name}</b><small>${styleLabel(drivingStyles[names.indexOf(r.name)].style)}</small></div><div class="elo-score">${r.m.elo}</div><div class="elo-data">평균 ${r.s.starts?r.m.avgRank.toFixed(2):"--"}위 · ${r.s.starts}경기 · 승률 ${(r.m.winRate*100).toFixed(1)}% · Top3 ${(r.m.top3Rate*100).toFixed(1)}%<br>평점 ${r.s.starts?r.m.avgRating.toFixed(2):"--"} · 회피율 ${(r.m.avoid*100).toFixed(1)}% · NM ${r.s.nearMisses||0} · 충돌 ${r.s.collisions||0} · 추월 ${r.s.overtakes||0}</div></div>`).join("")}
 
   function resetSeason(){
     if(!confirm("v31 시즌 누적 기록을 전부 초기화할까요?")) return;
@@ -3646,7 +3773,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     playerBox.innerHTML=ordered.slice(0,5).map((p,i)=>{
       const line=p.linePersonality>.45?"인코스":p.linePersonality<-.45?"안전/외곽":"균형";
       const creative=Math.min(55,Math.round((p.creativeRouteUsed||0)*100));
-      return `<div class="live-player-stat"><span>${i+1}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><small>${line}</small><em>${signatureOf(p).label} · NM ${p.match?.nearMisses||0} · 추월 ${p.match?.overtakes||0} · 충돌 ${p.match?.collisions||0}</em></div>`;
+      return `<div class="live-player-stat"><span>${i+1}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><small>${line}</small><em>START ${(p.startReactionMs/1000).toFixed(3)}s · 압박 ${Math.round((p.livePressure||0)*100)}% · NM ${p.match?.nearMisses||0} · 충돌 ${p.match?.collisions||0}</em></div>`;
     }).join("");
   }
 
@@ -3701,7 +3828,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     for(let i=0;i<ordered.length;i++){
       const p=ordered[i], c=rankRowFor(p.index);
       let gapText;
-      if(p.done) gapText=formatTime(p.finishTime);
+      if(p.done) gapText=formatTime(p.finishTime)+(p.newMapRecord?" · MR":p.newPB?" · PB":"");
       else if(i===0) gapText="선두";
       else{
         const distGap=Math.max(0,leaderProg-currentProgress(p));
@@ -3725,6 +3852,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     }
     // Existing nodes are simply reordered; listeners/DOM nodes are reused.
     rankingEl.appendChild(frag);
+    renderRecordBoard();
     renderLiveStats();
   }
 
@@ -3790,7 +3918,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
   function seasonCardHtml(p){
     const s=loadSeason()[p.name]||blankSeasonRow();
-    if(!s.starts) return `<div class="seasonBox"><h3>시즌 기록</h3><p>아직 누적 경기 기록이 없습니다.</p></div>`;
+    const pb=loadRecordBook().players[p.name];
+    if(!s.starts) return `<div class="seasonBox"><h3>시즌 기록</h3><p>개인 최고기록 ${pb==null?"-":formatTime(pb)}</p></div>`;
     const avgRank=s.totalRank/s.starts;
     const finishRate=s.finishes/s.starts*100;
     const avgTime=s.finishes ? s.totalTime/s.finishes : 0;
@@ -3804,7 +3933,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         <div><span>평균 순위</span><b>${avgRank.toFixed(2)}</b></div>
         <div><span>완주율</span><b>${finishRate.toFixed(1)}%</b></div>
         <div><span>평균 기록</span><b>${formatTime(avgTime)}</b></div>
-        <div><span>최고 기록</span><b>${s.bestTime?formatTime(s.bestTime):"-"}</b></div>
+        <div><span>개인 최고기록</span><b>${pb==null?"-":formatTime(pb)}</b></div>
         <div><span>경기당 충돌</span><b>${avgCollision.toFixed(2)}</b></div>
         <div><span>총 추월</span><b>${s.overtakes}</b></div>
         <div><span>선두 시간</span><b>${(s.leadMs/1000).toFixed(1)}s</b></div>
@@ -3818,7 +3947,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(s==="safeReader") return "안전거리/옵저버 예측 우선";
     if(s==="attacker") return "빠른 추월판단/빽컨 선호";
     if(s==="lineMaster") return "레이싱라인/코너 정밀도 우선";
-    if(s==="controller") return "컨트롤 대응/스탑컨 선호";
+    if(s==="controller") return "컨트롤 대응/지그재그 회피 선호";
     if(s==="patient") return "기다렸다 추월/외곽 안전라인";
     if(s==="opportunist") return "빈틈 포착/순간 추월 공략";
     return "균형형 주행/상황 대응";
@@ -3966,7 +4095,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
             zigzag:0,backcon:0,stopcon:0,wide:0,
             zigzagOK:0,backconOK:0,stopconOK:0,wideOK:0,
             inside:0,extreme:0,distance:0,efficiency:0,rankGain:0,
-            passInside:0,passOutside:0,passWait:0,traces:[]};
+            passInside:0,passOutside:0,passWait:0,traces:[],deathPoints:[],startReactionSum:0,
+            rankSum:0,timeSum:0,finishes:0};
           map.set(x.index,a);
         }
         a.rounds++;
@@ -3981,6 +4111,10 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         a.extreme+=x.extremeInsideRate||0;
         a.distance+=x.distance||0;
         a.efficiency+=x.efficiency||0;
+        a.startReactionSum+=x.startReactionMs||0;
+        a.rankSum+=x.rank||0;
+        if(Number.isFinite(x.time)){a.timeSum+=x.time;a.finishes++;}
+        if(x.deathPoints?.length) a.deathPoints.push(...x.deathPoints.map(d=>({...d,round:r.round})));
         a.rankGain=Math.max(a.rankGain,x.rankGain||0);
         a.passInside+=(x.passPlans?.inside||0);
         a.passOutside+=(x.passPlans?.outside||0);
@@ -3993,7 +4127,10 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       controlRate:a.controls?100*a.controlOK/a.controls:0,
       avgInside:a.rounds?a.inside/a.rounds:0,
       avgExtreme:a.rounds?a.extreme/a.rounds:0,
-      avgEfficiency:a.rounds?a.efficiency/a.rounds:0
+      avgEfficiency:a.rounds?a.efficiency/a.rounds:0,
+      avgStartReaction:a.rounds?a.startReactionSum/a.rounds:0,
+      avgRank:a.rounds?a.rankSum/a.rounds:0,
+      avgTime:a.finishes?a.timeSum/a.finishes:0
     })).sort((a,b)=>(playerTournament[b.index]?.total||0)-(playerTournament[a.index]?.total||0));
   }
 
@@ -4035,16 +4172,20 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(!body||!picks) return;
     const rows=aggregateTelemetry();
     body.innerHTML=rows.map(a=>{
-      const rate=a.controls?`${a.controlRate.toFixed(0)}%`:"-";
+      const deaths=a.deathPoints.length
+        ? a.deathPoints.slice(-4).map(d=>`R${d.round} ${d.progressPct}%`).join(" · ")
+        : "-";
+      const pb=loadRecordBook().players[a.name];
       return `<tr>
         <td><div class="table-player">${avatarHtml(a.index,"table-avatar")}<button class="trace-player player-link" data-player="${a.index}">${a.name}</button></div></td>
-        <td>${a.controls} / ${rate}</td>
-        <td>${a.zigzag}</td><td>${a.backcon}</td><td>${a.stopcon}</td><td>${a.wide}</td>
+        <td><b>${a.avgRank.toFixed(2)}위</b></td>
+        <td>${a.avgTime?formatTime(a.avgTime):"-"}</td>
+        <td>${pb==null?"-":formatTime(pb)}</td>
+        <td>${a.deathPoints.length}회${deaths!=="-"?` · ${deaths}`:""}</td>
+        <td>${a.zigzag}</td>
+        <td>${a.backcon}</td>
         <td>${a.avgInside.toFixed(0)}%</td>
-        <td>${a.avgExtreme.toFixed(0)}%</td>
-        <td>${a.passInside}/${a.passOutside}/${a.passWait}</td>
-        <td>${a.rankGain>0?`+${a.rankGain}`:"0"}</td>
-        <td>${a.avgEfficiency.toFixed(1)}%</td>
+        <td>${(a.avgStartReaction/1000).toFixed(3)}s</td>
       </tr>`;
     }).join("");
 
@@ -4095,7 +4236,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     else if(overtakes>=4) strengths.push(`추월 ${overtakes}회로 순위 싸움에서 존재감을 보였다`);
     if(rankGain>=4) strengths.push(`한 라운드에서 최대 ${rankGain}계단을 끌어올리는 역전 능력을 보였다`);
     if(controlRate>=.90 && controls>=3) strengths.push(`컨트롤 성공률 ${(controlRate*100).toFixed(0)}%로 실행력이 안정적이었다`);
-    if(collisions===0) strengths.push(`3라운드 동안 충돌 없이 완주했다`);
+    if(collisions===0) strengths.push(`5라운드 동안 충돌 없이 완주했다`);
     if(leadMs>=8000) strengths.push(`선두를 ${(leadMs/1000).toFixed(1)}초 유지하며 경기 주도권을 잡았다`);
     if(inside>=48) strengths.push(`인코스 활용률 ${inside.toFixed(0)}%로 코너 공략이 적극적이었다`);
     if(extreme>=20) strengths.push(`극인코스 ${extreme.toFixed(0)}%로 과감한 최단라인 공략을 보여줬다`);
@@ -4162,7 +4303,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       matchText=`${winner}팀이 ${teamTotals[winner]}:${teamTotals[loser]}로 승리했다. ${winner}팀 평균 평점은 ${teamSummary[winner].rating.toFixed(1)}, ${loser}팀은 ${teamSummary[loser].rating.toFixed(1)}였다. 추월은 ${winner}팀 ${teamSummary[winner].overtakes}회, ${loser}팀 ${teamSummary[loser].overtakes}회였다.`;
     }
 
-    matchText+=` 전체 3라운드 기준 선두교체 ${allLeaderChanges}회, 순위상승 ${allOvertakes}회를 기록했다.`;
+    matchText+=` 전체 5라운드 기준 선두교체 ${allLeaderChanges}회, 순위상승 ${allOvertakes}회를 기록했다.`;
     return {reports,teamSummary,matchText};
   }
 
@@ -4215,14 +4356,14 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       ctx.fillText(`${rank}위`,L-10,y);
     }
     ctx.textAlign="center";ctx.textBaseline="top";
-    for(let r=1;r<=3;r++){
-      const x=L+(r-1)*(w-L-R)/2;
+    for(let r=1;r<=5;r++){
+      const x=L+(r-1)*(w-L-R)/4;
       ctx.fillText(`${r}R`,x,h-B+13);
     }
 
     for(let idx=0;idx<players.length;idx++){
       const pts=[];
-      for(let r=1;r<=3;r++){
+      for(let r=1;r<=5;r++){
         const rd=roundHistory.find(q=>q.round===r);
         const x=rd?.players.find(q=>q.index===idx);
         if(x) pts.push({r,rank:x.rank});
@@ -4231,7 +4372,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       ctx.strokeStyle=colors[idx];ctx.fillStyle=colors[idx];ctx.lineWidth=3;
       ctx.beginPath();
       pts.forEach((p,i)=>{
-        const x=L+(p.r-1)*(w-L-R)/2;
+        const x=L+(p.r-1)*(w-L-R)/4;
         const y=T+(p.rank-1)*(h-T-B)/7;
         if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
       });
@@ -4306,11 +4447,11 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         <div class="podium-copy"><b>${pt.name}</b><span>${teamLabel(pt.team)}</span><strong>${pt.total>0?"+":""}${pt.total}점</strong><small>평점 ${rt?rt.rating.toFixed(1):"-"} · 추월 ${rt?.overtakes||0}</small></div>
       </article>`;
     }).join("");
-    picks.innerHTML=[1,2,3].map(r=>`<button data-round="${r}">${r}R 경로</button>`).join("");
+    picks.innerHTML=[1,2,3,4,5].map(r=>`<button data-round="${r}">${r}R 경로</button>`).join("");
     picks.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>drawAllRoutes(Number(b.dataset.round))));
     drawRankChart();
     drawPerformanceChart();
-    drawAllRoutes(roundHistory.length?roundHistory[roundHistory.length-1].round:3);
+    drawAllRoutes(roundHistory.length?roundHistory[roundHistory.length-1].round:5);
   }
 
 
@@ -4374,7 +4515,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
     const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
     body.innerHTML=rows.map((pt,i)=>{
-      const r=[1,2,3].map(n=>{
+      const r=[1,2,3,4,5].map(n=>{
         const x=pt.rounds.find(v=>v.round===n);
         return x ? `${x.rank}위 / ${x.points>0?"+":""}${x.points}` : "-";
       });
@@ -4382,7 +4523,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         <td>${i+1}</td>
         <td><span class="team-mini team-${pt.team.toLowerCase()}">${pt.team}</span></td>
         <td><div class="table-player">${avatarHtml(names.indexOf(pt.name),"table-avatar")}<button class="result-name player-link" data-player="${names.indexOf(pt.name)}">${pt.name}</button></div></td>
-        <td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
+        <td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td>
         <td><b>${pt.total>0?"+":""}${pt.total}</b></td>
       </tr>`;
     }).join("");
@@ -4753,7 +4894,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     setReplayCursor(Number(e.target.value));
   });
   document.querySelectorAll("[data-replay-speed]").forEach(b=>b.addEventListener("click",()=>{
-    replaySpeed=Number(b.dataset.replaySpeed)||1;
+    replaySpeed=1;
   }));
   document.getElementById("resultBtn").addEventListener("click",showMatchResults);
   document.getElementById("eloBtn").addEventListener("click",()=>{renderEloRanking();document.getElementById("eloPanel").classList.remove("hidden")});
