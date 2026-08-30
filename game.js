@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 400;
+  const OBSERVER_COUNT = 350;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.44";
+  const BUILD_ID = "v3.51";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -39,7 +39,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";   unitSprites[4].D.src="mutalisk_d.png";
   unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";   unitSprites[5].D.src="queen_d.png";
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.40;     // unchanged collision feel
+  const PLAYER_HIT_RADIUS = 0.41;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.69;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.612;      // v14 visual size
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
@@ -321,13 +321,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const paceNorm=(pf.pace-90)/10;
       const consistency=(stats.consistency-72)/27;
       const luck=(stats.luck-72)/27;
-      const formSpread=.016-consistency*.007;
+      const formSpread=.008-consistency*.0035;
       const formRoll=(Math.random()+Math.random()+Math.random()-1.5)/1.5;
-      const raceForm=Math.max(.990,Math.min(1.010,1+formRoll*formSpread+(luck-.5)*.002));
+      const raceForm=Math.max(.995,Math.min(1.005,1+formRoll*formSpread+(luck-.5)*.001));
       // v2.55: survival-minded racers trade distance for safety.
       const survivalNorm=Math.max(0,Math.min(1,
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
-      const wideDetourRace=Math.random()<.04;
+      const wideDetourRace=Math.random()<.02;
       const wideDetourSide=Math.random()<.5?-1:1;
       return {
         index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
@@ -358,12 +358,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // Pace creates small but meaningful differences, not runaway gaps.
         speed: (
           9.43
-          + paceNorm*0.13
-          + ((stats.acceleration-85)/14)*0.034
-          + ((stats.consistency-85)/14)*0.020
-          + ((stats.endurance-85)/14)*0.014
-          + ((stats.luck-85)/14)*0.005
-          + Math.random()*0.012
+          + paceNorm*0.070
+          + ((stats.acceleration-85)/14)*0.018
+          + ((stats.consistency-85)/14)*0.011
+          + ((stats.endurance-85)/14)*0.008
+          + ((stats.luck-85)/14)*0.002
+          + Math.random()*0.006
         ) * 1.464395625,
         desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
@@ -673,12 +673,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v2.7 explicit start reaction: 0.045–0.220 s.
         const reactionNoise=(Math.random()-.5)*(46-consistency*14);
         p.startReactionMs=Math.max(45,Math.min(220,
-          174-reaction*25-focus*16-start*18-pressure*10+reactionNoise*.55-(p.raceForm-1)*70));
+          170-reaction*14-focus*9-start*10-pressure*6+reactionNoise*.32-(p.raceForm-1)*45));
         p.startExecution=Math.max(.965,Math.min(1.035,
-          .992+skill*.022+(p.raceForm-1)*.10+(Math.random()-.5)*(.007-consistency*.002)));
+          .996+skill*.012+(p.raceForm-1)*.07+(Math.random()-.5)*(.004-consistency*.0012)));
 
         const jitter=(Math.random()-.5)*(.016-consistency*.005);
-        p.startLaunchMul=Math.max(.965,Math.min(1.045,.992+skill*.025+jitter*.55+(p.raceForm-1)*.09));
+        p.startLaunchMul=Math.max(.965,Math.min(1.045,.996+skill*.014+jitter*.35+(p.raceForm-1)*.06));
         p.startLaunchUntil=now+1750+Math.random()*350;
       }
     }
@@ -835,10 +835,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           if(lat>=0&&Math.abs(lat)<5.2) rightBlock++;
         }
         const sideEscapeOpen=Math.min(leftBlock,rightBlock)===0;
-        const r=Math.random();
-        const backLimit=sideEscapeOpen?.075:.165;
-        const marseilleChance=.030+((p.stats.control-72)/27)*.025+((p.stats.aggression-72)/27)*.010;
-        if(r<marseilleChance){
+        // v3.51: only when an observer is immediately ahead, increase both
+        // zigzag and backcon selection weights by 20% relative to v3.50.
+        const marseilleWeight=.030+((p.stats.control-72)/27)*.025+((p.stats.aggression-72)/27)*.010;
+        const stopWeight=.00025;
+        const backBase=sideEscapeOpen?.045:.095;
+        const backWeight=backBase*1.20;
+        const zigBase=Math.max(.001,1-marseilleWeight-stopWeight-backBase);
+        const zigWeight=zigBase*1.20;
+        const totalWeight=marseilleWeight+stopWeight+backWeight+zigWeight;
+        const r=Math.random()*totalWeight;
+        if(r<marseilleWeight){
           p.controlMode="marseille";
           p.reactiveControl=true;
           p.reactiveThreatId=immediate.id;
@@ -850,12 +857,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           p.match.controlAttempts++;
           p.match.controlSuccesses++;
           addAutoHighlight("MARSEILLE",`${p.name} · 마르세유턴 회피`,now,p.index,2);
-        }else if(r<marseilleChance+.00025){
+        }else if(r<marseilleWeight+stopWeight){
           beginControl(p,"stopcon",now,80+Math.random()*70,true,immediate.id);
           p.reactiveControlCooldown=3200+Math.random()*2700;
-        }else if(r<marseilleChance+backLimit){
+        }else if(r<marseilleWeight+stopWeight+backWeight){
           const styleHint=immediateAlong<2.75 || (leftBlock>0&&rightBlock>0) ? "long" : "tap";
-          beginControl(p,"backcon",now,330+Math.random()*190,true,immediate.id,styleHint);
+          beginControl(p,"backcon",now,220+Math.random()*120,true,immediate.id,styleHint);
           p.reactiveControlCooldown=1700+Math.random()*1800;
         }else{
           beginControl(p,"zigzag",now,300+Math.random()*260,true,immediate.id);
@@ -867,8 +874,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(nearAhead){
         const zigChance=Math.min(.92,.62+reaction*.10+prediction*.10+pressure*.05);
         if(Math.random()<zigChance){
-          const nearMode=Math.random()<.89?"zigzag":"backcon";
-          beginControl(p,nearMode,now,310+Math.random()*260,true,nearAhead.id,
+          const nearMode=Math.random()<.95?"zigzag":"backcon";
+          beginControl(p,nearMode,now,(nearMode==="backcon"?220+Math.random()*120:290+Math.random()*190),true,nearAhead.id,
             nearMode==="backcon"?"tap":null);
           p.reactiveControlCooldown=1500+Math.random()*1900;return;
         }
@@ -880,7 +887,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(nearAhead && p.controlMode==="normal"&&p.controlCooldown<=0){
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
       // v2.53: nearby-but-not-urgent movement strongly favors zigzag; backcon is rare.
-      const mode=Math.random()<.986?"zigzag":"backcon";
+      const mode=Math.random()<.995?"zigzag":"backcon";
       let duration=mode==="backcon"?290+Math.random()*150:300+Math.random()*220;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -922,8 +929,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v2.51: the user's hidden yellow guide is NORMAL drivable racing road.
     // It is not a special/rare shortcut. On a clear road the optimizer strongly
     // prefers this deeper apex; observers may override it for survival.
-    const normalHalf=Math.max(1.8,widths[si]*.72);
-    const deepHalf=Math.max(normalHalf,widths[si]*(1.16+skill*.070));
+    const normalHalf=Math.max(1.8,widths[si]*.84);
+    const deepHalf=Math.max(normalHalf,widths[si]*(1.30+skill*.085));
     if(p.wideDetourRace){
       // 8% race choice: reject the fastest hidden line, but take only a moderately wider path.
       return off*.50 + (-side)*normalHalf*.56;
@@ -931,7 +938,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v2.55: deep inside remains the primary fast line, but survival specialists
     // sacrifice some apex depth for extra observer clearance.
     const survival=p.survivalNorm||0;
-    const clearCommit=Math.max(.975,Math.min(.9995,
+    const clearCommit=Math.max(.992,Math.min(.9998,
       .995+skill*.006+(p.linePersonality||0)*.006-survival*.025+(p.cleanConfidence||0)*.018));
     const dangerFade=localDanger>=8?.62:localDanger>=5?.84:localDanger>=2?.975:1;
     const commit=clearCommit*dangerFade;
@@ -971,7 +978,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const normalHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*detourBoost);
     const side=specialInsideSide(si);
     if(!side) return Math.max(-normalHalf,Math.min(normalHalf,lateral));
-    const specialHalf=Math.max(normalHalf,widths[si]*1.34);
+    const specialHalf=Math.max(normalHalf,widths[si]*1.48);
     const lo=side<0?-specialHalf:-normalHalf;
     const hi=side>0? specialHalf: normalHalf;
     return Math.max(lo,Math.min(hi,lateral));
@@ -2219,7 +2226,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const s=segs[si];
     const lineSkill=(p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3;
     const lineNorm=(lineSkill-72)/27;
-    const half=Math.max(1.8,widths[si]*(0.535+lineNorm*0.060));
+    const half=Math.max(1.8,widths[si]*(0.625+lineNorm*0.075));
 
     // v31: when the local road is genuinely clear of observers, commit to a
     // near-wall Kart-style apex instead of wasting space in the middle.
@@ -2232,7 +2239,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const lp=p.linePersonality||0;
       const skill=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/3;
       const skillN=(skill-72)/27;
-      const apexCommit=Math.max(.58,Math.min(.995,.78+lp*.17+skillN*.055+(p.cleanConfidence||0)*.035));
+      const apexCommit=Math.max(.78,Math.min(.999,.91+lp*.075+skillN*.045+(p.cleanConfidence||0)*.025));
       const apex=cornerSide*half*apexCommit;
       const phaseBlend=Math.max(.38,Math.min(.88,phasePlan.weight+.20));
       p.linePlanOffset=apex*(1-phaseBlend)+phasePlan.target*phaseBlend;
@@ -2684,9 +2691,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
       if(insideSide!==0 && turnPower>0.055){
-        const halfRoad=Math.max(1.8,widths[si]*0.58);
+        const halfRoad=Math.max(1.8,widths[si]*0.84);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
-        const apexBlend=Math.min(0.965,0.66+turnPower*1.72);
+        const apexBlend=Math.min(0.992,0.80+turnPower*1.45);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
       }
 
@@ -2694,9 +2701,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // the corner actually begins instead of waiting until the midpoint.
       const futureInside=futureInsideBias(si);
       if(Math.abs(futureInside)>0.10){
-        const halfRoad2=Math.max(1.8,widths[si]*0.59);
+        const halfRoad2=Math.max(1.8,widths[si]*0.86);
         const futureApex=futureInside*halfRoad2*0.998;
-        targetOff=targetOff*0.28+futureApex*0.72;
+        targetOff=targetOff*0.12+futureApex*0.88;
       }
 
     // Lower line skill adds slightly more steering error, while everyone still
@@ -2908,7 +2915,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const steerLen=Math.hypot(p.steerX,p.steerY)||1;
 
     // v2.54 CONTINUOUS-RUN ACCELERATION:
-    // uninterrupted forward running ramps to +10% effective pace over 2.6 s.
+    // uninterrupted forward running ramps to +3% effective pace over 2.6 s.
     // Any stop/reverse/backcon resets the build-up. Zigzag/normal moving dodges can
     // preserve momentum, rewarding the racer who keeps moving on the same line.
     const uninterruptedForward =
@@ -2922,7 +2929,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       p.continuousRunMs=0;
     }
     const runFactor=Math.max(0,Math.min(1,(p.continuousRunMs||0)/2600));
-    p.continuousRunMul=1+runFactor*.10;
+    p.continuousRunMul=1+runFactor*.03;
     if(speedMul>0) speedMul*=p.continuousRunMul;
 
     // v3.3 오른쪽 3시 구간(seg 5~11): 실제 옵저버 위협/컨트롤이 없으면
@@ -3606,9 +3613,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     playerNearbyFrameSerial++;
     simTickCounter++;
 
-    // v2.7: deterministic 5Hz observer lookup/prediction refresh.
+    // v3.50: 350-observer optimization — ~3.6Hz lookup/prediction refresh; collisions remain 50Hz.
     // Explicit ticks avoid duplicate refreshes caused by timestamp rounding.
-    if(simTickCounter>=12){
+    if(simTickCounter>=14){
       simTickCounter=0;
       rebuildObserverGrid();
       precomputeObserverPredictions(now);
@@ -5335,11 +5342,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v344SelfAudit(){
+  function v351SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==400)issues.push("옵저버400");
-    if(Math.abs(PLAYER_HIT_RADIUS-.40)>.0001)issues.push("HIT");
+    if(OBSERVER_COUNT!==350)issues.push("옵저버350");
+    if(Math.abs(PLAYER_HIT_RADIUS-.41)>.0001)issues.push("HIT");
+    if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.69)>.0001||Math.abs(OBS_VISUAL_SCALE-.612)>.0001)issues.push("크기");
     if(STUN_MS!==1800)issues.push("정지1.8초");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
@@ -5349,7 +5357,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v344SelfAudit,
+    version:BUILD_ID,selfAudit:v351SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),

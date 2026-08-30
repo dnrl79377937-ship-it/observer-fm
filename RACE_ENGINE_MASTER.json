@@ -1,5 +1,5 @@
 {
-  "build": "v3.44",
+  "build": "v3.51",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Rolled movement engine back to stable v3.41 to eliminate v3.42+ 9-o'clock deadlock. No custom shortcut corridor, no route-segment mutation, no motion watchdog. Diagonal optimization is now steering-target-only via farther lookahead/next3 blending, leaving original clamp and segment advancement intact. Stun remains 1.8s."
+  "notes": "HIT 0.41; continuous-run acceleration +3%; immediate-ahead-only zigzag/backcon weights +20% relative to v3.50. Retains 350 observers, deep inside-line v3.50, compressed field spread, 1.8s stun, fixed 1x, no gray system, no v3.42 shortcut state mutation."
 }
