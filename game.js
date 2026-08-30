@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.61";
+  const BUILD_ID = "v3.63";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -443,7 +443,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         cleanConfidenceMs:0,
         cleanConfidence:0,
         match:{
-          collisions:0,stops:0,avoids:0,simpleDodges:0,overtakes:0,leadMs:0,
+          collisions:0,stops:0,avoids:0,simpleDodges:0,packDodges:0,overtakes:0,leadMs:0,
           nearMisses:0,extremeNearMisses:0,lastNearMissAt:0,dangerExposureMs:0,
           deathPoints:[],
           controlAttempts:0,controlSuccesses:0,
@@ -824,12 +824,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           if(lat>=0&&Math.abs(lat)<5.2) rightBlock++;
         }
         const sideEscapeOpen=Math.min(leftBlock,rightBlock)===0;
+        const controlPack=packAwareness(p,s);
+        // v3.63: dense packs favor early corridor selection over abrupt last-second
+        // tricks. These controls remain available, just less likely while overlapping.
+        const packControlCalm=controlPack.mates>=3?.52:controlPack.mates>=2?.72:1;
         // v3.51: only when an observer is immediately ahead, increase both
         // zigzag and backcon selection weights by 20% relative to v3.50.
-        const marseilleWeight=.030+((p.stats.control-72)/27)*.025+((p.stats.aggression-72)/27)*.010;
+        const marseilleWeight=(.045+((p.stats.control-72)/27)*.030+((p.stats.aggression-72)/27)*.012)*packControlCalm;
         const stopWeight=.00025;
         const backBase=sideEscapeOpen?.045:.095;
-        const backWeight=backBase*1.20;
+        const backWeight=backBase*1.20*1.10*packControlCalm;
         const zigBase=Math.max(.001,1-marseilleWeight-stopWeight-backBase);
         const zigWeight=zigBase*1.20;
         const totalWeight=marseilleWeight+stopWeight+backWeight+zigWeight;
@@ -839,7 +843,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           p.reactiveControl=true;
           p.reactiveThreatId=immediate.id;
           p.modeStart=now;
-          p.controlUntil=now+360+Math.random()*150;
+          p.controlUntil=now+470+Math.random()*150;
           p.marseilleUntil=p.controlUntil;
           p.marseilleSide=(leftBlock<=rightBlock?-1:1);
           p.reactiveControlCooldown=1900+Math.random()*1600;
@@ -863,7 +867,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(nearAhead){
         const zigChance=Math.min(.92,.62+reaction*.10+prediction*.10+pressure*.05);
         if(Math.random()<zigChance){
-          const nearMode=Math.random()<.95?"zigzag":"backcon";
+          const nearMode=Math.random()<.945?"zigzag":"backcon";
           beginControl(p,nearMode,now,(nearMode==="backcon"?220+Math.random()*120:290+Math.random()*190),true,nearAhead.id,
             nearMode==="backcon"?"tap":null);
           p.reactiveControlCooldown=1500+Math.random()*1900;return;
@@ -967,6 +971,21 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function rescueIfStuck(p,now){
     const prog=currentProgress(p);
+
+    // v3.62 edge-line anti-stall: deep inside driving must never create a stationary
+    // wall fight. This changes only steering/control state, never p.seg or x/y.
+    if(now>=p.stunUntil && p.lastAdvanceAt && now-p.lastAdvanceAt>1250){
+      const si=Math.min(p.seg,segs.length-1),s=segs[si];
+      const lat=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+      const roadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*(p.wideDetourRace?1.025:1));
+      if(Math.abs(lat)>roadHalf*.86){
+        p.linePlanOffset=Math.sign(lat)*roadHalf*.62;
+        p.linePlanUntil=now+420;
+        p._stableOff=p.linePlanOffset;
+        p.controlMode="normal";p.controlUntil=0;
+        p.avoidPlanUntil=0;p.marseilleUntil=0;
+      }
+    }
     if(prog > p.lastProgress + 0.18){
       p.lastProgress=prog;
       p.lastAdvanceAt=now;
@@ -1423,6 +1442,50 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       until:now+480+skill*250+Math.min(180,front*35),nearest,front};
   }
 
+  function packAwareness(p,s){
+    // v3.63: racers are non-solid, but overlapping racers share danger information.
+    // A dense pack should see an observer field earlier rather than blindly copying
+    // the same optimal line into the same obstacle.
+    let mates=0, frontMates=0, lateralSum=0;
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p||q.done) continue;
+      const dx=q.x-p.x,dy=q.y-p.y;
+      const along=dx*s.ux+dy*s.uy, lat=dx*s.nx+dy*s.ny;
+      if(Math.abs(along)<7.8 && Math.abs(lat)<5.8){
+        mates++;
+        lateralSum+=lat;
+        if(along>0&&along<6.8) frontMates++;
+      }
+    }
+    const density=Math.min(1,mates/4);
+    return {mates,frontMates,density,lateralMean:mates?lateralSum/mates:0};
+  }
+
+  function sharedPackDanger(p,s,baseNearby,pack){
+    if(pack.mates<2) return baseNearby;
+    const merged=baseNearby.slice();
+    const seen=new Set(merged.map(o=>o.id));
+    // Read the observer field around nearby racers too. This is perception sharing
+    // only: player bodies never become obstacles and never affect collision physics.
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p||q.done) continue;
+      const dx=q.x-p.x,dy=q.y-p.y;
+      const along=dx*s.ux+dy*s.uy,lat=Math.abs(dx*s.nx+dy*s.ny);
+      if(along<-2.5||along>8.5||lat>6.5) continue;
+      const seenByQ=playerNearbyObservers(q,Math.min(21,p.visionRadius||21));
+      for(let k=0;k<seenByQ.length;k++){
+        const o=seenByQ[k];
+        if(seen.has(o.id)) continue;
+        const ox=o.x-p.x,oy=o.y-p.y;
+        const oa=ox*s.ux+oy*s.uy,ol=Math.abs(ox*s.nx+oy*s.ny);
+        if(oa>-4&&oa<22&&ol<10.5){merged.push(o);seen.add(o.id);}
+      }
+    }
+    return merged;
+  }
+
   function chooseAvoidance(p,s,now){
     if(safeAt(p.x,p.y)){
       p.avoidPlanUntil=0;
@@ -1440,13 +1503,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       };
     }
 
-    const nearbyRaw=playerNearbyObservers(p,Math.min(AVOID_SCAN_RADIUS,p.visionRadius||AVOID_SCAN_RADIUS));
-    if(!nearbyRaw.length) return null;
+    const pack=packAwareness(p,s);
+    const packVisionBoost=pack.mates>=2 ? 1.18+pack.density*.12 : 1;
+    const ownVision=Math.min(AVOID_SCAN_RADIUS,(p.visionRadius||AVOID_SCAN_RADIUS)*packVisionBoost);
+    const nearbyRaw=playerNearbyObservers(p,ownVision);
+    const sharedRaw=sharedPackDanger(p,s,nearbyRaw,pack);
+    if(!sharedRaw.length) return null;
 
-    // Keep only the closest relevant threats in the expensive prediction matrix.
-    // 660 observers remain simulated/rendered, but distant ones no longer multiply
-    // avoidance cost for every racer.
-    const nearby=nearestThreats(nearbyRaw,p,5);
+    // v3.63: a pack tracks a broader slice of the obstacle field. Solo behavior
+    // stays essentially unchanged; dense packs keep up to nine meaningful threats.
+    const threatLimit=pack.mates>=3?9:pack.mates>=2?7:5;
+    const nearby=nearestThreats(sharedRaw,p,threatLimit);
 
     // v3.6 SIMPLE READ DODGE:
     // If exactly one observer is the only meaningful front threat and there is
@@ -1462,7 +1529,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         simpleFront.push({o,along,lat});
       }
     }
-    if(simpleFront.length===1){
+    if(simpleFront.length===1 && pack.mates<2){
       const th=simpleFront[0];
       // Do not call this "easy" if another observer is close enough to interfere
       // with either escape lane.
@@ -1507,6 +1574,34 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           p.match.simpleDodges=(p.match.simpleDodges||0)+1;
           return {mode:"planned",targetOff:chosen.off,speedMul:.995,
             risk:chosen.r.score,minClear:chosen.r.minClear,simpleDodge:true};
+        }
+      }
+    }
+
+    // v3.63 PACK SURVIVAL: when racers overlap, make the obstacle-field decision
+    // before individual reactive controls. The safest corridor is risk-tested against
+    // shared observer predictions and held longer to prevent an entire pack from
+    // marching down one doomed line.
+    if(pack.mates>=2){
+      const cp=observerClusterPlan(p,s,nearby);
+      if(cp.frontCount>=1 || cp.closeCount>=1){
+        const roadHalf=Math.max(2.4,widths[Math.min(p.seg,widths.length-1)]*ROAD_MARGIN);
+        const bias=(p.index%3-1)*roadHalf*.055; // tiny deterministic diversity, not body avoidance
+        const packTarget=clampRoadOffset(Math.min(p.seg,widths.length-1),cp.preferredOffset+bias,p);
+        const pr=candidateAvoidanceRisk(p,s,packTarget,.982,nearby);
+        if(pr.minClear>.72 || cp.emergency){
+          p.avoidPlanOffset=packTarget;
+          p.avoidPlanSpeedMul=cp.emergency?.965:.982;
+          p.avoidPlanRisk=pr.score;
+          p.avoidPlanUntil=now+390+pack.density*260+Math.random()*90;
+          p.avoidLastSide=Math.sign(packTarget-p.desiredOffset)||p.avoidLastSide||1;
+          p.avoidExitSide=p.avoidLastSide;
+          p.avoidExitUntil=p.avoidPlanUntil+360;
+          p.avoidSideLockUntil=p.avoidPlanUntil;
+          p.match.avoids++;
+          p.match.packDodges=(p.match.packDodges||0)+1;
+          return {mode:"planned",targetOff:packTarget,speedMul:p.avoidPlanSpeedMul,
+            risk:pr.score,minClear:pr.minClear,packSurvival:true};
         }
       }
     }
@@ -2257,7 +2352,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const s=segs[si];
     const lineSkill=(p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3;
     const lineNorm=(lineSkill-72)/27;
-    const half=Math.max(1.8,widths[si]*(0.94+lineNorm*0.060));
+    const half=Math.max(1.8,widths[si]*(1.015+lineNorm*0.050));
 
     // v31: when the local road is genuinely clear of observers, commit to a
     // near-wall Kart-style apex instead of wasting space in the middle.
@@ -2270,7 +2365,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const lp=p.linePersonality||0;
       const skill=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/3;
       const skillN=(skill-72)/27;
-      const apexCommit=Math.max(.90,Math.min(.9995,.965+lp*.035+skillN*.025+(p.cleanConfidence||0)*.015));
+      const apexCommit=Math.max(.94,Math.min(.9998,.982+lp*.025+skillN*.018+(p.cleanConfidence||0)*.010));
       const apex=cornerSide*half*apexCommit;
       const phaseBlend=Math.max(.38,Math.min(.88,phasePlan.weight+.20));
       p.linePlanOffset=apex*(1-phaseBlend)+phasePlan.target*phaseBlend;
@@ -2278,7 +2373,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return p.linePlanOffset;
     }
 
-    const candidates=[-0.995,-0.82,-0.64,-0.44,-0.22,0,0.22,0.44,0.64,0.82,0.995];
+    const candidates=[-0.999,-0.91,-0.76,-0.58,-0.34,0,0.34,0.58,0.76,0.91,0.999];
     const phasePlan=cornerPhaseTarget(p,si,half);
     let bestOff=0;
     let bestScore=Infinity;
@@ -2303,7 +2398,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const prev=segs[Math.max(si,j-1)];
         const next=segs[Math.min(segs.length-1,j+1)];
         const turn=prev.ux*next.uy-prev.uy*next.ux;
-        const h=Math.max(1.6,widths[j]*0.56);
+        const h=Math.max(1.6,widths[j]*0.635);
 
         let futureOff=off*(0.56-routeRead*.09);
         if(Math.abs(turn)>0.025){
@@ -2391,7 +2486,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v2.27: on a genuinely clear corner, high-skill racers may use the full
     // extreme inside edge. Traffic progressively restores a larger safety margin.
     let edge;
-    if(density===0 && corner>.045) edge=.995;
+    if(density===0 && corner>.045) edge=.999;
     else edge=density>=7?.82:density>=4?.87:.94;
     targetOff=Math.max(-half*edge,Math.min(half*edge,targetOff));
 
@@ -2837,9 +2932,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const elapsed=Math.max(0,now-p.modeStart);
       const dur=Math.max(1,p.controlUntil-p.modeStart);
       const t=Math.max(0,Math.min(1,elapsed/dur));
-      const arc=Math.sin(t*Math.PI*2)*half*.48;
-      targetOff += p.marseilleSide*half*.44 + arc;
-      speedMul*=.955+Math.sin(t*Math.PI)*.035;
+      // v3.62: visible Marseille-style hook. Three phases:
+      // commit to the open side -> curl back across the threat -> rejoin forward line.
+      // It never mutates p.seg and the final offset is still clamped by the real road.
+      const hook=t<.34
+        ? Math.sin((t/.34)*Math.PI*.5)
+        : t<.72
+          ? 1-Math.sin(((t-.34)/.38)*Math.PI)*1.55
+          : -0.55*(1-(t-.72)/.28);
+      const curl=Math.sin(t*Math.PI*2)*.24;
+      targetOff += p.marseilleSide*half*(hook*.72+curl);
+      speedMul*=.94+Math.sin(t*Math.PI)*.055;
     } else if(controlCanOverride && p.controlMode==="backcon"){
       const elapsed=now-p.modeStart;
       const style=p.backconStyle||"long";

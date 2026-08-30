@@ -1,5 +1,5 @@
 {
-  "build": "v3.61",
+  "build": "v3.63",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "OBS 330. Added high-confidence simple single-observer predictive dodge on open roads (95.5–99.5% stat-scaled success, near-full speed, no stop/back control on easy reads). Generic inside-line planning is slightly deeper while staying inside legal ROAD_MARGIN. Observer prediction/cache refresh lightened to every 15 sim ticks; all 330 remain simulated and collidable at 50Hz. HUD/QA labels corrected to OBS 330, HIT 0.41, STUN 1.8s, ROAD 1.10. Added simpleDodges to race result telemetry. v3.61: 5R match result top summary redesigned with color-coded team ranking cards, cumulative round score line chart, round-by-round color matrix, and team score-share stacked bar. Race engine behavior unchanged from v3.6."
+  "notes": "OBS 330. Added high-confidence simple single-observer predictive dodge on open roads (95.5–99.5% stat-scaled success, near-full speed, no stop/back control on easy reads). Generic inside-line planning is slightly deeper while staying inside legal ROAD_MARGIN. Observer prediction/cache refresh lightened to every 15 sim ticks; all 330 remain simulated and collidable at 50Hz. HUD/QA labels corrected to OBS 330, HIT 0.41, STUN 1.8s, ROAD 1.10. Added simpleDodges to race result telemetry. v3.61: 5R match result top summary redesigned with color-coded team ranking cards, cumulative round score line chart, round-by-round color matrix, and team score-share stacked bar. Race engine behavior unchanged from v3.6. v3.62: deeper generic legal inside/apex targets without changing ROAD_MARGIN or segment ownership; backcon selection +10% relative; occasional geometry-aware 3-phase Marseille hook turn; edge anti-stall steering reset never teleports or mutates segment ownership. v3.63: pack survival AI shares nearby observer perception, increases pack threat horizon/count, suppresses false single-observer reads in packs, commits to risk-tested cluster corridors with tiny deterministic route diversity, and reduces abrupt Marseille/backcon controls while overlapping. Players remain fully non-solid. v3.62 deep inside line and anti-stall architecture retained."
 }
