@@ -56,3 +56,71 @@ button:hover{background:#223047}
 .seasonGrid div{display:flex;flex-direction:column;gap:3px;padding:9px;background:rgba(255,255,255,.055);border-radius:8px}
 .seasonGrid span{font-size:12px;opacity:.72}.seasonGrid b{font-size:15px}
 @media(max-width:720px){.seasonGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.team-score-board{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0b111c;border-bottom:1px solid rgba(255,255,255,.08)}
+.round-badge{font-weight:900;font-size:13px;letter-spacing:.04em;margin-right:auto}
+.team-score{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:8px;font-size:13px}
+.team-score span{font-weight:900;font-size:16px}
+.team-a{background:rgba(255,77,77,.13);border:1px solid rgba(255,77,77,.42)}
+.team-b{background:rgba(77,141,255,.13);border:1px solid rgba(77,141,255,.42)}
+.team-mini{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;font-size:11px;font-weight:900;margin-right:5px}
+.team-mini.team-a{background:#ff4d4d;color:#fff;border:0}.team-mini.team-b{background:#4d8dff;color:#fff;border:0}
+.rank-row{grid-template-columns:26px 26px minmax(90px,1fr) auto!important}
+#teamResultSummary{margin:8px 0 16px}
+.winner{text-align:center;font-size:25px;font-weight:950;margin:6px 0 10px}
+.final-team-score{display:flex;justify-content:center;gap:30px;font-size:18px}
+.final-team-score b{font-size:25px;margin-left:6px}
+.round-score-list{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px}
+.round-score-list span{padding:6px 9px;border-radius:7px;background:rgba(255,255,255,.06);font-size:13px}
+
+/* v31.1 scoreboard correction: A=red, B=blue */
+.broadcast{position:relative}
+.team-score-board{
+  position:absolute;
+  z-index:30;
+  top:50px;
+  left:50%;
+  transform:translateX(-50%);
+  width:min(520px,58%);
+  justify-content:center;
+  background:rgba(5,8,13,.88);
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:10px;
+  box-shadow:0 5px 20px rgba(0,0,0,.28);
+}
+.team-score-board .team-score{min-width:130px;justify-content:center}
+.team-score-board .round-badge{margin:0 8px;white-space:nowrap}
+.personal-score-board{
+  position:absolute;
+  z-index:31;
+  top:112px;
+  left:12px;
+  width:205px;
+  padding:9px 10px;
+  border-radius:10px;
+  background:rgba(5,8,13,.88);
+  border:1px solid rgba(255,255,255,.15);
+  box-shadow:0 5px 20px rgba(0,0,0,.28);
+  pointer-events:none;
+}
+.personal-score-title{font-size:13px;font-weight:900;margin-bottom:6px;text-align:center}
+.personal-score-row{
+  display:grid;
+  grid-template-columns:22px 12px minmax(0,1fr) 36px;
+  align-items:center;
+  gap:5px;
+  min-height:24px;
+  font-size:12px;
+  border-top:1px solid rgba(255,255,255,.055);
+}
+.personal-score-row:first-of-type{border-top:0}
+.personal-rank{text-align:center;font-weight:800;opacity:.8}
+.personal-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.personal-score-row b{text-align:right;font-size:13px}
+.score-dot{width:9px;height:9px;border-radius:50%;display:block}
+.score-dot.red{background:#ff4d4d;box-shadow:0 0 6px rgba(255,77,77,.55)}
+.score-dot.blue{background:#4d8dff;box-shadow:0 0 6px rgba(77,141,255,.55)}
+@media(max-width:850px){
+  .team-score-board{width:66%;top:48px}
+  .personal-score-board{width:170px;top:108px}
+}

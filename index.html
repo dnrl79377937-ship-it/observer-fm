@@ -13,9 +13,9 @@
   <header class="topbar">
     <div>
       <h1>OBSERVER AVOIDANCE FM</h1>
-      <p>v31 · 시즌 누적 기록 · 극단 인코스 · 속도/피격/옵저버 밸런스 · 추가 최적화 · OBS 726</p>
+      <p>v31.1 · RED 4 vs BLUE 4 · 3라운드 합산 · 실시간 팀/개인 점수판 · OBS 726</p>
     </div>
-    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v31</div>
+    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v31.1</div>
     <div class="controls">
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
@@ -28,9 +28,11 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v31 · OBS 726 · 로딩 중</span>
+        <span id="cameraLabel">v31.1 · 4vs4 · 3 ROUND · OBS 726</span>
         <span id="clock">00:00.0</span>
       </div>
+      <div id="teamScoreBoard" class="team-score-board"></div>
+      <div id="personalScoreBoard" class="personal-score-board"></div>
       <canvas id="race" width="1600" height="900"></canvas>
     </section>
 
@@ -52,16 +54,17 @@
   <div id="resultPanel" class="overlay hidden">
     <div class="modalCard resultCard">
       <button id="resultClose" class="closeBtn">×</button>
-      <h2>경기 상세 통계</h2>
+      <h2>4vs4 · 3라운드 팀전 결과</h2>
+      <div id="teamResultSummary"></div>
       <div class="tableWrap">
         <table class="resultTable">
-          <thead><tr><th>순위</th><th>선수</th><th>기록</th><th>충돌</th><th>정지</th><th>회피</th><th>추월</th><th>선두</th><th>최대상승</th><th>최대하락</th><th>거리</th><th>평균속도</th></tr></thead>
+          <thead><tr><th>개인총점순위</th><th>팀</th><th>선수</th><th>1R 순위/점수</th><th>2R 순위/점수</th><th>3R 순위/점수</th><th>총점</th></tr></thead>
           <tbody id="resultBody"></tbody>
         </table>
       </div>
     </div>
   </div>
 
-  <script src="game.js?v=3101"></script>
+  <script src="game.js?v=3112"></script>
 </body>
 </html>

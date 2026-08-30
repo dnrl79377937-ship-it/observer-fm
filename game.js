@@ -16,7 +16,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v31";
+  const BUILD_ID = "v31.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
@@ -112,6 +112,42 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   let raf = 0;
   let camX = 28, camY = 158;
 
+  const ROUND_POINTS=[10,7,5,3,2,1,0,-3];
+  let currentRound=1;
+  let teamAssignments={};
+  let teamTotals={A:0,B:0};
+  let playerTournament={};
+  let roundHistory=[];
+  let roundTransitioning=false;
+
+  function shuffledIndexes(){
+    const arr=[0,1,2,3,4,5,6,7];
+    for(let i=arr.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  function createTeams(){
+    teamAssignments={};
+    const order=shuffledIndexes();
+    order.forEach((idx,pos)=>teamAssignments[idx]=pos<4?"A":"B");
+  }
+
+  function initTournament(){
+    currentRound=1;
+    teamTotals={A:0,B:0};
+    roundHistory=[];
+    playerTournament={};
+    names.forEach((name,i)=>{
+      playerTournament[i]={name,team:teamAssignments[i],total:0,rounds:[]};
+    });
+  }
+
+  function teamLabel(team){ return team==="A" ? "A팀" : "B팀"; }
+
+
   function safeAt(x,y){
     return (
       (x>=7 && x<=38 && y>=143 && y<=172) ||
@@ -127,7 +163,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const drivingStyle=drivingStyles[i];
       const paceNorm=(pf.pace-90)/10;
       return {
-        index:i,name,color:colors[i],profile:pf,stats,drivingStyle,
+        index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
         x:20.5, y:154.8 + (i-3.5)*0.48,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -223,16 +259,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return arr;
   }
 
-  function reset(){
+  function resetRound(){
     cancelAnimationFrame(raf);
     players=makePlayers();
     observers=spawnObservers();
     running=false;
     raceStart=0; lastTs=0; lastRankingRender=0; seasonRecorded=false; prevRanks=new Map();
     camX=28; camY=158;
-    startBtn.textContent="LIVE 시작";
+    roundTransitioning=false;
+    startBtn.textContent=`${currentRound}R 시작`;
     render(0);
     renderRanking();
+    renderTeamScore();
+  }
+
+  function reset(){
+    createTeams();
+    initTournament();
+    resetRound();
   }
 
   function currentProgress(p){
@@ -244,7 +288,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function start(){
     if(running) return;
-    if(players.every(p=>p.done)) reset();
+    if(players.every(p=>p.done)) return;
     running=true;
     const now=performance.now();
     if(!raceStart) raceStart=now;
@@ -1034,6 +1078,64 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     camX+=(tx-camX)*a; camY+=(ty-camY)*a;
   }
 
+  function finalizeRound(){
+    if(roundTransitioning) return;
+    roundTransitioning=true;
+
+    const ordered=[...players].sort((a,b)=>a.finishTime-b.finishTime);
+    const result={round:currentRound,team:{A:0,B:0},players:[]};
+
+    ordered.forEach((p,idx)=>{
+      const pts=ROUND_POINTS[idx];
+      const team=p.team;
+      result.team[team]+=pts;
+      teamTotals[team]+=pts;
+      playerTournament[p.index].total+=pts;
+      playerTournament[p.index].rounds.push({round:currentRound,rank:idx+1,points:pts,time:p.finishTime});
+      result.players.push({index:p.index,name:p.name,team,rank:idx+1,points:pts,time:p.finishTime});
+    });
+
+    roundHistory.push(result);
+    renderTeamScore();
+
+    if(currentRound<3){
+      startBtn.textContent=`${currentRound}R 종료`;
+      setTimeout(()=>{
+        currentRound++;
+        resetRound();
+        start();
+      },1200);
+    }else{
+      running=false;
+      recordSeasonResults();
+      startBtn.textContent="3R 경기 종료";
+      setTimeout(showMatchResults,350);
+    }
+  }
+
+  function renderTeamScore(){
+    const el=document.getElementById("teamScoreBoard");
+    if(!el) return;
+    el.innerHTML=`<div class="team-score team-a"><b>A팀</b><span>${teamTotals.A}점</span></div>
+      <div class="round-badge">${currentRound} / 3 ROUND</div>
+      <div class="team-score team-b"><b>B팀</b><span>${teamTotals.B}점</span></div>`;
+    renderPersonalScore();
+  }
+
+  function renderPersonalScore(){
+    const el=document.getElementById("personalScoreBoard");
+    if(!el) return;
+    const rows=Object.values(playerTournament)
+      .sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
+    el.innerHTML=`<div class="personal-score-title">개인 누적 점수</div>`+
+      rows.map((pt,i)=>`<div class="personal-score-row">
+        <span class="personal-rank">${i+1}</span>
+        <span class="score-dot ${pt.team==="A"?"red":"blue"}"></span>
+        <span class="personal-name">${pt.name}</span>
+        <b>${pt.total>0?"+":""}${pt.total}</b>
+      </div>`).join("");
+  }
+
   function loop(ts){
     if(!running) return;
     // Clamp dt so background-tab stalls never make the simulation explode.
@@ -1053,8 +1155,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     if(players.every(p=>p.done)){
       running=false;
-      recordSeasonResults();
-      startBtn.textContent="경기 종료";
+      finalizeRound();
       return;
     }
     raf=requestAnimationFrame(loop);
@@ -1103,10 +1204,18 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       ctx.globalAlpha=1;
     }
 
-    ctx.fillStyle=p.color;
+    ctx.fillStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";
     ctx.strokeStyle="#07111a";
     ctx.lineWidth=3;
-    ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.beginPath();
+    if(currentRound===1){
+      ctx.arc(0,0,r,0,Math.PI*2);
+    }else if(currentRound===2){
+      ctx.rect(-r,-r,r*2,r*2);
+    }else{
+      ctx.moveTo(0,-r*1.15);ctx.lineTo(r*1.05,r*.88);ctx.lineTo(-r*1.05,r*.88);ctx.closePath();
+    }
+    ctx.fill();ctx.stroke();
 
     ctx.fillStyle="#07111a";
     ctx.font=`900 ${Math.max(12,r*.85)}px system-ui`;
@@ -1120,7 +1229,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const lh=Math.max(15,r*1.02);
     const ly=-r*1.48;
     ctx.fillStyle="rgba(5,8,13,.88)";
-    ctx.strokeStyle=p.color;ctx.lineWidth=1.5;
+    ctx.strokeStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";ctx.lineWidth=1.5;
     ctx.beginPath();
     if(ctx.roundRect) ctx.roundRect(-tw/2,ly-lh,tw,lh,5);
     else ctx.rect(-tw/2,ly-lh,tw,lh);
@@ -1244,7 +1353,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       if(p.done) gap=formatTime(p.finishTime);
       else if(i===0) gap="LEADER";
       else gap=`-${Math.max(0,leaderProg-currentProgress(p)).toFixed(1)}m`;
-      row.innerHTML=`<span class="rank-no">${i+1}</span><button class="rank-name player-link" data-player="${p.index}">${p.name}</button><span class="rank-gap">${gap}</span>`;
+      row.innerHTML=`<span class="rank-no">${i+1}</span><span class="team-mini team-${p.team.toLowerCase()}">${p.team}</span><button class="rank-name player-link" data-player="${p.index}">${p.name}</button><span class="rank-gap">${gap}</span>`;
       row.querySelector(".player-link").addEventListener("click",()=>openPlayerCard(p));
       rankingEl.appendChild(row);
     });
@@ -1301,7 +1410,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     title.textContent=`${p.name} · OVR ${overallOf(p)} · ${styleLabel(p.drivingStyle.style)}`;
     body.innerHTML=`
       <div class="profileSummary">
+        <div><b>소속팀</b><span>${teamLabel(p.team)}</span></div>
         <div><b>주행 성향</b><span>${styleLabel(p.drivingStyle.style)}</span></div>
+        <div><b>팀전 누적점수</b><span>${playerTournament[p.index]?.total||0}점</span></div>
         <div><b>강점</b><span>${entries.slice(0,3).map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
         <div><b>약점</b><span>${entries.slice(-3).reverse().map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
       </div>
@@ -1313,20 +1424,25 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   function showMatchResults(){
     const panel=document.getElementById("resultPanel");
     const body=document.getElementById("resultBody");
-    const ordered=[...players].sort((a,b)=>{
-      if(a.done&&b.done) return a.finishTime-b.finishTime;
-      if(a.done) return -1;
-      if(b.done) return 1;
-      return currentProgress(b)-currentProgress(a);
-    });
-    body.innerHTML=ordered.map((p,i)=>{
-      const m=p.match;
-      const avgSpeed=p.finishTime ? m.distance/(p.finishTime/1000) : 0;
+    const teamSummary=document.getElementById("teamResultSummary");
+
+    const winner=teamTotals.A===teamTotals.B ? "무승부" : (teamTotals.A>teamTotals.B ? "A팀 승리" : "B팀 승리");
+    teamSummary.innerHTML=`<div class="winner">${winner}</div>
+      <div class="final-team-score"><span>A팀 <b>${teamTotals.A}</b></span><span>B팀 <b>${teamTotals.B}</b></span></div>
+      <div class="round-score-list">${roundHistory.map(r=>`<span>${r.round}R · A ${r.team.A} : ${r.team.B} B</span>`).join("")}</div>`;
+
+    const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
+    body.innerHTML=rows.map((pt,i)=>{
+      const r=[1,2,3].map(n=>{
+        const x=pt.rounds.find(v=>v.round===n);
+        return x ? `${x.rank}위 / ${x.points>0?"+":""}${x.points}` : "-";
+      });
       return `<tr>
-        <td>${i+1}</td><td><button class="result-name player-link" data-player="${p.index}">${p.name}</button></td>
-        <td>${p.done?formatTime(p.finishTime):"DNF"}</td><td>${m.collisions}</td><td>${m.stops}</td><td>${m.avoids}</td>
-        <td>${m.overtakes}</td><td>${(m.leadMs/1000).toFixed(1)}s</td><td>${m.maxRankGain}</td><td>${m.maxRankLoss}</td>
-        <td>${m.distance.toFixed(1)}</td><td>${avgSpeed.toFixed(2)}</td>
+        <td>${i+1}</td>
+        <td><span class="team-mini team-${pt.team.toLowerCase()}">${pt.team}</span></td>
+        <td><button class="result-name player-link" data-player="${names.indexOf(pt.name)}">${pt.name}</button></td>
+        <td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
+        <td><b>${pt.total>0?"+":""}${pt.total}</b></td>
       </tr>`;
     }).join("");
     body.querySelectorAll(".result-name").forEach(el=>{
@@ -1343,7 +1459,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   startBtn.addEventListener("click",start);
-  restartBtn.addEventListener("click",()=>{ reset(); prevRanks=new Map(); start(); });
+  restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("resultBtn").addEventListener("click",showMatchResults);
   document.getElementById("seasonResetBtn").addEventListener("click",resetSeason);
   document.getElementById("resultClose").addEventListener("click",()=>document.getElementById("resultPanel").classList.add("hidden"));
