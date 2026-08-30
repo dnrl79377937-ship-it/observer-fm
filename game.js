@@ -21,6 +21,10 @@
   const PLAYER_HIT_RADIUS = 1.40;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.50;   // requested: 50% smaller icon
   const OBS_VISUAL_SCALE = 0.50;      // requested: 50% smaller observer
+  const OBS_SPEED_RATIO = 0.70;         // observer speed ≈ 70% of player speed
+  const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
+  const OBS_MOVE_MS = 10000;            // move for 10 seconds
+  const OBS_STOP_MS = 1000;             // then stop for 1 second
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
@@ -114,23 +118,22 @@
 
   function spawnObservers(){
     const arr=[];
+    const avgPlayerSpeed=9.72;
+    const baseSpeed=avgPlayerSpeed*OBS_SPEED_RATIO;
+
     for(let i=0;i<OBSERVER_COUNT;i++){
-      // Evenly distribute along the complete course so 300 really means 300 on track,
-      // then add mild jitter so the visible screen looks dense but not like a grid.
-      const progress=(i+Math.random()*0.88)/OBSERVER_COUNT * routeLength;
-      let si=0;
-      while(si<segs.length-1 && segs[si].start+segs[si].L<progress) si++;
-      const s=segs[si];
-      const local=Math.max(0,Math.min(1,(progress-s.start)/s.L));
-      const half=widths[si]*0.68;
-      const off=(Math.random()*2-1)*half;
+      const angle=Math.random()*Math.PI*2;
+      const speed=baseSpeed*(0.88+Math.random()*0.24);
+
       arr.push({
-        seg:si,
-        baseT:local,
-        off,
-        phase:Math.random()*Math.PI*2,
-        sway:0.08+Math.random()*0.14,
-        x:0,y:0
+        x:3+Math.random()*(MAP_W-6),
+        y:3+Math.random()*(MAP_H-6),
+        vx:Math.cos(angle)*speed,
+        vy:Math.sin(angle)*speed,
+        speed,
+        phase:"move",
+        phaseUntil:0,
+        cycleOffset:Math.random()*(OBS_MOVE_MS+OBS_STOP_MS)
       });
     }
     return arr;
@@ -363,14 +366,65 @@
     }
   }
 
-  function updateObservers(now){
-    const t1=now*0.0015, t2=now*0.003;
+  function updateObservers(now,dt=16){
+    const sec=Math.min(0.05,Math.max(0,dt/1000));
+    const margin=3.0;
+
     for(const o of observers){
-      const s=segs[o.seg];
-      const t=Math.max(0,Math.min(1,o.baseT+Math.sin(t1+o.phase)*o.sway*0.12));
-      const lateral=o.off+Math.sin(t2+o.phase)*0.35;
-      o.x=s.a[0]+s.dx*t+s.nx*lateral;
-      o.y=s.a[1]+s.dy*t+s.ny*lateral;
+      if(!o.phaseUntil){
+        const offset=o.cycleOffset||0;
+        if(offset<OBS_MOVE_MS){
+          o.phase="move";
+          o.phaseUntil=now+(OBS_MOVE_MS-offset);
+        }else{
+          o.phase="stop";
+          o.phaseUntil=now+(OBS_MOVE_MS+OBS_STOP_MS-offset);
+          o.vx=0;
+          o.vy=0;
+        }
+        o.cycleOffset=0;
+      }
+
+      if(now>=o.phaseUntil){
+        if(o.phase==="move"){
+          // 10 seconds moving -> 1 second stopped.
+          o.phase="stop";
+          o.phaseUntil=now+OBS_STOP_MS;
+          o.vx=0;
+          o.vy=0;
+        }else{
+          // After stopping, choose a completely new random direction.
+          const angle=Math.random()*Math.PI*2;
+          o.speed=(9.72*OBS_SPEED_RATIO)*(0.88+Math.random()*0.24);
+          o.vx=Math.cos(angle)*o.speed;
+          o.vy=Math.sin(angle)*o.speed;
+          o.phase="move";
+          o.phaseUntil=now+OBS_MOVE_MS;
+        }
+      }
+
+      if(o.phase==="move"){
+        o.x+=o.vx*sec;
+        o.y+=o.vy*sec;
+
+        // Free random roaming over the whole map, independent of the race route.
+        // Edge contact reflects the direction so observers stay inside the map.
+        if(o.x<margin){
+          o.x=margin;
+          o.vx=Math.abs(o.vx);
+        }else if(o.x>MAP_W-margin){
+          o.x=MAP_W-margin;
+          o.vx=-Math.abs(o.vx);
+        }
+
+        if(o.y<margin){
+          o.y=margin;
+          o.vy=Math.abs(o.vy);
+        }else if(o.y>MAP_H-margin){
+          o.y=MAP_H-margin;
+          o.vy=-Math.abs(o.vy);
+        }
+      }
     }
   }
 
@@ -393,7 +447,7 @@
     const dt=Math.min(32,Math.max(0,ts-lastTs));
     lastTs=ts;
 
-    updateObservers(ts);
+    updateObservers(ts,dt);
     for(const p of players) updatePlayer(p,ts,dt);
     updateCamera(dt);
     render(ts);
