@@ -444,10 +444,7 @@ body.game-focus-mode .broadcast{border:0;border-radius:0}
 .score-dot.green{background:#39d46a;box-shadow:0 0 6px rgba(57,212,106,.58)}
 .team-score-board{width:min(820px,78%)}
 .team-score-board .team-score{min-width:105px}
-.speed-controls{display:inline-flex;gap:3px;align-items:center;margin-left:3px}
-.speed-controls button{padding:5px 7px;min-width:38px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(8,13,20,.82);color:#dbe7f3;font-size:11px;font-weight:850;cursor:pointer}
-.speed-controls button.active{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.62);color:#fff}
-@media(max-width:1050px){.speed-controls button{padding:4px 5px;min-width:34px}.team-score-board{width:92%}}
+@media(max-width:1050px){.team-score-board{width:92%}}
 
 /* v3.3 map clarity */
 #gameCanvas,#miniMap{image-rendering:auto}
