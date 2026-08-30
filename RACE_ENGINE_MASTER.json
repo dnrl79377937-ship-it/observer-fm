@@ -1,5 +1,5 @@
 {
-  "build": "v3.55",
+  "build": "v3.56",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Removed coordinate-changing anti-stuck rescue that caused post-collision sideways teleport from the thin 5-o'clock upward edge road to the wide right road. Rescue now resets control/avoidance/steering only and preserves x/y exactly."
+  "notes": "v3.56 NO-YELLOW: removed all hand-drawn/special yellow-route permissions and priority logic. Driving now uses only the real route corridor. Strong inside behavior is preserved by generic corner/apex planning up to 1.08x/1.10x of segment width, with ROAD_MARGIN 1.10 and both one-line edge strips legal. 5-o'clock thin-road protection remains."
 }

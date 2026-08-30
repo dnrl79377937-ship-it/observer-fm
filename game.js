@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.55";
+  const BUILD_ID = "v3.56";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -134,15 +134,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if (i < 28) return 7.0;
     return 7.8;
   });
-
-  // v2.43: hidden special-inside permissions based on the user's guide.
-  // No yellow guide or special line is ever rendered in-game or in stats.
-  const SPECIAL_INSIDE_SEGMENTS=new Set([
-    0,1,2,3,4,5,6,7,8,
-    11,12,13,14,15,16,17,18,
-    20,21,22,23,24,25,
-    27,28,29,30,31,32
-  ]);
 
   const segs = [];
   let routeLength = 0;
@@ -398,8 +389,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         avoidRecoverUntil:0,
         avoidRecoverOffset:0,
         avoidRecoverStart:0,
-        yellowPriorityUntil:0,
-        yellowPriorityOffset:0,
         avoidExitSide:0,
         avoidExitUntil:0,
         avoidClearSince:0,
@@ -912,91 +901,33 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return (turn>0 ? 1 : -1)*half*apex;
   }
 
-  function specialInsideSide(si){
-    if(!SPECIAL_INSIDE_SEGMENTS.has(si)) return 0;
-    const direct=cornerInsideSide(si);
-    if(direct) return direct;
-    const future=futureInsideBias(si);
-    return Math.abs(future)>.08 ? (future>0?1:-1) : 0;
-  }
-
-  function specialInsideTarget(p,si,now,off){
-    const side=specialInsideSide(si);
-    if(!side) return off;
-    const skill=((p.stats.insideLine-72)/27)*.45+((p.stats.routeReading-72)/27)*.30+
-      ((p.stats.cornering-72)/27)*.25;
-    const localDanger=playerNearbyObservers(p,15).length;
-    // v2.51: the user's hidden yellow guide is NORMAL drivable racing road.
-    // It is not a special/rare shortcut. On a clear road the optimizer strongly
-    // prefers this deeper apex; observers may override it for survival.
-    const normalHalf=Math.max(1.8,widths[si]*1.02);
-    const deepHalf=Math.max(normalHalf,widths[si]*(1.38+skill*.075));
-    if(p.wideDetourRace){
-      // 8% race choice: reject the fastest hidden line, but take only a moderately wider path.
-      return off*.50 + (-side)*normalHalf*.56;
-    }
-    // v2.55: deep inside remains the primary fast line, but survival specialists
-    // sacrifice some apex depth for extra observer clearance.
-    const survival=p.survivalNorm||0;
-    const clearCommit=Math.max(.992,Math.min(.9998,
-      .995+skill*.006+(p.linePersonality||0)*.006-survival*.025+(p.cleanConfidence||0)*.018));
-    const dangerFade=localDanger>=8?.62:localDanger>=5?.84:localDanger>=2?.975:1;
-    const commit=clearCommit*dangerFade;
-    return off*(1-commit)+(side*deepHalf)*commit;
-  }
-
-  function yellowRoadPriorityTarget(p,si,now,baseOff){
-    // v2.62: dedicated optimized-inside-road decision.
-    // It is checked independently from generic line personality so other route
-    // variety logic cannot casually wash it out. Real observer danger still overrides later.
-    const side=specialInsideSide(si);
-    if(!side) return baseOff;
-    const local=playerNearbyObservers(p,13.5);
-    let frontDanger=0;
-    const s=segs[Math.min(si,segs.length-1)];
-    for(let i=0;i<local.length;i++){
-      const o=local[i],dx=o.x-p.x,dy=o.y-p.y;
-      const along=dx*s.ux+dy*s.uy,lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along>0&&along<8.5&&lat<4.0) frontDanger++;
-    }
-    const skill=Math.max(0,Math.min(1,
-      (((p.stats.insideLine+p.stats.routeReading+p.stats.cornering)/3)-72)/27));
-    const safeEnough=frontDanger<=1 || (frontDanger===2 && skill>.76);
-    if(now<p.yellowPriorityUntil && safeEnough) return p.yellowPriorityOffset;
-    if(!safeEnough) return baseOff;
-
-    const deep=specialInsideTarget(p,si,now,baseOff);
-    const commit=Math.min(.999,.965+skill*.025+(p.cleanConfidence||0)*.018);
-    p.yellowPriorityOffset=baseOff*(1-commit)+deep*commit;
-    p.yellowPriorityUntil=now+760+Math.random()*420;
-    return p.yellowPriorityOffset;
-  }
-
-
-  function clampSpecialRoadOffset(si,lateral,p=null){
+  function clampRoadOffset(si,lateral,p=null){
+    // v3.56 NO-YELLOW: only the real route corridor is legal.
+    // Both one-line edge strips remain ordinary drivable road.
     const detourBoost=p&&p.wideDetourRace?1.025:1;
-    const normalHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*detourBoost);
-    const side=specialInsideSide(si);
-    if(!side) return Math.max(-normalHalf,Math.min(normalHalf,lateral));
-    const specialHalf=Math.max(normalHalf,widths[si]*1.48);
-    const lo=side<0?-specialHalf:-normalHalf;
-    const hi=side>0? specialHalf: normalHalf;
-    return Math.max(lo,Math.min(hi,lateral));
+    const roadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*detourBoost);
+    return Math.max(-roadHalf,Math.min(roadHalf,lateral));
   }
+
 
   function clampToRoad(p){
     // v3.54: edge-line is legal road. Never "snap" to another segment after a hit.
     // First keep the exact current position if it is inside ANY nearby legal
     // corridor. Only correct the minimum overflow beyond the nearest boundary.
     const base=Math.min(p.seg,segs.length-1);
-    const from=Math.max(0,base-1), to=Math.min(segs.length-1,base+2);
+    // 5-o'clock corner -> upward one-line road (seg 5~8): never let the
+    // nearby wide road become a clamp candidate. This is a spatially close but
+    // logically different road, and was the source of the visible side jump.
+    const thinUpRoad=base>=5 && base<=8;
+    const from=thinUpRoad?base:Math.max(0,base-1);
+    const to=thinUpRoad?base:Math.min(segs.length-1,base+2);
     let best=null;
     for(let si=from;si<=to;si++){
       const s=segs[si];
       const rx=p.x-s.a[0], ry=p.y-s.a[1];
       const rawAlong=rx*s.ux+ry*s.uy;
       const rawLat=rx*s.nx+ry*s.ny;
-      const legalLat=clampSpecialRoadOffset(si,rawLat,p);
+      const legalLat=clampRoadOffset(si,rawLat,p);
       // Position already belongs to this road corridor: do not move it at all.
       if(rawAlong>=-1.8 && rawAlong<=s.L+2.8 && Math.abs(rawLat-legalLat)<.0001) return;
       const along=Math.max(-1.8,Math.min(s.L+2.8,rawAlong));
@@ -1026,22 +957,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!p.lastAdvanceAt) p.lastAdvanceAt=now;
     if(now-p.lastAdvanceAt < STUCK_RESCUE_MS) return;
 
-    // v3.55 NO-POSITION-TELEPORT rescue.
-    // The old anti-stuck rescue rewrote x/y using desiredOffset. On the thin
-    // 5-o'clock-to-upward edge road, a collision/stun could therefore snap a
-    // racer sideways onto the wide road. Recovery may reset steering state,
-    // but it must NEVER change the racer's world position.
+    // v3.56: preserve the anti-stuck recovery but NEVER use desiredOffset
+    // to relocate sideways. Advance only a small amount along the CURRENT
+    // segment while preserving the racer's actual lateral position.
     const si=Math.min(p.seg,segs.length-1);
     const s=segs[si];
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    let along=rx*s.ux+ry*s.uy;
+    const actualLateral=rx*s.nx+ry*s.ny;
+    along=Math.max(0,Math.min(s.L,along+0.72));
+    p.x=s.a[0]+s.ux*along+s.nx*actualLateral;
+    p.y=s.a[1]+s.uy*along+s.ny*actualLateral;
     p.controlMode="normal";
     p.controlUntil=0;
     p.avoidPlanUntil=0;
-    p.avoidExitUntil=0;
-    p.packPlanUntil=0;
-    p.steerX=s.ux;
-    p.steerY=s.uy;
-    const lateral=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-    p.desiredOffset=clampSpecialRoadOffset(si,lateral,p);
     p.lastProgress=currentProgress(p);
     p.lastAdvanceAt=now;
   }
@@ -2710,7 +2639,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
       if(insideSide!==0 && turnPower>0.055){
-        const halfRoad=Math.max(1.8,widths[si]*1.02);
+        const halfRoad=Math.max(1.8,widths[si]*1.08);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
         const apexBlend=Math.min(0.992,0.80+turnPower*1.45);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
@@ -2720,7 +2649,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // the corner actually begins instead of waiting until the midpoint.
       const futureInside=futureInsideBias(si);
       if(Math.abs(futureInside)>0.10){
-        const halfRoad2=Math.max(1.8,widths[si]*1.04);
+        const halfRoad2=Math.max(1.8,widths[si]*1.10);
         const futureApex=futureInside*halfRoad2*0.998;
         targetOff=targetOff*0.12+futureApex*0.88;
       }
@@ -2766,9 +2695,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
     targetOff=pressureLineAdjustment(p,si,now,targetOff);
-    targetOff=specialInsideTarget(p,si,now,targetOff);
-    targetOff=yellowRoadPriorityTarget(p,si,now,targetOff);
-
     if(now<p.shockAvoidUntil){
       targetOff=targetOff*.16+p.shockAvoidOffset*.84;
     }
@@ -2789,15 +2715,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(avoid.mode==="stop"){
         speedMul*=.72;
       }else{
-        const yellowActive=now<(p.yellowPriorityUntil||0) && specialInsideSide(si)!==0;
-        const emergency=(avoid.minClear||99)<1.15 || (avoid.risk||0)>155;
-        if(yellowActive && !emergency){
-          // v2.80: normal avoidance may bend the optimized inside line, but it
-          // no longer completely erases it. Only a real danger can force exit.
-          targetOff=p.yellowPriorityOffset*.28+avoid.targetOff*.72;
-        }else{
-          targetOff=targetOff*.12+avoid.targetOff*.88;
-        }
+        targetOff=targetOff*.12+avoid.targetOff*.88;
         speedMul*=avoid.speedMul;
       }
     }
@@ -2814,13 +2732,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!avoid && now<p.avoidRecoverUntil){
       const duration=Math.max(430,p.avoidRecoverUntil-(p.avoidRecoverStart||now));
       const t=Math.max(0,Math.min(1,(now-(p.avoidRecoverStart||now))/duration));
-      // Three-stage feel: hold escape briefly, blend toward normal line, then settle
-      // precisely onto the optimized/yellow target without a sudden steering snap.
+      // Three-stage feel: hold escape briefly, then settle onto the
+      // normal optimized racing line without a sudden steering snap.
       const smooth=t<.22 ? t*.32 : t<.72 ? .07+(t-.22)*1.20 : .67+(t-.72)*1.18;
       const blend=Math.max(0,Math.min(1,smooth));
-      const rejoinBase=plannedRacingOffset(p,si,now);
-      const rejoin=yellowRoadPriorityTarget(p,si,now,
-        specialInsideTarget(p,si,now,rejoinBase));
+      const rejoin=plannedRacingOffset(p,si,now);
       const from=p.avoidRecoverOffset;
       targetOff=from*(1-blend)+rejoin*blend;
     }
@@ -2874,7 +2790,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff += side*half*(0.52+controlSkill*0.07)*(failedControl?1.12:1);
       speedMul=(0.895+controlSkill*0.055)*(failedControl?.91:1);
     }
-targetOff=clampSpecialRoadOffset(si,targetOff,p);
+targetOff=clampRoadOffset(si,targetOff,p);
     const steerControl=(p.stats.control-72)/27;
     // v2.7 anti-freeze: outside collision / explicit backcon / explicit stopcon,
     // every active racer keeps meaningful forward motion.
@@ -2885,8 +2801,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
-    const yellowSteerBoost=(now<(p.yellowPriorityUntil||0) && specialInsideSide(si)!==0)?1.38:1;
-    const steerEase=Math.min(.120,dt*(.00258+steerControl*.00057+steerTurn*.00058)*yellowSteerBoost);
+    const steerEase=Math.min(.120,dt*(.00258+steerControl*.00057+steerTurn*.00058));
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
@@ -5361,7 +5276,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v355SelfAudit(){
+  function v356SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==350)issues.push("옵저버350");
@@ -5377,7 +5292,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v355SelfAudit,
+    version:BUILD_ID,selfAudit:v356SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),
