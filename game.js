@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.42";
+  const BUILD_ID = "v3.43";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -368,6 +368,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
+        motionWatchX:20.5, motionWatchY:154.8 + (i-5.5)*0.40, motionWatchAt:0, noMotionSince:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -995,11 +996,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(p.seg<sc.fromSeg||p.seg>sc.toSeg)continue;
       const q=nearestOnPolyline(p.x,p.y,sc.pts);if(!q)continue;
       const dist=Math.sqrt(q.d2);
-      if(dist<=sc.half+2.4){
+      if(dist<=sc.half+1.6){
         if(dist>sc.half){const k=sc.half/dist;p.x=q.x+(p.x-q.x)*k;p.y=q.y+(p.y-q.y)*k;}
-        const progress=(q.i+q.t)/(sc.pts.length-1);
-        const shortcutSeg=Math.round(sc.fromSeg+progress*(sc.toSeg-sc.fromSeg));
-        if(shortcutSeg>p.seg)p.seg=Math.min(sc.toSeg,shortcutSeg);
+        // v3.43: shortcut geometry must never advance route state.
+        // Normal checkpoint/segment progression is the only source of truth.
         return true;
       }
     }
@@ -2691,6 +2691,23 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p.lastProgress=currentProgress(p);
       const recovery=(p.stats.recovery-72)/27;
       p.resumeEaseUntil=now+(470-recovery*150);
+    }
+
+    // v3.43: rescue only unexplained geometry/path stalls; real collision stun is untouched.
+    if(!p.motionWatchAt){p.motionWatchAt=now;p.motionWatchX=p.x;p.motionWatchY=p.y;}
+    if(now-p.motionWatchAt>=420){
+      const moved=Math.hypot(p.x-p.motionWatchX,p.y-p.motionWatchY);
+      if(moved<.16){
+        p.noMotionSince=p.noMotionSince||now;
+        if(now-p.noMotionSince>520){
+          const rs=segs[Math.min(p.seg,segs.length-1)];
+          p.x+=rs.ux*.38;p.y+=rs.uy*.38;
+          p.desiredOffset*=.78;
+          p.avoidPlanUntil=0;
+          p.noMotionSince=0;
+        }
+      }else p.noMotionSince=0;
+      p.motionWatchX=p.x;p.motionWatchY=p.y;p.motionWatchAt=now;
     }
 
     chooseControl(p,now,dt);
@@ -5364,7 +5381,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v342SelfAudit(){
+  function v343SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==400)issues.push("옵저버400");
@@ -5378,7 +5395,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v342SelfAudit,
+    version:BUILD_ID,selfAudit:v343SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),

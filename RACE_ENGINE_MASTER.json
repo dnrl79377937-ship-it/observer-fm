@@ -1,5 +1,5 @@
 {
-  "build": "v3.42",
+  "build": "v3.43",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Safe-zone rectangular waypoint path replaced by smooth inside diagonal shortcut corridor based on user's red guide. General lookahead increased from ~2-4 to ~3-8 segments and corner target blending/steering strengthened for optimized diagonal apexing elsewhere. Observer avoidance remains final authority. Stun 1.8s."
+  "notes": "Fixed sudden unexplained racer stops introduced by v3.42 shortcut. Shortcut corridor no longer mutates route segment state; normal progression remains authoritative. Added non-collision motion watchdog for geometry stalls without bypassing real 1.8s collision stun. v3.42 diagonal inside routing retained."
 }
