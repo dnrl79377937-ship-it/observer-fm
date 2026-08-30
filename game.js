@@ -20,6 +20,20 @@
   const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika"];
   const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e"];
 
+  // Hidden FM-style driving profiles.
+  // These do not change the 4% collision rule; they only change line precision,
+  // raw pace and how often/skillfully each player uses special controls.
+  const profiles = [
+    { pace:96, line:95, control:91, aggression:82 }, // Angel
+    { pace:93, line:92, control:95, aggression:68 }, // Egle
+    { pace:97, line:88, control:94, aggression:91 }, // GhostRider
+    { pace:91, line:96, control:86, aggression:62 }, // Bacilius
+    { pace:95, line:91, control:90, aggression:78 }, // Zino
+    { pace:90, line:89, control:96, aggression:73 }, // Chotbul
+    { pace:94, line:94, control:87, aggression:70 }, // Kaka
+    { pace:92, line:90, control:92, aggression:84 }  // Pika
+  ];
+
   // Centerline based on the user's supplied map.
   const route = [
     [21,158],[44,158],[73,158],[104,158],[130,157],[143,151],
@@ -68,18 +82,23 @@
   }
 
   function makePlayers(){
-    return names.map((name,i)=>({
-      index:i,name,color:colors[i],
-      x:20.5, y:154.8 + (i-3.5)*0.48,
-      seg:0,
-      speed: 9.55 + (i%4)*0.12 + Math.random()*0.22,
-      desiredOffset:(i-3.5)*0.48,
-      stunUntil:0, invUntil:0, collisionLockUntil:0,
-      hits:0, done:false, finishTime:null,
-      controlMode:"normal", controlUntil:0,
-      controlCooldown: 2200 + Math.random()*4200,
-      modeStart:0
-    }));
+    return names.map((name,i)=>{
+      const pf=profiles[i];
+      const paceNorm=(pf.pace-90)/10;
+      return {
+        index:i,name,color:colors[i],profile:pf,
+        x:20.5, y:154.8 + (i-3.5)*0.48,
+        seg:0,
+        // Pace creates small but meaningful differences, not runaway gaps.
+        speed: 9.50 + paceNorm*0.42 + Math.random()*0.08,
+        desiredOffset:(i-3.5)*0.48,
+        stunUntil:0, invUntil:0, collisionLockUntil:0,
+        hits:0, done:false, finishTime:null,
+        controlMode:"normal", controlUntil:0,
+        controlCooldown: 2400 + Math.random()*3600,
+        modeStart:0
+      };
+    });
   }
 
   function spawnObservers(){
@@ -142,20 +161,26 @@
       p.controlMode="normal";
     }
     if(p.controlMode==="normal" && p.controlCooldown<=0){
-      // Controls stay occasional. Most of the race remains optimized.
+      // Higher aggression = more frequent manual-control attempts.
+      // Higher control = shorter/cleaner execution with less time loss.
+      const ag=(p.profile.aggression-60)/40;
+      const ct=(p.profile.control-85)/15;
       const r=Math.random();
-      if(r < 0.30) p.controlMode="zigzag";
+
+      if(r < 0.28) p.controlMode="zigzag";
       else if(r < 0.48) p.controlMode="backcon";
       else if(r < 0.68) p.controlMode="stopcon";
       else p.controlMode="wide";
 
-      const duration =
-        p.controlMode==="stopcon" ? 220+Math.random()*220 :
-        p.controlMode==="backcon" ? 500+Math.random()*280 :
-        650+Math.random()*520;
+      let duration =
+        p.controlMode==="stopcon" ? 210+Math.random()*190 :
+        p.controlMode==="backcon" ? 460+Math.random()*250 :
+        600+Math.random()*440;
+
+      duration *= (1.08 - ct*0.16);
       p.modeStart=now;
       p.controlUntil=now+duration;
-      p.controlCooldown=3200+Math.random()*6200;
+      p.controlCooldown=(3900-ag*1200)+Math.random()*(4600-ag*800);
     }
   }
 
@@ -167,11 +192,13 @@
 
     if(!next) return 0;
     const turn=cur.ux*next.uy-cur.uy*next.ux;
+    const lineSkill=(p.profile.line-85)/15; // ~0.2 to ~0.75
     if(Math.abs(turn)<0.035){
-      return p.desiredOffset*0.22; // efficient straight-line continuation
+      return p.desiredOffset*(0.30-lineSkill*0.12);
     }
-    // Aggressively clip the inside/apex like time-trial racing.
-    return (turn>0 ? 1 : -1)*half*0.78;
+    // Better line skill clips the apex more precisely.
+    const apex=0.68 + lineSkill*0.16;
+    return (turn>0 ? 1 : -1)*half*apex;
   }
 
   function updatePlayer(p, now, dt){
@@ -190,22 +217,26 @@
     const half=widths[si]*0.72;
     let targetOff=optimalOffsetFor(p);
 
-    // Small individual differences; not enough to destroy the optimized line.
-    targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*0.035;
+    // Lower line skill adds slightly more steering error, while everyone still
+    // follows the optimized racing line most of the time.
+    const lineError=(100-p.profile.line)/100;
+    targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*(0.018+lineError*0.16);
 
     let speedMul=1;
+    const controlSkill=(p.profile.control-85)/15;
     if(p.controlMode==="zigzag"){
-      targetOff += Math.sin(now*0.020+p.index)*half*0.58;
-      speedMul=0.95;
+      targetOff += Math.sin(now*0.020+p.index)*half*(0.50+controlSkill*0.10);
+      speedMul=0.925+controlSkill*0.055;
     } else if(p.controlMode==="backcon"){
       const elapsed=now-p.modeStart;
-      targetOff += Math.sin(now*0.024+p.index)*half*0.45;
-      speedMul = elapsed<260 ? -0.30 : 1.16;
+      targetOff += Math.sin(now*0.024+p.index)*half*(0.39+controlSkill*0.08);
+      const reverseMs=300-controlSkill*90;
+      speedMul = elapsed<reverseMs ? (-0.32+controlSkill*0.06) : (1.11+controlSkill*0.08);
     } else if(p.controlMode==="stopcon"){
       speedMul=0;
     } else if(p.controlMode==="wide"){
-      targetOff += (p.index%2?1:-1)*half*0.62;
-      speedMul=0.91;
+      targetOff += (p.index%2?1:-1)*half*(0.56+controlSkill*0.08);
+      speedMul=0.875+controlSkill*0.065;
     }
 
     targetOff=Math.max(-half,Math.min(half,targetOff));
