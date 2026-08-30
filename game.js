@@ -1,0 +1,443 @@
+
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("race");
+  const ctx = canvas.getContext("2d");
+  const rankingEl = document.getElementById("rankingList");
+  const clockEl = document.getElementById("clock");
+  const cameraLabel = document.getElementById("cameraLabel");
+  const startBtn = document.getElementById("startBtn");
+  const restartBtn = document.getElementById("restartBtn");
+
+  const MAP_W = 257, MAP_H = 178;
+  const OBSERVER_COUNT = 300;
+  const HIT_CHANCE = 0.04;
+  const STUN_MS = 1500;
+  const INV_MS = 1000;
+  const CAMERA_ZOOM = 3.0;
+
+  const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika"];
+  const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e"];
+
+  // Centerline based on the user's supplied map.
+  const route = [
+    [21,158],[44,158],[73,158],[104,158],[130,157],[143,151],
+    [148,139],[148,121],[147,103],[139,91],[127,85],[111,83],
+    [101,88],[98,99],[89,105],[73,108],[54,108],[36,108],[23,105],
+    [20,94],[20,78],[20,61],[21,43],[27,28],[40,20],[57,18],
+    [70,19],[78,26],[81,34],[93,36],[111,35],[130,34],[145,34],[154,34]
+  ];
+
+  // Tuned road half widths. We keep controls constrained to the visible road.
+  const widths = route.map((_, i) => {
+    if (i < 6) return 9.5;
+    if (i < 13) return 7.0;
+    if (i < 21) return 8.2;
+    if (i < 28) return 7.0;
+    return 7.8;
+  });
+
+  const segs = [];
+  let routeLength = 0;
+  for (let i=0;i<route.length-1;i++){
+    const a=route[i], b=route[i+1];
+    const dx=b[0]-a[0], dy=b[1]-a[1];
+    const L=Math.hypot(dx,dy) || 1;
+    segs.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,nx:-dy/L,ny:dx/L,start:routeLength});
+    routeLength += L;
+  }
+
+  const map = new Image();
+  map.src = "map.png";
+
+  let players = [];
+  let observers = [];
+  let running = false;
+  let raceStart = 0;
+  let lastTs = 0;
+  let raf = 0;
+  let camX = 28, camY = 158;
+
+  function safeAt(x,y){
+    return (
+      (x>=7 && x<=38 && y>=143 && y<=172) ||
+      (x>=7 && x<=38 && y>=93 && y<=123) ||
+      (x>=140 && x<=168 && y>=20 && y<=46)
+    );
+  }
+
+  function makePlayers(){
+    return names.map((name,i)=>({
+      index:i,name,color:colors[i],
+      x:20.5, y:154.8 + (i-3.5)*0.48,
+      seg:0,
+      speed: 9.55 + (i%4)*0.12 + Math.random()*0.22,
+      desiredOffset:(i-3.5)*0.48,
+      stunUntil:0, invUntil:0, collisionLockUntil:0,
+      hits:0, done:false, finishTime:null,
+      controlMode:"normal", controlUntil:0,
+      controlCooldown: 2200 + Math.random()*4200,
+      modeStart:0
+    }));
+  }
+
+  function spawnObservers(){
+    const arr=[];
+    for(let i=0;i<OBSERVER_COUNT;i++){
+      // Evenly distribute along the complete course so 300 really means 300 on track,
+      // then add mild jitter so the visible screen looks dense but not like a grid.
+      const progress=(i+Math.random()*0.88)/OBSERVER_COUNT * routeLength;
+      let si=0;
+      while(si<segs.length-1 && segs[si].start+segs[si].L<progress) si++;
+      const s=segs[si];
+      const local=Math.max(0,Math.min(1,(progress-s.start)/s.L));
+      const half=widths[si]*0.68;
+      const off=(Math.random()*2-1)*half;
+      arr.push({
+        seg:si,
+        baseT:local,
+        off,
+        phase:Math.random()*Math.PI*2,
+        sway:0.08+Math.random()*0.14,
+        x:0,y:0
+      });
+    }
+    return arr;
+  }
+
+  function reset(){
+    cancelAnimationFrame(raf);
+    players=makePlayers();
+    observers=spawnObservers();
+    running=false;
+    raceStart=0; lastTs=0;
+    camX=28; camY=158;
+    startBtn.textContent="LIVE 시작";
+    render(0);
+    renderRanking();
+  }
+
+  function currentProgress(p){
+    if(p.done) return routeLength+1000-(p.finishTime||0)/1000000;
+    const s=segs[Math.min(p.seg,segs.length-1)];
+    const along=((p.x-s.a[0])*s.ux+(p.y-s.a[1])*s.uy);
+    return s.start + Math.max(0,Math.min(s.L,along));
+  }
+
+  function start(){
+    if(running) return;
+    if(players.every(p=>p.done)) reset();
+    running=true;
+    const now=performance.now();
+    if(!raceStart) raceStart=now;
+    lastTs=now;
+    startBtn.textContent="진행 중";
+    raf=requestAnimationFrame(loop);
+  }
+
+  function chooseControl(p, now, dt){
+    p.controlCooldown -= dt;
+    if(p.controlMode!=="normal" && now>=p.controlUntil){
+      p.controlMode="normal";
+    }
+    if(p.controlMode==="normal" && p.controlCooldown<=0){
+      // Controls stay occasional. Most of the race remains optimized.
+      const r=Math.random();
+      if(r < 0.30) p.controlMode="zigzag";
+      else if(r < 0.48) p.controlMode="backcon";
+      else if(r < 0.68) p.controlMode="stopcon";
+      else p.controlMode="wide";
+
+      const duration =
+        p.controlMode==="stopcon" ? 220+Math.random()*220 :
+        p.controlMode==="backcon" ? 500+Math.random()*280 :
+        650+Math.random()*520;
+      p.modeStart=now;
+      p.controlUntil=now+duration;
+      p.controlCooldown=3200+Math.random()*6200;
+    }
+  }
+
+  function optimalOffsetFor(p){
+    const si=Math.min(p.seg,segs.length-1);
+    const cur=segs[si];
+    const next=segs[Math.min(segs.length-1,si+1)];
+    const half=widths[si]*0.72;
+
+    if(!next) return 0;
+    const turn=cur.ux*next.uy-cur.uy*next.ux;
+    if(Math.abs(turn)<0.035){
+      return p.desiredOffset*0.22; // efficient straight-line continuation
+    }
+    // Aggressively clip the inside/apex like time-trial racing.
+    return (turn>0 ? 1 : -1)*half*0.78;
+  }
+
+  function updatePlayer(p, now, dt){
+    if(p.done) return;
+
+    if(now < p.stunUntil) return;
+    if(p.stunUntil){
+      p.stunUntil=0;
+      p.invUntil=now+INV_MS;
+    }
+
+    chooseControl(p,now,dt);
+
+    const si=Math.min(p.seg,segs.length-1);
+    const s=segs[si];
+    const half=widths[si]*0.72;
+    let targetOff=optimalOffsetFor(p);
+
+    // Small individual differences; not enough to destroy the optimized line.
+    targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*0.035;
+
+    let speedMul=1;
+    if(p.controlMode==="zigzag"){
+      targetOff += Math.sin(now*0.020+p.index)*half*0.58;
+      speedMul=0.95;
+    } else if(p.controlMode==="backcon"){
+      const elapsed=now-p.modeStart;
+      targetOff += Math.sin(now*0.024+p.index)*half*0.45;
+      speedMul = elapsed<260 ? -0.30 : 1.16;
+    } else if(p.controlMode==="stopcon"){
+      speedMul=0;
+    } else if(p.controlMode==="wide"){
+      targetOff += (p.index%2?1:-1)*half*0.62;
+      speedMul=0.91;
+    }
+
+    targetOff=Math.max(-half,Math.min(half,targetOff));
+    p.desiredOffset += (targetOff-p.desiredOffset)*Math.min(1,dt*0.006);
+
+    // Look ahead to create smoother apex cutting.
+    const next=segs[Math.min(segs.length-1,si+1)];
+    let tx=s.b[0]+s.nx*p.desiredOffset;
+    let ty=s.b[1]+s.ny*p.desiredOffset;
+    if(next && si<segs.length-1){
+      const look=0.24;
+      const nx=next.b[0]+next.nx*p.desiredOffset;
+      const ny=next.b[1]+next.ny*p.desiredOffset;
+      tx=tx*(1-look)+nx*look;
+      ty=ty*(1-look)+ny*look;
+    }
+
+    let dx=tx-p.x, dy=ty-p.y;
+    const d=Math.hypot(dx,dy) || 1;
+    const step=p.speed*speedMul*dt/1000;
+    const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
+    p.x += dx/d*move;
+    p.y += dy/d*move;
+
+    // Advance based on segment-plane crossing, never exact point collision.
+    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
+    if((along>=0.93 || Math.hypot(p.x-s.b[0],p.y-s.b[1])<3.0) && p.seg<segs.length-1){
+      p.seg++;
+    }
+
+    if(p.seg>=segs.length-1 && Math.hypot(p.x-route.at(-1)[0],p.y-route.at(-1)[1])<5.5){
+      p.done=true;
+      p.finishTime=now-raceStart;
+      return;
+    }
+
+    // Collision check. 4% is per encounter, not every animation frame.
+    if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
+      for(const o of observers){
+        if(Math.abs(o.seg-p.seg)>1) continue;
+        if(Math.hypot(p.x-o.x,p.y-o.y)<1.40){
+          p.collisionLockUntil=now+280; // debounce one overlap
+          if(Math.random()<HIT_CHANCE){
+            p.hits++;
+            p.stunUntil=now+STUN_MS;
+            p.collisionLockUntil=now+STUN_MS+INV_MS;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  function updateObservers(now){
+    for(const o of observers){
+      const s=segs[o.seg];
+      const t=Math.max(0,Math.min(1,o.baseT+Math.sin(now*0.0015+o.phase)*o.sway*0.12));
+      const lateral=o.off+Math.sin(now*0.003+o.phase)*0.35;
+      o.x=s.a[0]+s.dx*t+s.nx*lateral;
+      o.y=s.a[1]+s.dy*t+s.ny*lateral;
+    }
+  }
+
+  function updateCamera(dt){
+    const active=players.filter(p=>!p.done).sort((a,b)=>currentProgress(b)-currentProgress(a));
+    if(!active.length) return;
+    const leader=active[0];
+    let tx=leader.x,ty=leader.y;
+    if(active[1] && currentProgress(leader)-currentProgress(active[1])<2.5){
+      tx=leader.x*.82+active[1].x*.18;
+      ty=leader.y*.82+active[1].y*.18;
+    }
+    const a=Math.min(1,dt*0.006);
+    camX+=(tx-camX)*a; camY+=(ty-camY)*a;
+  }
+
+  function loop(ts){
+    if(!running) return;
+    // Clamp dt so background-tab stalls never make the simulation explode.
+    const dt=Math.min(40,Math.max(0,ts-lastTs));
+    lastTs=ts;
+
+    updateObservers(ts);
+    for(const p of players) updatePlayer(p,ts,dt);
+    updateCamera(dt);
+    render(ts);
+    renderRanking();
+
+    if(players.every(p=>p.done)){
+      running=false;
+      startBtn.textContent="경기 종료";
+      return;
+    }
+    raf=requestAnimationFrame(loop);
+  }
+
+  function worldToScreen(x,y,view){
+    return [(x-view.sx)*view.scale,(y-view.sy)*view.scale];
+  }
+
+  function getView(){
+    const W=canvas.width,H=canvas.height;
+    const fitScale=Math.min(W/MAP_W,H/MAP_H);
+    const scale=fitScale*CAMERA_ZOOM;
+    const viewW=W/scale, viewH=H/scale;
+    let sx=camX-viewW/2, sy=camY-viewH/2;
+    sx=Math.max(0,Math.min(MAP_W-viewW,sx));
+    sy=Math.max(0,Math.min(MAP_H-viewH,sy));
+    return {sx,sy,viewW,viewH,scale};
+  }
+
+  function drawObserver(o,view){
+    const [x,y]=worldToScreen(o.x,o.y,view);
+    if(x<-12||y<-12||x>canvas.width+12||y>canvas.height+12) return;
+    const r=Math.max(4.2,view.scale*0.72);
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.fillStyle="#d6e8ff";
+    ctx.strokeStyle="#5f89ad";
+    ctx.lineWidth=Math.max(1,view.scale*.11);
+    ctx.beginPath();ctx.ellipse(0,0,r*1.20,r*.72,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.fillStyle="#83bcdf";
+    ctx.beginPath();ctx.arc(r*.20,0,r*.30,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPlayer(p,view,rank){
+    const [x,y]=worldToScreen(p.x,p.y,view);
+    if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
+    const r=Math.max(10,view.scale*1.15);
+
+    ctx.save();
+    ctx.translate(x,y);
+
+    if(performance.now()<p.invUntil){
+      ctx.globalAlpha=.48+.35*Math.abs(Math.sin(performance.now()*.018));
+      ctx.strokeStyle="#fff";
+      ctx.lineWidth=3;
+      ctx.beginPath();ctx.arc(0,0,r*1.45,0,Math.PI*2);ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+
+    ctx.fillStyle=p.color;
+    ctx.strokeStyle="#07111a";
+    ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
+
+    ctx.fillStyle="#07111a";
+    ctx.font=`900 ${Math.max(12,r*.85)}px system-ui`;
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(String(rank),0,1);
+
+    // Nickname directly over the icon.
+    ctx.font=`800 ${Math.max(13,r*.72)}px system-ui`;
+    const label=p.name;
+    const tw=ctx.measureText(label).width+14;
+    const lh=Math.max(20,r*.92);
+    const ly=-r*1.48;
+    ctx.fillStyle="rgba(5,8,13,.88)";
+    ctx.strokeStyle=p.color;ctx.lineWidth=1.5;
+    ctx.beginPath();
+    if(ctx.roundRect) ctx.roundRect(-tw/2,ly-lh,tw,lh,5);
+    else ctx.rect(-tw/2,ly-lh,tw,lh);
+    ctx.fill();ctx.stroke();
+    ctx.fillStyle="#fff";ctx.textBaseline="bottom";
+    ctx.fillText(label,0,ly-2);
+
+    if(p.controlMode!=="normal"){
+      const label2={zigzag:"지그재그",backcon:"빽컨",stopcon:"스탑컨",wide:"외곽"}[p.controlMode];
+      ctx.font=`800 ${Math.max(10,r*.54)}px system-ui`;
+      ctx.fillStyle="#ffe28a";ctx.textBaseline="top";
+      ctx.fillText(label2,0,ly+2);
+    }
+    if(performance.now()<p.stunUntil){
+      ctx.font=`900 ${Math.max(12,r*.62)}px system-ui`;
+      ctx.fillStyle="#ff626b";ctx.textBaseline="middle";
+      ctx.fillText("STOP",0,-r*2.35);
+    }
+
+    ctx.restore();
+  }
+
+  function render(ts){
+    const W=canvas.width,H=canvas.height;
+    ctx.clearRect(0,0,W,H);
+    if(!map.complete) return;
+
+    const view=getView();
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(map,view.sx,view.sy,view.viewW,view.viewH,0,0,W,H);
+
+    // Draw every observer that falls inside this 300% camera crop.
+    for(const o of observers) drawObserver(o,view);
+
+    const ordered=[...players].sort((a,b)=>currentProgress(b)-currentProgress(a));
+    ordered.forEach((p,i)=>drawPlayer(p,view,i+1));
+
+    const elapsed=raceStart ? Math.max(0,(ts||performance.now())-raceStart) : 0;
+    clockEl.textContent=formatTime(elapsed);
+    cameraLabel.textContent="300% · 선두 선수 추적";
+  }
+
+  function renderRanking(){
+    const ordered=[...players].sort((a,b)=>{
+      if(a.done && b.done) return a.finishTime-b.finishTime;
+      if(a.done) return -1;if(b.done) return 1;
+      return currentProgress(b)-currentProgress(a);
+    });
+    rankingEl.innerHTML="";
+    const leaderProg=currentProgress(ordered[0]);
+    ordered.forEach((p,i)=>{
+      const row=document.createElement("div");
+      row.className="rank-row";
+      let gap;
+      if(p.done) gap=formatTime(p.finishTime);
+      else if(i===0) gap="LEADER";
+      else gap=`-${Math.max(0,leaderProg-currentProgress(p)).toFixed(1)}m`;
+      row.innerHTML=`<span class="rank-no">${i+1}</span><span class="rank-name">${p.name}</span><span class="rank-gap">${gap}</span>`;
+      rankingEl.appendChild(row);
+    });
+  }
+
+  function formatTime(ms){
+    const total=Math.max(0,ms)/1000;
+    const m=Math.floor(total/60);
+    const s=total-m*60;
+    return `${String(m).padStart(2,"0")}:${s.toFixed(1).padStart(4,"0")}`;
+  }
+
+  startBtn.addEventListener("click",start);
+  restartBtn.addEventListener("click",()=>{ reset(); start(); });
+
+  map.addEventListener("load",reset);
+  if(map.complete) reset();
+})();

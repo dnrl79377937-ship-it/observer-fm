@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Observer Avoidance FM — Live</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>OBSERVER AVOIDANCE FM</h1>
+      <p>300% 선두 추적 · 옵저버 300기 · 충돌 판정 4% · 1.5초 정지 → 1초 무적</p>
+    </div>
+    <div class="controls">
+      <button id="startBtn">LIVE 시작</button>
+      <button id="restartBtn">재시작</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="broadcast">
+      <div class="livebar">
+        <span class="live-dot"></span><b>LIVE</b>
+        <span id="cameraLabel">300% · 선두 추적</span>
+        <span id="clock">00:00.0</span>
+      </div>
+      <canvas id="race" width="1600" height="900"></canvas>
+    </section>
+
+    <aside class="ranking">
+      <h2>실시간 순위</h2>
+      <div id="rankingList"></div>
+    </aside>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
