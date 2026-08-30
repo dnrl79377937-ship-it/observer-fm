@@ -18,7 +18,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.32";
+  const BUILD_ID = "v2.34";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -257,6 +257,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return {
         index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
         raceForm,
+        // v2.34: persistent route personality. Negative = safer/wider, positive = tighter inside.
+        linePersonality:(
+          drivingStyle.style==="apexHunter" ? .92 :
+          drivingStyle.style==="attacker" ? .72 :
+          drivingStyle.style==="opportunist" ? .58 :
+          drivingStyle.style==="lineMaster" ? .42 :
+          drivingStyle.style==="balanced" ? .08 :
+          drivingStyle.style==="controller" ? -.28 :
+          drivingStyle.style==="patient" ? -.62 :
+          drivingStyle.style==="safeReader" ? -.82 : 0
+        ),
         x:20.5, y:154.8 + (i-3.5)*0.48,
         steerX:1, steerY:0,
         seg:0,
@@ -448,6 +459,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const now=performance.now();
     if(!raceStart){
       raceStart=now;
+      resetCommentary();
+      commentaryLine(`start-${currentRound}`,`${currentRound}라운드 출발! 8명의 선수가 동시에 레이스를 시작합니다.`,raceStart,true);
       // v2.14: each racer gets a small stat-driven launch quality.
       // This is a start skill effect, not comeback rubber-banding.
       for(let i=0;i<players.length;i++){
@@ -1508,7 +1521,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const cornerPower=cornerIntensity(si);
     const localObs=nearbyObservers(p.x,p.y,18.0);
     if(localObs.length===0 && cornerSide!==0 && cornerPower>0.055){
-      p.linePlanOffset=cornerSide*half*0.995;
+      // v2.34: clear road no longer sends every racer to the identical 99.5% apex.
+      // Aggressive/inside specialists cut tighter; safety styles intentionally leave margin.
+      const lp=p.linePersonality||0;
+      const skill=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/3;
+      const skillN=(skill-72)/27;
+      const commit=Math.max(.56,Math.min(.995,.76+lp*.20+skillN*.055));
+      p.linePlanOffset=cornerSide*half*commit;
       p.linePlanUntil=now+300+Math.random()*100;
       return p.linePlanOffset;
     }
@@ -1579,6 +1598,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(phasePlan.weight>0){
         const phaseDist=Math.abs(off-phasePlan.target)/Math.max(1,half);
         score += phaseDist*(.44+phasePlan.weight*.72);
+      }
+
+      // v2.34 persistent route personality:
+      // inside specialists prefer the corner's inside candidate; safety racers pay
+      // extra cost near either edge and therefore keep a visibly wider/smoother route.
+      const lp=p.linePersonality||0;
+      if(cornerSide!==0 && cornerPower>.035){
+        const insideCandidate=c*cornerSide;
+        if(lp>0) score-=Math.max(0,insideCandidate)*lp*.46;
+        else score+=Math.abs(c)*(-lp)*.52;
+      }else if(lp<0){
+        score+=Math.abs(c)*(-lp)*.18;
       }
 
       // Avoid wall scraping while still allowing near-apex lines.
@@ -1869,9 +1900,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const insideNow=cornerInsideSide(si);
     if(insideNow!==0 && cornerIntensity(si)>0.06){
       const insideCommit=(p.stats.insideLine-72)/27;
-      const styleApex=(p.drivingStyle.name==="attacker"||p.drivingStyle.name==="apexHunter")?.045:
-        (p.drivingStyle.name==="safeReader"||p.drivingStyle.name==="patient")?-.035:0;
-      const skillApex=insideNow*half*Math.min(.995,0.72+insideCommit*0.25+styleApex);
+      const styleApex=(p.drivingStyle.name==="attacker"||p.drivingStyle.name==="apexHunter")?.055:
+        (p.drivingStyle.name==="safeReader"||p.drivingStyle.name==="patient")?-.075:0;
+      const personalityApex=(p.linePersonality||0)*.095;
+      const skillApex=insideNow*half*Math.min(.995,Math.max(.54,0.69+insideCommit*0.23+styleApex+personalityApex));
       targetOff=targetOff*(0.40-insideCommit*0.12)+skillApex*(0.60+insideCommit*0.12);
     }
 
@@ -2172,6 +2204,47 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   let bestSector=[null,null,null];
 
 
+  let commentaryItems=[];
+  let commentaryLastKey="";
+  let commentaryLastAt=0;
+  let commentaryLastGeneralAt=0;
+
+  function resetCommentary(){
+    commentaryItems=[];commentaryLastKey="";commentaryLastAt=0;commentaryLastGeneralAt=0;
+    const feed=document.getElementById("commentaryFeed"),lead=document.getElementById("commentaryLead"),round=document.getElementById("commentaryRound");
+    if(feed) feed.innerHTML="";
+    if(lead) lead.textContent="출발 준비! 선수들이 스타트 라인에 섰습니다.";
+    if(round) round.textContent=`${currentRound}R`;
+  }
+  function commentaryLine(key,text,now=performance.now(),force=false){
+    if(!force&&key===commentaryLastKey&&now-commentaryLastAt<2600)return;
+    if(!force&&now-commentaryLastAt<900)return;
+    commentaryLastKey=key;commentaryLastAt=now;
+    commentaryItems.unshift({text,time:raceStart?Math.max(0,now-raceStart):0});
+    if(commentaryItems.length>7)commentaryItems.length=7;
+    const lead=document.getElementById("commentaryLead"),feed=document.getElementById("commentaryFeed");
+    if(lead)lead.textContent=text;
+    if(feed)feed.innerHTML=commentaryItems.map((x,i)=>`<div class="commentary-line ${i===0?"latest":""}"><span>${(x.time/1000).toFixed(1)}초</span><b>${x.text}</b></div>`).join("");
+  }
+  function updateLiveCommentary(now){
+    const ordered=liveOrderedPlayers();if(!ordered.length)return;
+    const p1=ordered[0],p2=ordered[1],p3=ordered[2],frac=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
+    const g12=broadcastGapSeconds(p1,p2),g23=broadcastGapSeconds(p2,p3);
+    const round=document.getElementById("commentaryRound");if(round)round.textContent=`${currentRound}R · ${(frac*100).toFixed(0)}%`;
+    if(frac>.94&&g12!=null&&g12<.20){commentaryLine(`finish-${p1.index}-${p2.index}`,`${p1.name} 선두! ${p2.name}이 바로 뒤에서 결승선을 노립니다. 마지막까지 모릅니다!`,now);return;}
+    if(g12!=null&&g12<.24){commentaryLine(`fight-${p1.index}-${p2.index}`,`${p1.name}과 ${p2.name}, 선두 싸움이 붙었습니다. 격차가 ${g12.toFixed(2)}초밖에 나지 않습니다!`,now);return;}
+    if(g12!=null&&g23!=null&&g12<.40&&g23<.40){commentaryLine(`three-${p1.index}-${p2.index}-${p3.index}`,`상위 3명이 한 덩어리입니다. ${p1.name}, ${p2.name}, ${p3.name}! 한 번의 회피가 순위를 바꿀 수 있습니다.`,now);return;}
+    let climber=null,bestGain=0;ordered.forEach((q,i)=>{const gain=(q.match?.startRank||i+1)-(i+1);if(gain>bestGain){bestGain=gain;climber=q;}});
+    if(climber&&bestGain>=3){commentaryLine(`climb-${climber.index}-${bestGain}`,`${climber.name}, 출발 순위보다 ${bestGain}계단 올라왔습니다. 추월 흐름이 좋습니다!`,now);return;}
+    if(now-commentaryLastGeneralAt>5200){
+      commentaryLastGeneralAt=now;
+      if(frac<.22)commentaryLine(`phase1-${p1.index}`,`${p1.name}이 초반 선두를 잡았습니다. 첫 코너와 옵저버 회피가 중요합니다.`,now);
+      else if(frac<.55)commentaryLine(`phase2-${p1.index}`,`${p1.name}이 선두, ${p2.name}이 추격합니다. 중반부터 라인 선택 하나가 추월 기회로 이어집니다.`,now);
+      else if(frac<.82)commentaryLine(`phase3-${p1.index}`,`후반으로 들어갑니다. ${p1.name}이 앞서지만 ${p2.name}도 아직 사정권입니다. 실수 한 번이면 뒤집힙니다.`,now);
+      else commentaryLine(`phase4-${p1.index}`,`마지막 구간! ${p1.name}이 선두를 지킵니다. 최단 라인과 마지막 회피가 승부를 결정합니다.`,now);
+    }
+  }
+
   function liveOrderedPlayers(){
     return [...players].sort((a,b)=>{
       if(a.done&&b.done) return a.finishTime-b.finishTime;
@@ -2184,38 +2257,16 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     return Math.max(0,currentProgress(a)-currentProgress(b))/Math.max(1,(a.speed+b.speed)*.5);
   }
   function setBroadcastStory(key,kicker,title,sub,now=performance.now(),hold=1800){
-    if(key===broadcastStoryKey && now<broadcastStoryUntil-500) return;
-    broadcastStoryKey=key;broadcastStoryUntil=now+hold;
-    const box=document.getElementById("broadcastStory");if(!box)return;
-    box.innerHTML=`<span>${kicker}</span><b>${title}</b><small>${sub||""}</small>`;
-    box.classList.remove("hidden");
+    const k={"NEW LEADER":"선두 교체","FINAL BATTLE":"결승선 승부","3-WAY BATTLE":"3인 접전","BIG COMEBACK":"대역전","LEADER WATCH":"선두 수성","PHOTO FINISH":"포토피니시"}[kicker]||kicker;
+    commentaryLine(`story-${key}`,`${k}! ${title}${sub?` · ${sub}`:""}`,now);
   }
   function updateBroadcastFinal(now){
     const ordered=liveOrderedPlayers();if(!ordered.length)return;
-    const p1=ordered[0],p2=ordered[1],p3=ordered[2];
-    const frac=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
+    const p1=ordered[0],p2=ordered[1],p3=ordered[2],frac=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
     const g12=broadcastGapSeconds(p1,p2),g23=broadcastGapSeconds(p2,p3);
     const strip=document.getElementById("broadcastStrip");
-    if(strip) strip.innerHTML=`<div><span>${frac>=.82?"마지막 구간":"실시간 선두"}</span><b>${p1.name}</b></div>
-      <div><span>1위 ↔ 2위 격차</span><b>${g12==null?"--":g12.toFixed(2)+"초"}</b></div>
-      <div><span>2위 ↔ 3위 격차</span><b>${g23==null?"--":g23.toFixed(2)+"초"}</b></div>
-      <div><span>선두 교체</span><b>${raceLeaderChanges}회</b></div>`;
-    if(frac>=.82&&g12!=null&&g12<.28)
-      setBroadcastStory(`final-${p1.index}-${p2.index}`,"FINAL BATTLE",`${p1.name} vs ${p2.name}`,`${g12.toFixed(2)}s · 결승까지 초접전`,now,1500);
-    else if(g12!=null&&g23!=null&&g12<.38&&g23<.38)
-      setBroadcastStory(`3way-${p1.index}-${p2.index}-${p3.index}`,"3-WAY BATTLE",`${p1.name} · ${p2.name} · ${p3.name}`,`P1-P3 ${(g12+g23).toFixed(2)}s`,now,1500);
-    else{
-      let climber=null,bestGain=0;
-      for(let i=0;i<ordered.length;i++){const q=ordered[i],gain=(q.match?.startRank||i+1)-(i+1);if(gain>bestGain){bestGain=gain;climber=q;}}
-      if(climber&&bestGain>=4)setBroadcastStory(`climb-${climber.index}-${bestGain}`,"BIG COMEBACK",`${climber.name} +${bestGain} POS`,`현재 ${ordered.indexOf(climber)+1}위`,now,1800);
-      else if(frac>=.72)setBroadcastStory(`protect-${p1.index}`,"LEADER WATCH",`${p1.name} 선두 수성`,`${g12==null?"":g12.toFixed(2)+"s 리드"}`,now,1800);
-    }
-    const story=document.getElementById("broadcastStory");if(story&&now>=broadcastStoryUntil)story.classList.add("hidden");
-    let biggest=null;
-    ordered.forEach((q,i)=>{const rank=i+1,prev=broadcastLastRankSnapshot.get(q.index);if(prev!=null&&prev-rank>=2&&(!biggest||prev-rank>biggest.gain))biggest={q,from:prev,to:rank,gain:prev-rank};broadcastLastRankSnapshot.set(q.index,rank);});
-    if(biggest){broadcastTickerText=`▲ ${biggest.q.name} ${biggest.from} → ${biggest.to} · +${biggest.gain}`;broadcastTickerUntil=now+1700;}
-    const ticker=document.getElementById("broadcastTicker");
-    if(ticker){if(now<broadcastTickerUntil){ticker.textContent=broadcastTickerText;ticker.classList.remove("hidden");}else ticker.classList.add("hidden");}
+    if(strip)strip.innerHTML=`<div><span>${frac>=.82?"마지막 구간":"실시간 선두"}</span><b>${p1.name}</b></div><div><span>1위 ↔ 2위 격차</span><b>${g12==null?"--":g12.toFixed(2)+"초"}</b></div><div><span>2위 ↔ 3위 격차</span><b>${g23==null?"--":g23.toFixed(2)+"초"}</b></div><div><span>선두 교체</span><b>${raceLeaderChanges}회</b></div>`;
+    updateLiveCommentary(now);
   }
 
   function updateCamera(dt){
@@ -2656,6 +2707,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     }
 
     if(players.every(p=>p.done)){
+      const fin=[...players].sort((a,b)=>a.finishTime-b.finishTime);
+      if(fin[0])commentaryLine(`round-finish-${currentRound}`,`${currentRound}라운드 종료! ${fin[0].name}이 1위로 결승선을 통과했습니다.`,ts,true);
       running=false;
       finalizeRound();
       return;
@@ -2768,12 +2821,28 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       const size=r*2.65;
       ctx.save();
       ctx.rotate(p.visualAngle);
-      ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : "rgba(77,141,255,.45)";
+      const stunLeft=Math.max(0,p.stunUntil-now);
+      if(stunLeft>0){
+        // Unit image only fades from gray back to its normal red/blue sprite.
+        // Nickname/team label is drawn after this restore and keeps its original color.
+        const gray=Math.max(0,Math.min(1,stunLeft/STUN_MS));
+        ctx.filter=`grayscale(${Math.round(gray*100)}%) saturate(${Math.round((1-gray)*100)}%) brightness(${Math.round(78+22*(1-gray))}%)`;
+        ctx.shadowColor="rgba(170,170,170,.34)";
+      }else{
+        ctx.filter="none";
+        ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : "rgba(77,141,255,.45)";
+      }
       ctx.shadowBlur=Math.max(3,r*.28);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
+      ctx.filter="none";
       ctx.restore();
     }else{
-      ctx.fillStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";
+      const grayMix=Math.max(0,Math.min(1,(p.stunUntil-now)/STUN_MS));
+      if(grayMix>0){
+        const base=p.team==="A"?[255,77,77]:[77,141,255], g=132;
+        const rr=Math.round(base[0]*(1-grayMix)+g*grayMix),gg=Math.round(base[1]*(1-grayMix)+g*grayMix),bb=Math.round(base[2]*(1-grayMix)+g*grayMix);
+        ctx.fillStyle=`rgb(${rr},${gg},${bb})`;
+      }else ctx.fillStyle=p.team==="A" ? "#ff4d4d" : "#4d8dff";
       ctx.strokeStyle="#07111a";
       ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -2925,10 +2994,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   function pushRaceEvent(text,now=performance.now()){
-    raceEventText=text;
-    raceEventUntil=now+1600;
-    const el=document.getElementById("raceEvent");
-    if(el){ el.textContent=text; el.classList.remove("hidden"); }
+    raceEventText=text;raceEventUntil=now+1600;
+    const spoken=text.replace("OVERTAKE · ","추월! ").replace("NEW LEADER · ","새로운 선두! ").replace(/BEST SECTOR (\d+) · /,"최고 구간기록! ").replace("FINISH · ","결승선 통과! ");
+    commentaryLine(`event-${text}`,spoken,now,true);
   }
 
   function updateSectors(now){
@@ -2987,6 +3055,28 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       }
       lastLeaderName=ordered[0].name;
     }
+  }
+
+
+  let lastLiveStatsRender=0;
+  function renderLiveStats(now=performance.now()){
+    if(now-lastLiveStatsRender<650)return;
+    lastLiveStatsRender=now;
+    const summary=document.getElementById("liveStatsSummary"),leaders=document.getElementById("liveStatsLeaders"),phase=document.getElementById("liveStatsPhase");
+    if(!summary||!leaders)return;
+    const ordered=liveOrderedPlayers();if(!ordered.length)return;
+    const collisions=players.reduce((s,p)=>s+(p.match?.collisions||0),0);
+    const overtakes=players.reduce((s,p)=>s+(p.match?.overtakes||0),0);
+    const avoids=players.reduce((s,p)=>s+(p.match?.avoids||0),0);
+    const controls=players.reduce((s,p)=>s+(p.match?.controlAttempts||0),0);
+    const bestPass=[...players].sort((a,b)=>(b.match?.overtakes||0)-(a.match?.overtakes||0))[0];
+    const bestAvoid=[...players].sort((a,b)=>(b.match?.avoids||0)-(a.match?.avoids||0))[0];
+    const bestLead=[...players].sort((a,b)=>(b.match?.leadMs||0)-(a.match?.leadMs||0))[0];
+    const prog=Math.max(0,Math.min(1,currentProgress(ordered[0])/routeLength));
+    if(phase)phase.textContent=`${currentRound}R · ${Math.round(prog*100)}%`;
+    summary.innerHTML=`<div><span>충돌</span><b>${collisions}</b></div><div><span>추월</span><b>${overtakes}</b></div><div><span>회피</span><b>${avoids}</b></div><div><span>컨트롤</span><b>${controls}</b></div>`;
+    const row=(label,p,val)=>`<div class="live-stat-leader"><span>${label}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><strong>${val}</strong></div>`;
+    leaders.innerHTML=row("추월",bestPass,bestPass.match?.overtakes||0)+row("회피",bestAvoid,bestAvoid.match?.avoids||0)+row("선두",bestLead,`${((bestLead.match?.leadMs||0)/1000).toFixed(1)}초`);
   }
 
   const rankRowCache=new Map();
@@ -3051,6 +3141,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     }
     // Existing nodes are simply reordered; listeners/DOM nodes are reused.
     rankingEl.appendChild(frag);
+    renderLiveStats();
   }
 
   function statLabel(k){
