@@ -23,7 +23,7 @@
   const STUN_MS = 2300;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.50";
+  const BUILD_ID = "v2.51";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -37,7 +37,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.36;     // unchanged collision feel
+  const PLAYER_HIT_RADIUS = 0.30;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.5889842578125;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
   const OBS_SPEED_RATIO = 0.684;         // observer speed ≈ 90% of player speed
@@ -599,7 +599,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function controlPreferenceWeights(p){
     // v2.11: each driving identity favors different manual-control choices.
     const name=p.drivingStyle.name;
-    let w={zigzag:1,backcon:1,stopcon:1,wide:1};
+    let w={zigzag:1.12,backcon:1.12,stopcon:.035,wide:1};
     if(name==="apexHunter")      w={zigzag:1.18,backcon:1.22,stopcon:.72,wide:.76};
     else if(name==="safeReader")w={zigzag:.84,backcon:.62,stopcon:1.48,wide:1.20};
     else if(name==="attacker")  w={zigzag:1.34,backcon:1.38,stopcon:.58,wide:.72};
@@ -608,7 +608,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     else if(name==="patient")   w={zigzag:.78,backcon:.66,stopcon:1.34,wide:1.26};
     else if(name==="opportunist")w={zigzag:1.24,backcon:1.34,stopcon:.76,wide:.88};
     const id=identityOf(p);
-    if(id.control && w[id.control]!=null) w[id.control]*=1.16;
+    if(id.control && w[id.control]!=null && id.control!=="stopcon") w[id.control]*=1.16;
+    // v2.51: stopcon is an emergency last resort only.
+    w.stopcon*=.035;
+    w.zigzag*=1.22;
+    w.backcon*=1.28;
     return w;
   }
 
@@ -676,83 +680,69 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     p.reactiveControlCooldown -= dt;
 
     if(p.controlMode!=="normal" && now>=p.controlUntil){
-      p.controlMode="normal";
-      p.reactiveControl=false;
-      p.reactiveThreatId=-1;
-      p.controlQuality=1;
-      p.controlMistakeSide=0;
+      p.controlMode="normal";p.reactiveControl=false;p.reactiveThreatId=-1;
+      p.controlQuality=1;p.controlMistakeSide=0;
     }
 
-    const si=Math.min(p.seg,segs.length-1);
-    const s=segs[si];
+    const si=Math.min(p.seg,segs.length-1),s=segs[si];
+    let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
+    const closeObs=nearbyObservers(p.x,p.y,15.5);
 
-    // v2.09: scan only the immediate forward corridor for reactive manual control.
-    // These controls create racing variance without intentionally aiming at observers.
-    let immediate=null, immediateAlong=999, immediateLat=999;
-    let nearAhead=null, nearAlong=999;
-    const closeObs=nearbyObservers(p.x,p.y,13.5);
+    // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
+    if(!closeObs.length){
+      if(p.controlMode!=="normal" && !p.reactiveControl){
+        p.controlMode="normal";p.controlUntil=0;p.controlQuality=1;p.controlMistakeSide=0;
+      }
+      return;
+    }
+
     for(let i=0;i<closeObs.length;i++){
-      const o=closeObs[i];
-      const dx=o.x-p.x, dy=o.y-p.y;
-      const along=dx*s.ux+dy*s.uy;
-      if(along<=0) continue;
+      const o=closeObs[i],dx=o.x-p.x,dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy;if(along<=0)continue;
       const lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<4.4 && lat<2.25 && along<immediateAlong){
-        immediate=o; immediateAlong=along; immediateLat=lat;
-      }
-      if(along<9.5 && lat<4.6 && along<nearAlong){
-        nearAhead=o; nearAlong=along;
-      }
+      if(along<4.8&&lat<2.5&&along<immediateAlong){immediate=o;immediateAlong=along;}
+      if(along<10.8&&lat<5.0&&along<nearAlong){nearAhead=o;nearAlong=along;}
     }
 
-    if(p.controlMode==="normal" && p.reactiveControlCooldown<=0){
-      const reaction=(p.stats.reaction-72)/27;
-      const control=(p.stats.control-72)/27;
-      const prediction=(p.stats.prediction-72)/27;
-      const aggression=(p.stats.aggression-72)/27;
-      const pressure=(p.stats.pressure-72)/27;
+    if(p.controlMode==="normal"&&p.reactiveControlCooldown<=0){
+      const reaction=(p.stats.reaction-72)/27,control=(p.stats.control-72)/27;
+      const prediction=(p.stats.prediction-72)/27,pressure=(p.stats.pressure-72)/27;
 
       if(immediate){
-        // Observer directly in front:
-        // mostly stop-control, occasionally back-control for a bigger swing.
-        const pref=controlPreferenceWeights(p);
-        const backChance=Math.max(.08,Math.min(.55,
-          (.14 + control*.11 + reaction*.055 + aggression*.045) * (pref.backcon/(pref.backcon+pref.stopcon)*2)));
-        if(Math.random()<backChance){
-          beginControl(p,"backcon",now,430+Math.random()*210,true,immediate.id);
-          p.reactiveControlCooldown=3100+Math.random()*3600;
+        // Active escape: diagonal planner already has first authority; manual backup
+        // strongly favors backcon/zigzag. Stopcon is only a tiny last-resort chance.
+        const r=Math.random();
+        if(r<.035){
+          beginControl(p,"stopcon",now,90+Math.random()*85,true,immediate.id);
+          p.reactiveControlCooldown=3000+Math.random()*2600;
+        }else if(r<.54){
+          beginControl(p,"backcon",now,330+Math.random()*190,true,immediate.id);
+          p.reactiveControlCooldown=1700+Math.random()*1800;
         }else{
-          beginControl(p,"stopcon",now,125+Math.random()*155,true,immediate.id);
-          p.reactiveControlCooldown=2200+Math.random()*2800;
+          beginControl(p,"zigzag",now,300+Math.random()*260,true,immediate.id);
+          p.reactiveControlCooldown=1450+Math.random()*1650;
         }
         return;
       }
 
       if(nearAhead){
-        // Less urgent threat: a short zig-zag can open a new corridor.
-        const zigChance=.18 + reaction*.08 + prediction*.08 + pressure*.05;
+        const zigChance=Math.min(.92,.62+reaction*.10+prediction*.10+pressure*.05);
         if(Math.random()<zigChance){
-          beginControl(p,"zigzag",now,360+Math.random()*340,true,nearAhead.id);
-          p.reactiveControlCooldown=2600+Math.random()*3200;
-          return;
+          beginControl(p,Math.random()<.72?"zigzag":"backcon",now,310+Math.random()*260,true,nearAhead.id);
+          p.reactiveControlCooldown=1500+Math.random()*1900;return;
         }
       }
     }
 
-    // Normal low-frequency manual-control variation.
-    if(p.controlMode==="normal" && p.controlCooldown<=0){
-      const ag=(p.profile.aggression-60)/40;
-      const ct=(p.profile.control-85)/15;
-      const mode=weightedControlPick(p,["zigzag","backcon","stopcon","wide"]);
-      let duration =
-        mode==="stopcon" ? 150+Math.random()*170 :
-        mode==="backcon" ? 410+Math.random()*220 :
-        mode==="zigzag" ? 440+Math.random()*360 :
-        560+Math.random()*400;
-
-      duration *= (1.08 - ct*0.16);
+    // Nearby observers exist but are not directly threatening: occasional moving
+    // controls only. Never stop on this branch.
+    if(p.controlMode==="normal"&&p.controlCooldown<=0){
+      const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
+      const mode=weightedControlPick(p,["zigzag","backcon","wide"]);
+      let duration=mode==="backcon"?330+Math.random()*190:mode==="zigzag"?350+Math.random()*270:480+Math.random()*300;
+      duration*=(1.06-ct*.12);
       beginControl(p,mode,now,duration,false,-1);
-      p.controlCooldown=(4300-ag*1050)+Math.random()*(5200-ag*650);
+      p.controlCooldown=(3600-ag*850)+Math.random()*(3900-ag*500);
     }
   }
 
@@ -787,20 +777,22 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const skill=((p.stats.insideLine-72)/27)*.45+((p.stats.routeReading-72)/27)*.30+
       ((p.stats.cornering-72)/27)*.25;
     const localDanger=nearbyObservers(p.x,p.y,15).length;
-    // v2.45: special inside shortcuts are a real preferred racing option,
-    // especially for strong inside-line/route-reading racers.
-    const useChance=Math.max(.56,Math.min(.985,(.66+skill*.24+(p.linePersonality||0)*.12-(localDanger>=8?.07:0))*signatureOf(p).inside));
-    if(Math.random()>useChance*.095) return off;
+    // v2.51: the user's hidden yellow guide is NORMAL drivable racing road.
+    // It is not a special/rare shortcut. On a clear road the optimizer strongly
+    // prefers this deeper apex; observers may override it for survival.
     const normalHalf=Math.max(1.8,widths[si]*.72);
-    const specialHalf=Math.max(normalHalf,widths[si]*(1.08+skill*.105));
-    return off*.16+(side*specialHalf)*.84;
+    const deepHalf=Math.max(normalHalf,widths[si]*(1.13+skill*.075));
+    const clearCommit=Math.max(.82,Math.min(.97,.86+skill*.08+(p.linePersonality||0)*.035));
+    const dangerFade=localDanger>=8?.34:localDanger>=5?.55:localDanger>=2?.78:1;
+    const commit=clearCommit*dangerFade;
+    return off*(1-commit)+(side*deepHalf)*commit;
   }
 
   function clampSpecialRoadOffset(si,lateral){
     const normalHalf=Math.max(1.8,widths[si]*ROAD_MARGIN);
     const side=specialInsideSide(si);
     if(!side) return Math.max(-normalHalf,Math.min(normalHalf,lateral));
-    const specialHalf=Math.max(normalHalf,widths[si]*1.20);
+    const specialHalf=Math.max(normalHalf,widths[si]*1.24);
     const lo=side<0?-specialHalf:-normalHalf;
     const hi=side>0? specialHalf: normalHalf;
     return Math.max(lo,Math.min(hi,lateral));
@@ -1194,7 +1186,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
     }
     if(frontThreat && now>=p.skimDodgeCooldown){
-      const skimChance=Math.min(.985,(.78+reactionNorm*.08+predictionNorm*.06+controlNorm*.04)*signatureOf(p).skim);
+      const skimChance=Math.min(.995,(.88+reactionNorm*.055+predictionNorm*.045+controlNorm*.025)*signatureOf(p).skim);
       if(Math.random()<skimChance){
         const sidePref=frontLat>=0?-1:1;
         const skimMag=half*(.48+compactSkill*.12);
@@ -1715,12 +1707,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         return Math.max(-half*.90,Math.min(half*.90,baseOff+Math.sin(now*.010+p.creativePhase)*amp));
       }
       if(p.creativeMode===4){
+        // v2.51: old creative stop is replaced by a moving escape.
         if(danger>=3 && p.controlMode==="normal" && now>=p.controlCooldown){
-          p.controlMode="stopcon";p.controlUntil=now+180+Math.random()*170;
-          p.controlCooldown=now+1500+Math.random()*1400;
-          p.match.controlAttempts++;p.match.controlByType.stopcon.attempts++;
+          beginControl(p,Math.random()<.72?"zigzag":"backcon",now,280+Math.random()*240,true,-1);
+          p.controlCooldown=now+1200+Math.random()*1100;
         }
-        return baseOff*.72;
+        return baseOff*.88;
       }
       if(p.creativeMode===5){
         const phase=Math.max(0,Math.min(1,1-(p.creativeModeUntil-now)/1500));
