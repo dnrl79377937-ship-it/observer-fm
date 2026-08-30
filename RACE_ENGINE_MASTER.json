@@ -1,5 +1,5 @@
 {
-  "build": "v3.51",
+  "build": "v3.52",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "HIT 0.41; continuous-run acceleration +3%; immediate-ahead-only zigzag/backcon weights +20% relative to v3.50. Retains 350 observers, deep inside-line v3.50, compressed field spread, 1.8s stun, fixed 1x, no gray system, no v3.42 shortcut state mutation."
+  "notes": "Critical road-boundary correction: the one-line strip along both sides of the route is legal drivable road, not a wall. ROAD_MARGIN 0.90->1.10 on both sides; normal racing-line, apex, future-inside and yellow/deep-inside targets expanded to actually use the strip. No v3.42 shortcut/segment mutation reintroduced. Retains HIT .41, continuous-run +3%, 350 observers, 1.8s stun, immediate-only zigzag/backcon +20% weights."
 }

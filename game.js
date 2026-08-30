@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.51";
+  const BUILD_ID = "v3.52";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -55,7 +55,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_HORIZONS = [0.40,0.95,1.70,2.75];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
-  const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
+  const ROAD_MARGIN = 1.10;           // v3.52: edge-line strip is legal drivable road, not a wall
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -929,8 +929,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v2.51: the user's hidden yellow guide is NORMAL drivable racing road.
     // It is not a special/rare shortcut. On a clear road the optimizer strongly
     // prefers this deeper apex; observers may override it for survival.
-    const normalHalf=Math.max(1.8,widths[si]*.84);
-    const deepHalf=Math.max(normalHalf,widths[si]*(1.30+skill*.085));
+    const normalHalf=Math.max(1.8,widths[si]*1.02);
+    const deepHalf=Math.max(normalHalf,widths[si]*(1.38+skill*.075));
     if(p.wideDetourRace){
       // 8% race choice: reject the fastest hidden line, but take only a moderately wider path.
       return off*.50 + (-side)*normalHalf*.56;
@@ -2226,7 +2226,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const s=segs[si];
     const lineSkill=(p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3;
     const lineNorm=(lineSkill-72)/27;
-    const half=Math.max(1.8,widths[si]*(0.625+lineNorm*0.075));
+    const half=Math.max(1.8,widths[si]*(0.88+lineNorm*0.075));
 
     // v31: when the local road is genuinely clear of observers, commit to a
     // near-wall Kart-style apex instead of wasting space in the middle.
@@ -2239,7 +2239,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const lp=p.linePersonality||0;
       const skill=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/3;
       const skillN=(skill-72)/27;
-      const apexCommit=Math.max(.78,Math.min(.999,.91+lp*.075+skillN*.045+(p.cleanConfidence||0)*.025));
+      const apexCommit=Math.max(.90,Math.min(.9995,.965+lp*.035+skillN*.025+(p.cleanConfidence||0)*.015));
       const apex=cornerSide*half*apexCommit;
       const phaseBlend=Math.max(.38,Math.min(.88,phasePlan.weight+.20));
       p.linePlanOffset=apex*(1-phaseBlend)+phasePlan.target*phaseBlend;
@@ -2691,7 +2691,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
       if(insideSide!==0 && turnPower>0.055){
-        const halfRoad=Math.max(1.8,widths[si]*0.84);
+        const halfRoad=Math.max(1.8,widths[si]*1.02);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
         const apexBlend=Math.min(0.992,0.80+turnPower*1.45);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
@@ -2701,7 +2701,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // the corner actually begins instead of waiting until the midpoint.
       const futureInside=futureInsideBias(si);
       if(Math.abs(futureInside)>0.10){
-        const halfRoad2=Math.max(1.8,widths[si]*0.86);
+        const halfRoad2=Math.max(1.8,widths[si]*1.04);
         const futureApex=futureInside*halfRoad2*0.998;
         targetOff=targetOff*0.12+futureApex*0.88;
       }
@@ -2944,7 +2944,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // Never allow AI steering to drift into black/non-drivable areas.
+    // Keep AI off true black/non-drivable terrain; the one-line road-edge strip is legal road.
     clampToRoad(p);
     p.match.distance += Math.hypot(p.x-p.match.lastX,p.y-p.match.lastY);
     p.match.lastX=p.x;
@@ -5342,11 +5342,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v351SelfAudit(){
+  function v352SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==350)issues.push("옵저버350");
     if(Math.abs(PLAYER_HIT_RADIUS-.41)>.0001)issues.push("HIT");
+    if(Math.abs(ROAD_MARGIN-1.10)>.0001)issues.push("가장자리도로");
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.69)>.0001||Math.abs(OBS_VISUAL_SCALE-.612)>.0001)issues.push("크기");
     if(STUN_MS!==1800)issues.push("정지1.8초");
@@ -5357,7 +5358,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v351SelfAudit,
+    version:BUILD_ID,selfAudit:v352SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),
