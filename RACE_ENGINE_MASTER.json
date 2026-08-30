@@ -1,5 +1,5 @@
 {
-  "build": "v3.1",
+  "build": "v3.2",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "9 racers incl. HongKey; random 3v3v3 red/blue/yellow teams; 9-place points; yellow unit sprites for all 5 rounds; personal vision radius; route trap zones; escape-gate AI; follower shock survival reaction; observer-only Marseille-turn control; 9-player cache/rank/UI pass."
+  "notes": "12 racers, 4 random teams of 3 (red/blue/yellow/green), 500 observers, green sprites for all rounds, guaranteed dark-gray collision render, live 0.5x-2.5x speed, swept collision protection, cleaner map, smoother corner arcs, detailed live stats removed, ELO naming, upper leader-change strip removed, performance pass."
 }

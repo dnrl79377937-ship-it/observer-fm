@@ -18,26 +18,26 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 550;
+  const OBSERVER_COUNT = 500;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2300;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.1";
+  const BUILD_ID = "v3.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
-    1:{A:new Image(),B:new Image(),C:new Image()},
-    2:{A:new Image(),B:new Image(),C:new Image()},
-    3:{A:new Image(),B:new Image(),C:new Image()},
-    4:{A:new Image(),B:new Image(),C:new Image()},
-    5:{A:new Image(),B:new Image(),C:new Image()}
+    1:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    2:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    3:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    4:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    5:{A:new Image(),B:new Image(),C:new Image(),D:new Image()}
   };
-  unitSprites[1].A.src="scourge_a.png";   unitSprites[1].B.src="scourge_b.png";   unitSprites[1].C.src="scourge_c.png";
-  unitSprites[2].A.src="scout_a.png";     unitSprites[2].B.src="scout_b.png";     unitSprites[2].C.src="scout_c.png";
-  unitSprites[3].A.src="wraith_a.png";    unitSprites[3].B.src="wraith_b.png";    unitSprites[3].C.src="wraith_c.png";
-  unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";
-  unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";
+  unitSprites[1].A.src="scourge_a.png";   unitSprites[1].B.src="scourge_b.png";   unitSprites[1].C.src="scourge_c.png";   unitSprites[1].D.src="scourge_d.png";
+  unitSprites[2].A.src="scout_a.png";     unitSprites[2].B.src="scout_b.png";     unitSprites[2].C.src="scout_c.png";   unitSprites[2].D.src="scout_d.png";
+  unitSprites[3].A.src="wraith_a.png";    unitSprites[3].B.src="wraith_b.png";    unitSprites[3].C.src="wraith_c.png";   unitSprites[3].D.src="wraith_d.png";
+  unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";   unitSprites[4].D.src="mutalisk_d.png";
+  unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";   unitSprites[5].D.src="queen_d.png";
 
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
@@ -54,15 +54,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
   const AVOID_SAFE_BUFFER = 6.2;
   const AVOID_LANE_LOOKAHEAD = 2.60;
-  const AVOID_HORIZONS = [0.36,0.82,1.48,2.55,3.10];   // compare future lane safety
+  const AVOID_HORIZONS = [0.40,0.95,1.70,2.75];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
-  const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika","HongKey"];
-  const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e","#4df0d0"];
+  const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika","HongKey","TaeHyeon","DVA","LiveCam"];
+  const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e","#4df0d0","#ffb86b","#7dd3fc","#c4b5fd"];
 
   // v29: 20 FM-style attributes + individual driving personality.
   // Values are fixed for this build so a player's identity does not reroll on refresh.
@@ -76,6 +76,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     {pace:88,acceleration:94,cornering:74,insideLine:94,routeReading:88,avoidance:91,reaction:78,prediction:99,control:97,stability:95,braking:96,recovery:96,consistency:82,focus:84,aggression:99,riskControl:84,pressure:83,start:96,endurance:86,luck:88}, // Kaka
     {pace:83,acceleration:98,cornering:96,insideLine:98,routeReading:90,avoidance:94,reaction:86,prediction:95,control:80,stability:96,braking:72,recovery:83,consistency:79,focus:88,aggression:90,riskControl:96,pressure:89,start:85,endurance:81,luck:99}, // Pika
     {pace:85,acceleration:91,cornering:89,insideLine:91,routeReading:92,avoidance:90,reaction:88,prediction:93,control:90,stability:89,braking:86,recovery:90,consistency:88,focus:91,aggression:87,riskControl:90,pressure:91,start:89,endurance:88,luck:86}, // HongKey
+    {pace:92,acceleration:86,cornering:95,insideLine:88,routeReading:83,avoidance:91,reaction:94,prediction:84,control:87,stability:90,braking:89,recovery:85,consistency:93,focus:88,aggression:82,riskControl:92,pressure:86,start:90,endurance:91,luck:79}, // TaeHyeon
+    {pace:80,acceleration:96,cornering:86,insideLine:93,routeReading:90,avoidance:97,reaction:92,prediction:89,control:95,stability:84,braking:94,recovery:92,consistency:80,focus:96,aggression:91,riskControl:88,pressure:93,start:84,endurance:87,luck:90}, // DVA
+    {pace:90,acceleration:88,cornering:92,insideLine:85,routeReading:97,avoidance:86,reaction:85,prediction:98,control:88,stability:94,braking:82,recovery:94,consistency:91,focus:95,aggression:84,riskControl:97,pressure:88,start:92,endurance:83,luck:87}, // LiveCam
   ];
 
   const drivingStyles = [
@@ -88,6 +91,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     {style:"patient",attack:0.96,safety:1.08,pack:0.97}, // Kaka
     {style:"opportunist",attack:1.08,safety:0.94,pack:1.05}, // Pika
     {style:"balanced",attack:1.02,safety:1.01,pack:1.03}, // HongKey
+    {style:"lineMaster",attack:1.04,safety:1.03,pack:1.01}, // TaeHyeon
+    {style:"controller",attack:1.01,safety:1.08,pack:1.04}, // DVA
+    {style:"safeReader",attack:0.98,safety:1.10,pack:0.99}, // LiveCam
   ];
 
   // v2.21: stronger behavioral identity; never changes raw base speed.
@@ -162,11 +168,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   let lastTs = 0;
   let raf = 0;
   let camX = 28, camY = 158;
+  let gameSpeed = 1.0;
 
-  const ROUND_POINTS=[10,7,5,3,2,1,0,-3,-5];
+  const ROUND_POINTS=[10,7,5,3,2,1,0,-1,-2,-3,-4,-5];
   let currentRound=1;
   let teamAssignments={};
-  let teamTotals={A:0,B:0,C:0};
+  let teamTotals={A:0,B:0,C:0,D:0};
   let playerTournament={};
   let roundHistory=[];
   let tournamentHighlights=[];
@@ -176,7 +183,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function clonePlain(v){ return JSON.parse(JSON.stringify(v)); }
 
   function engineCoreRules(){
-    return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:9,
+    return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:12,
       playerHitRadius:PLAYER_HIT_RADIUS,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
@@ -206,10 +213,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
     return {schema:"observer-fm-race-result@1",build:BUILD_ID,createdAt:new Date().toISOString(),
       rules:engineCoreRules(),match:{rounds:roundHistory.length,
-        teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C},winnerTeam,
+        teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},winnerTeam,
         margin:teamRows.length>1?Math.max(0,teamRows[0].score-teamRows[1].score):0},
       players:playerResults,
-      rounds:roundHistory.map(r=>({round:r.round,team:{A:r.team.A,B:r.team.B,C:r.team.C},
+      rounds:roundHistory.map(r=>({round:r.round,team:{A:r.team.A,B:r.team.B,C:r.team.C,D:r.team.D},
         leaderChanges:r.leaderChanges||0,totalOvertakes:r.totalOvertakes||0,
         photoFinish:photoFinishArchive[r.round]?clonePlain(photoFinishArchive[r.round]):null,
         players:(r.players||[]).map(x=>({index:x.index,name:x.name,team:x.team,rank:x.rank,
@@ -232,7 +239,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   function shuffledIndexes(){
-    const arr=[0,1,2,3,4,5,6,7,8];
+    const arr=[0,1,2,3,4,5,6,7,8,9,10,11];
     for(let i=arr.length-1;i>0;i--){
       const j=Math.floor(Math.random()*(i+1));
       [arr[i],arr[j]]=[arr[j],arr[i]];
@@ -243,12 +250,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function createTeams(){
     teamAssignments={};
     const order=shuffledIndexes();
-    order.forEach((idx,pos)=>teamAssignments[idx]=pos<3?"A":pos<6?"B":"C");
+    order.forEach((idx,pos)=>teamAssignments[idx]=pos<3?"A":pos<6?"B":pos<9?"C":"D");
   }
 
   function initTournament(){
     currentRound=1;
-    teamTotals={A:0,B:0,C:0};
+    teamTotals={A:0,B:0,C:0,D:0};
     roundHistory=[];
     tournamentHighlights=[];
     lastMasterResult=null;
@@ -259,13 +266,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
 
-  function teamLabel(team){ return team==="A" ? "빨강팀" : team==="B" ? "파랑팀" : "노랑팀"; }
+  function teamLabel(team){ return team==="A" ? "빨강팀" : team==="B" ? "파랑팀" : team==="C" ? "노랑팀" : "초록팀"; }
 
-  const TEAM_COLORS={A:"#ff4d4d",B:"#4d8dff",C:"#ffd84d"};
+  const TEAM_COLORS={A:"#ff4d4d",B:"#4d8dff",C:"#ffd84d",D:"#39d46a"};
   function teamColor(team){return TEAM_COLORS[team]||"#ffffff";}
-  function teamDotClass(team){return team==="A"?"red":team==="B"?"blue":"yellow";}
+  function teamDotClass(team){return team==="A"?"red":team==="B"?"blue":team==="C"?"yellow":"green";}
   function teamStandings(){
-    return ["A","B","C"].map(team=>({team,score:Number(teamTotals[team]||0)}))
+    return ["A","B","C","D"].map(team=>({team,score:Number(teamTotals[team]||0)}))
       .sort((a,b)=>b.score-a.score||a.team.localeCompare(b.team));
   }
   function teamWinner(){
@@ -274,7 +281,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function rebuildTournamentStandings(){
-    const totals={A:0,B:0,C:0};
+    const totals={A:0,B:0,C:0,D:0};
     const rebuilt={};
     names.forEach((name,i)=>{
       rebuilt[i]={name,team:teamAssignments[i]||"A",total:0,rounds:[]};
@@ -283,6 +290,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       totals.A+=Number(r.team?.A||0);
       totals.B+=Number(r.team?.B||0);
       totals.C+=Number(r.team?.C||0);
+      totals.D+=Number(r.team?.D||0);
       for(const x of (r.players||[])){
         const row=rebuilt[x.index];
         if(!row) continue;
@@ -345,7 +353,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         routeIdentityPhase:Math.random()*Math.PI*2,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:20.5, y:154.8 + (i-4)*0.48,
+        x:20.5, y:154.8 + (i-5.5)*0.40,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -358,9 +366,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           + ((stats.luck-85)/14)*0.012
           + Math.random()*0.035
         ) * 1.464395625,
-        desiredOffset:(i-4)*0.48,
+        desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, hitGrayUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1],
+        hitFxUntil:0, hitGrayUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -378,7 +386,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         lastProgress:0,
         lastAdvanceAt:0,
         lastX:20.5,
-        lastY:154.8 + (i-4)*0.48,
+        lastY:154.8 + (i-5.5)*0.40,
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
@@ -650,6 +658,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     simAccumulator=0;
     if(pauseBtn){pauseBtn.textContent="⏸ 일시정지";pauseBtn.classList.remove("paused");}
     raf=requestAnimationFrame(loop);
+  }
+
+  function setGameSpeed(v){
+    const next=[.5,1,1.5,2,2.5].includes(Number(v))?Number(v):1;
+    gameSpeed=next;
+    document.querySelectorAll("#speedControls button").forEach(btn=>{
+      btn.classList.toggle("active",Number(btn.dataset.speed)===gameSpeed);
+    });
   }
 
   function start(){
@@ -1042,10 +1058,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
   }
 
-  const nearbyBufferPool = Array.from({length:9},()=>[]);
-  const localPlayerBuffers = Array.from({length:9},()=>[]);
-  const threatObserverBuffers = Array.from({length:9},()=>[]);
-  const threatDistanceBuffers = Array.from({length:9},()=>[]);
+  const nearbyBufferPool = Array.from({length:12},()=>[]);
+  const localPlayerBuffers = Array.from({length:12},()=>[]);
+  const threatObserverBuffers = Array.from({length:12},()=>[]);
+  const threatDistanceBuffers = Array.from({length:12},()=>[]);
 
   function nearestThreats(raw,p,limit=6){
     const obs=threatObserverBuffers[p.index];
@@ -1094,7 +1110,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // v2.7 performance: clustered racers share one broad observer-grid lookup.
   let playerNearbyFrameSerial=0;
-  const playerNearbyFrameCache=Array.from({length:9},()=>({frame:-1,cellKey:"",broad:[],ranges:Object.create(null)}));
+  const playerNearbyFrameCache=Array.from({length:12},()=>({frame:-1,cellKey:"",broad:[],ranges:Object.create(null)}));
   let sharedNearbyFrame=-1;
   const sharedNearbyCells=new Map();
 
@@ -2591,8 +2607,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return targetOff;
   }
 
+  function segmentPointDistanceSq(ax,ay,bx,by,px,py){
+    const vx=bx-ax,vy=by-ay,wx=px-ax,wy=py-ay;
+    const vv=vx*vx+vy*vy;
+    if(vv<1e-10){const dx=px-ax,dy=py-ay;return dx*dx+dy*dy;}
+    const t=Math.max(0,Math.min(1,(wx*vx+wy*vy)/vv));
+    const dx=(ax+vx*t)-px,dy=(ay+vy*t)-py;
+    return dx*dx+dy*dy;
+  }
+  function playerObserverHit(p,o){
+    const r=PLAYER_HIT_RADIUS;
+    if(segmentPointDistanceSq(p.simPrevX,p.simPrevY,p.x,p.y,o.x,o.y)<r*r) return true;
+    const dx=p.x-o.x,dy=p.y-o.y;
+    return dx*dx+dy*dy<r*r;
+  }
+
   function updatePlayer(p, now, dt){
     if(p.done) return;
+    p.simPrevX=p.x; p.simPrevY=p.y;
 
     // v2.29 start reaction: milliseconds matter without changing base pace.
     if(raceStart && now-raceStart<p.startReactionMs) return;
@@ -2812,19 +2844,30 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
     // Look ahead to create smoother apex cutting.
     const next=segs[Math.min(segs.length-1,si+1)];
+    const next2=segs[Math.min(segs.length-1,si+2)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
     const optTarget=optimizedLookAheadTarget(p,si,now);
-    const optBlend = si<=8 ? 0.84 : 0.56;
+    const cornerLook=cornerIntensity(si);
+    const optBlend = si<=8 ? 0.78 : Math.min(.72,.58+cornerLook*.28);
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
+    // v3.2 smooth racing arc: aim through the next two segment exits.
+    // This cuts the corner diagonally instead of moving to a joint and turning 90 degrees.
     if(next && si<segs.length-1){
-      const look=si<=8 ? 0.045 : 0.18;
+      const look=Math.min(.34,.20+cornerLook*.18);
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
       ty=ty*(1-look)+ny*look;
+      if(next2 && si<segs.length-2){
+        const look2=Math.min(.18,.08+cornerLook*.10);
+        const n2x=next2.b[0]+next2.nx*p.desiredOffset;
+        const n2y=next2.b[1]+next2.ny*p.desiredOffset;
+        tx=tx*(1-look2)+n2x*look2;
+        ty=ty*(1-look2)+n2y*look2;
+      }
     }
 
     let dx=tx-p.x, dy=ty-p.y;
@@ -2942,12 +2985,13 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     // Collision check: actual observer contact = guaranteed stop outside invincible safe zones.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
       for(const o of playerNearbyObservers(p,PLAYER_HIT_RADIUS+1.0)){
-        if(Math.abs(o.x-p.x)>PLAYER_HIT_RADIUS || Math.abs(o.y-p.y)>PLAYER_HIT_RADIUS) continue;
-        const cdx=p.x-o.x, cdy=p.y-o.y;
-        if(cdx*cdx+cdy*cdy<PLAYER_HIT_RADIUS*PLAYER_HIT_RADIUS){
+        const broad=PLAYER_HIT_RADIUS+Math.hypot(p.x-p.simPrevX,p.y-p.simPrevY)+.18;
+        if(Math.abs(o.x-p.x)>broad && Math.abs(o.x-p.simPrevX)>broad) continue;
+        if(Math.abs(o.y-p.y)>broad && Math.abs(o.y-p.simPrevY)>broad) continue;
+        if(playerObserverHit(p,o)){
           p.hits++;
           p.hitFxUntil=now+240;
-          p.hitGrayUntil=now+STUN_MS;
+          p.hitGrayUntil=now+STUN_MS+180;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.match.collisions++;
@@ -3191,7 +3235,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     roundTransitioning=true;
 
     const ordered=[...players].sort((a,b)=>a.finishTime-b.finishTime);
-    const result={round:currentRound,team:{A:0,B:0,C:0},
+    const result={round:currentRound,team:{A:0,B:0,C:0,D:0},
       leaderChanges:raceLeaderChanges,totalOvertakes:raceTotalOvertakes,players:[]};
 
     ordered.forEach((p,idx)=>{
@@ -3218,7 +3262,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         extremeInsideRate:p.match.lineSamples?100*p.match.extremeInsideHits/p.match.lineSamples:0,
         distance:p.match.distance||0,
         efficiency:p.match.distance?100*routeLength/p.match.distance:0,
-        rankGain:Math.max(0,(p.match.startRank||9)-(p.match.bestRank||9)),
+        rankGain:Math.max(0,(p.match.startRank||12)-(p.match.bestRank||12)),
         trace:(p.match.trace||[]).slice(),
         bestSector:p.sectorTimes&&p.sectorTimes.length?Math.min(...p.sectorTimes):null,
         raceForm:p.raceForm,
@@ -3254,7 +3298,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     }
 
     for(const x of result.players){
-      const startRank=(players[x.index].match?.startRank)||9;
+      const startRank=(players[x.index].match?.startRank)||12;
       const gain=startRank-x.rank;
       if(gain>=4){
         const marker={type:"COMEBACK",text:`COMEBACK · ${x.name} · ${startRank}위 → ${x.rank}위`,
@@ -3305,7 +3349,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     el.innerHTML=`<div class="team-score team-a"><b>빨강팀</b><span>${teamTotals.A}점</span></div>
       <div class="team-score team-b"><b>파랑팀</b><span>${teamTotals.B}점</span></div>
       <div class="round-badge">${currentRound} / 5 ROUND</div>
-      <div class="team-score team-c"><b>노랑팀</b><span>${teamTotals.C}점</span></div>`;
+      <div class="team-score team-c"><b>노랑팀</b><span>${teamTotals.C}점</span></div>
+      <div class="team-score team-d"><b>초록팀</b><span>${teamTotals.D}점</span></div>`;
     renderPersonalScore();
   }
 
@@ -3326,7 +3371,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   function qaRuntimeStatus(){
     const issues=[];
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
-    if(players.length!==9) issues.push(`선수 ${players.length}/9`);
+    if(players.length!==12) issues.push(`선수 ${players.length}/12`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
     if(PLAYER_HIT_RADIUS!==0.36) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
@@ -3342,20 +3387,20 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     let collisions=0,finishes=0,totalTime=0;
     for(const p of players){collisions+=p.match.collisions||0;if(p.done&&p.finishTime!=null){finishes++;totalTime+=p.finishTime;}}
     const avg=finishes?formatTime(totalTime/finishes):"--";
-    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>선두교체 ${raceLeaderChanges} · 완주 ${finishes}/9 · 평균 ${avg}`;
+    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>선두교체 ${raceLeaderChanges} · 완주 ${finishes}/12 · 평균 ${avg}`;
   }
 
   const SIM_STEP_MS = 1000/50;
-  const MAX_SIM_STEPS = 2;
+  const MAX_SIM_STEPS = 6;
   let simClock=0;
   let simTickCounter=0;
   let simAccumulator=0;
 
 
   function captureReplayFrame(now){
-    if(!raceStart || now-replayLastCapture<140) return; // ~7.1 fps replay data
+    if(!raceStart || now-replayLastCapture<170) return; // ~5.9 fps replay data
     replayLastCapture=now;
-    if(replayFrames.length>=760) return;
+    if(replayFrames.length>=620) return;
     replayFrames.push({
       t:Math.max(0,now-raceStart),
       p:players.map(p=>[+p.x.toFixed(2),+p.y.toFixed(2),p.done?1:0,currentProgress(p)]),
@@ -3502,9 +3547,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     playerNearbyFrameSerial++;
     simTickCounter++;
 
-    // v2.7: deterministic 6.25Hz observer lookup/prediction refresh.
+    // v2.7: deterministic 5Hz observer lookup/prediction refresh.
     // Explicit ticks avoid duplicate refreshes caused by timestamp rounding.
-    if(simTickCounter>=8){
+    if(simTickCounter>=10){
       simTickCounter=0;
       rebuildObserverGrid();
       precomputeObserverPredictions(now);
@@ -3524,8 +3569,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(!diagLastFpsTs) diagLastFpsTs=ts;
     if(ts-diagLastFpsTs>=1000){diagFps=diagFrames*1000/(ts-diagLastFpsTs);diagFrames=0;diagLastFpsTs=ts;}
     if(frameDelta<0) frameDelta=0;
-    if(frameDelta>50) frameDelta=50;
-    simAccumulator+=frameDelta;
+    if(frameDelta>80) frameDelta=80;
+    simAccumulator+=frameDelta*gameSpeed;
 
     if(!simClock) simClock=ts-simAccumulator;
 
@@ -3538,7 +3583,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     }
 
     // Never allow a backlog to grow for seconds after a browser/GC stall.
-    if(simAccumulator>SIM_STEP_MS*2) simAccumulator=SIM_STEP_MS*2;
+    if(simAccumulator>SIM_STEP_MS*6) simAccumulator=SIM_STEP_MS*6;
 
     render(ts);
 
@@ -3569,7 +3614,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       }
       cameraLabel.textContent=`${BUILD_ID} · ${ROUND_UNIT_NAMES[currentRound]} · 옵저버 ${observers.length} · 충돌범위 ${PLAYER_HIT_RADIUS.toFixed(2)}`;
       renderDiagnostics();
-      updateBroadcastFinal(ts);
+      // v3.2 upper broadcast/leader-change strip removed.
       lastRankingRender=ts;
     }
 
@@ -3663,7 +3708,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       let da=targetAngle-p.visualAngle;
       while(da>Math.PI) da-=Math.PI*2;
       while(da<-Math.PI) da+=Math.PI*2;
-      p.visualAngle+=da*0.18;
+      p.visualAngle+=da*0.12;
       p.prevX=p.x; p.prevY=p.y;
     }
 
@@ -3693,12 +3738,13 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       const grayUntil=Math.max(p.hitGrayUntil||0,p.stunUntil||0);
       const grayLeft=Math.max(0,grayUntil-now);
       if(grayLeft>0){
-        // v2.7: gray the actual sprite only; never draw a gray rectangle.
-        ctx.filter="grayscale(100%) saturate(0%) brightness(42%) contrast(120%)";
-        ctx.shadowColor="rgba(45,45,45,.92)";
+        // v3.2: every observer collision renders the actual unit as unmistakable dark gray
+        // for the entire stun, independent of frame drops.
+        ctx.filter="grayscale(100%) saturate(0%) brightness(32%) contrast(135%)";
+        ctx.shadowColor="transparent";
       }else{
         ctx.filter="none";
-        ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : p.team==="B" ? "rgba(77,141,255,.45)" : "rgba(255,216,77,.45)";
+        ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : p.team==="B" ? "rgba(77,141,255,.45)" : p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)";
       }
       ctx.shadowBlur=Math.max(3,r*.28);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
@@ -3707,7 +3753,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     }else{
       const grayMix=((p.hitGrayUntil||p.stunUntil)>now)?1:0;
       if(grayMix>0){
-        const base=p.team==="A"?[255,77,77]:p.team==="B"?[77,141,255]:[255,216,77], g=52;
+        const base=p.team==="A"?[255,77,77]:p.team==="B"?[77,141,255]:p.team==="C"?[255,216,77]:[57,212,106], g=52;
         const rr=Math.round(base[0]*(1-grayMix)+g*grayMix),gg=Math.round(base[1]*(1-grayMix)+g*grayMix),bb=Math.round(base[2]*(1-grayMix)+g*grayMix);
         ctx.fillStyle=`rgb(${rr},${gg},${bb})`;
       }else ctx.fillStyle=teamColor(p.team);
@@ -3742,13 +3788,17 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   const renderOrder=[];
 
   const MINI_CROP={x:4,y:12,w:168,h:164};
+  let lastMiniMapRender=0;
   function renderMiniMap(){
+    const now=performance.now();
+    if(now-lastMiniMapRender<100)return;
+    lastMiniMapRender=now;
     const mc=document.getElementById("miniMap");
     if(!mc||!map.complete)return;
     const mx=mc.getContext("2d"),W=mc.width,H=mc.height;
     mx.clearRect(0,0,W,H);
     mx.globalAlpha=.78;
-    mx.drawImage(map,MINI_CROP.x,MINI_CROP.y,MINI_CROP.w,MINI_CROP.h,0,0,W,H);
+    mx.drawImage(map,MINI_CROP.x*4,MINI_CROP.y*4,MINI_CROP.w*4,MINI_CROP.h*4,0,0,W,H);
     mx.globalAlpha=1;
     const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
     for(let i=0;i<players.length;i++){
@@ -3767,8 +3817,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(!map.complete) return;
 
     const view=getView();
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(map,view.sx,view.sy,view.viewW,view.viewH,0,0,W,H);
+    ctx.imageSmoothingEnabled=true;
+    ctx.imageSmoothingQuality="high";
+    ctx.drawImage(map,view.sx*4,view.sy*4,view.viewW*4,view.viewH*4,0,0,W,H);
 
     // v2.07: cull + batch all visible observers into a few canvas paths.
     // This sharply reduces per-observer draw calls while preserving their look.
@@ -3779,7 +3830,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     renderOrder.sort((a,b)=>currentProgress(b)-currentProgress(a));
     for(let i=0;i<renderOrder.length;i++) drawPlayer(renderOrder[i],view,i+1);
 
-    const elapsed=raceStart ? Math.max(0,(ts||performance.now())-raceStart) : 0;
+    const elapsed=raceStart ? Math.max(0,(simClock||ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
     lastVisibleObs=visibleObs;
     renderMiniMap();
@@ -3849,7 +3900,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
   function recordSeasonResults(){if(seasonRecorded||roundHistory.length<5)return;const season=loadSeason();for(const round of roundHistory)for(const x of round.players){const s=season[x.name]||blankSeasonRow();s.starts++;s.totalRank+=x.rank;s.finishes++;if(x.rank===1)s.wins++;if(x.rank<=3)s.top3++;s.totalTime+=x.time||0;s.bestTime=s.bestTime==null?x.time:Math.min(s.bestTime,x.time);s.collisions+=x.collisions||0;if(!x.collisions)s.cleanRaces++;s.avoids+=x.avoids||0;s.overtakes+=x.overtakes||0;s.leadMs+=x.leadMs||0;s.distance+=x.distance||0;s.nearMisses+=x.nearMisses||0;s.extremeNearMisses+=x.extremeNearMisses||0;s.dangerExposureMs+=x.dangerExposureMs||0;s.totalRating+=x.rating||0;season[x.name]=s;}saveSeason(season);seasonRecorded=true;renderEloRanking();}
 
-  function eloMetrics(s){const n=Math.max(1,s.starts||0),avgRank=(s.totalRank||0)/n,rankPower=(9-avgRank)/8,winRate=(s.wins||0)/n,top3Rate=(s.top3||0)/n,avgRating=(s.totalRating||0)/n,avoid=(s.avoids||0)/Math.max(1,(s.avoids||0)+(s.collisions||0)),nm=Math.min(1,(s.nearMisses||0)/(n*9)),ov=Math.min(1,(s.overtakes||0)/(n*4)),clean=(s.cleanRaces||0)/n,lead=Math.min(1,(s.leadMs||0)/(n*18000));const power=rankPower*.55+(winRate*.55+top3Rate*.45)*.14+Math.max(0,Math.min(1,(avgRating-4)/6))*.09+(avoid*.68+nm*.32)*.09+ov*.05+clean*.05+lead*.03;return{avgRank,winRate,top3Rate,avgRating,avoid,elo:Math.round(1000+power*1000)}}
+  function eloMetrics(s){const n=Math.max(1,s.starts||0),avgRank=(s.totalRank||0)/n,rankPower=(12-avgRank)/11,winRate=(s.wins||0)/n,top3Rate=(s.top3||0)/n,avgRating=(s.totalRating||0)/n,avoid=(s.avoids||0)/Math.max(1,(s.avoids||0)+(s.collisions||0)),nm=Math.min(1,(s.nearMisses||0)/(n*12)),ov=Math.min(1,(s.overtakes||0)/(n*4)),clean=(s.cleanRaces||0)/n,lead=Math.min(1,(s.leadMs||0)/(n*18000));const power=rankPower*.55+(winRate*.55+top3Rate*.45)*.14+Math.max(0,Math.min(1,(avgRating-4)/6))*.09+(avoid*.68+nm*.32)*.09+ov*.05+clean*.05+lead*.03;return{avgRank,winRate,top3Rate,avgRating,avoid,elo:Math.round(1000+power*1000)}}
   function renderEloRanking(){const box=document.getElementById("eloRankingList");if(!box)return;const s=loadSeason(),rows=names.map(name=>({name,s:s[name],m:eloMetrics(s[name])})).sort((a,b)=>b.m.elo-a.m.elo||a.m.avgRank-b.m.avgRank);box.innerHTML=rows.map((r,i)=>`<div class="elo-row"><div class="elo-rank">${i+1}</div><div class="elo-name"><b>${r.name}</b><small>${styleLabel(drivingStyles[names.indexOf(r.name)].style)}</small></div><div class="elo-score">${r.m.elo}</div><div class="elo-data">평균 ${r.s.starts?r.m.avgRank.toFixed(2):"--"}위 · ${r.s.starts}경기 · 승률 ${(r.m.winRate*100).toFixed(1)}% · 상위3 ${(r.m.top3Rate*100).toFixed(1)}%<br>평점 ${r.s.starts?r.m.avgRating.toFixed(2):"--"} · 회피율 ${(r.m.avoid*100).toFixed(1)}% · 아슬회피 ${r.s.nearMisses||0} · 충돌 ${r.s.collisions||0} · 추월 ${r.s.overtakes||0}</div></div>`).join("")}
 
   function resetSeason(){
@@ -3988,7 +4039,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const avoidAttempts=Math.max(1,(m.avoids||0)+(m.collisions||0));
     const avoidRate=(m.avoids||0)/avoidAttempts;
     const controlRate=(m.controlAttempts||0)>0 ? (m.controlSuccesses||0)/(m.controlAttempts||1) : .72;
-    const rankScore=(9-rank)/8;
+    const rankScore=(12-rank)/11;
     const passScore=Math.min(1,(m.overtakes||0)/5);
     const collisionPenalty=Math.min(1,(m.collisions||0)/3);
     const leadScore=Math.min(1,(m.leadMs||0)/Math.max(1000,(now-raceStart)));
@@ -4159,7 +4210,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     // Existing nodes are simply reordered; listeners/DOM nodes are reused.
     rankingEl.appendChild(frag);
     renderRecordBoard();
-    renderLiveStats();
+    renderLiveRatings();
   }
 
   function statLabel(k){
@@ -4592,7 +4643,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
     const avg=(arr,key)=>arr.length?arr.reduce((s,x)=>s+x[key],0)/arr.length:0;
     const teamSummary={};
-    for(const team of ["A","B","C"]){
+    for(const team of ["A","B","C","D"]){
       const rows=reports.filter(x=>x.team===team);
       teamSummary[team]={
         rating:avg(rows,"avgRating"),
@@ -4607,10 +4658,10 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const standings=teamStandings();
     let matchText;
     if(!winner){
-      matchText=`3팀 최고점이 동률로 경기를 마쳤다. 빨강 ${teamTotals.A}점, 파랑 ${teamTotals.B}점, 노랑 ${teamTotals.C}점.`;
+      matchText=`4팀 최고점이 동률로 경기를 마쳤다. 빨강 ${teamTotals.A}점, 파랑 ${teamTotals.B}점, 노랑 ${teamTotals.C}점, 초록 ${teamTotals.D}점.`;
     }else{
       matchText=`${teamLabel(winner)}이 ${teamTotals[winner]}점으로 승리했다. `+
-        `빨강 ${teamTotals.A}점, 파랑 ${teamTotals.B}점, 노랑 ${teamTotals.C}점.`;
+        `빨강 ${teamTotals.A}점, 파랑 ${teamTotals.B}점, 노랑 ${teamTotals.C}점, 초록 ${teamTotals.D}점.`;
     }
     matchText+=` 전체 5라운드 기준 선두교체 ${allLeaderChanges}회, 순위상승 ${allOvertakes}회를 기록했다.`;
     return {reports,teamSummary,matchText};
@@ -4659,8 +4710,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     ctx.strokeStyle="rgba(255,255,255,.12)";ctx.lineWidth=1;
     ctx.font="12px system-ui";ctx.fillStyle="rgba(255,255,255,.65)";
     ctx.textAlign="right";ctx.textBaseline="middle";
-    for(let rank=1;rank<=9;rank++){
-      const y=T+(rank-1)*(h-T-B)/8;
+    for(let rank=1;rank<=12;rank++){
+      const y=T+(rank-1)*(h-T-B)/11;
       ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-R,y);ctx.stroke();
       ctx.fillText(`${rank}위`,L-10,y);
     }
@@ -4682,12 +4733,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       ctx.beginPath();
       pts.forEach((p,i)=>{
         const x=L+(p.r-1)*(w-L-R)/4;
-        const y=T+(p.rank-1)*(h-T-B)/8;
+        const y=T+(p.rank-1)*(h-T-B)/11;
         if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
       });
       ctx.stroke();
       pts.forEach(p=>{
-        const x=L+(p.r-1)*(w-L-R)/2,y=T+(p.rank-1)*(h-T-B)/8;
+        const x=L+(p.r-1)*(w-L-R)/2,y=T+(p.rank-1)*(h-T-B)/11;
         ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();
       });
     }
@@ -4820,8 +4871,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       }));
     }
     teamSummary.innerHTML=`<div class="winner">${winner}</div>
-      <div class="final-team-score"><span>빨강 <b>${teamTotals.A}</b></span><span>파랑 <b>${teamTotals.B}</b></span><span>노랑 <b>${teamTotals.C}</b></span></div>
-      <div class="round-score-list">${roundHistory.map(r=>`<span>${r.round}R · 빨강 ${r.team.A} / 파랑 ${r.team.B} / 노랑 ${r.team.C}</span>`).join("")}</div>`;
+      <div class="final-team-score"><span>빨강 <b>${teamTotals.A}</b></span><span>파랑 <b>${teamTotals.B}</b></span><span>노랑 <b>${teamTotals.C}</b></span><span>초록 <b>${teamTotals.D}</b></span></div>
+      <div class="round-score-list">${roundHistory.map(r=>`<span>${r.round}R · 빨강 ${r.team.A} / 파랑 ${r.team.B} / 노랑 ${r.team.C} / 초록 ${r.team.D}</span>`).join("")}</div>`;
 
     const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
     body.innerHTML=rows.map((pt,i)=>{
@@ -5184,6 +5235,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   if(pauseBtn) pauseBtn.addEventListener("click",togglePause);
+  document.querySelectorAll("#speedControls button").forEach(btn=>{
+    btn.addEventListener("click",()=>setGameSpeed(btn.dataset.speed));
+  });
   startBtn.addEventListener("click",start);
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("replayBtn").addEventListener("click",openReplay);
@@ -5237,7 +5291,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     getRules:()=>clonePlain(engineCoreRules()),
     getLastResult:()=>lastMasterResult?clonePlain(lastMasterResult):null,
     getCurrentState:()=>({build:BUILD_ID,running,paused,currentRound,
-      teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C},finished:players.filter(p=>p.done).length}),
+      teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},finished:players.filter(p=>p.done).length}),
     startCurrent:start,resetMatch:reset
   };
 
