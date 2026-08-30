@@ -6,6 +6,7 @@
   const ctx = canvas.getContext("2d");
   const rankingEl = document.getElementById("rankingList");
   const focusModeBtn = document.getElementById("focusModeBtn");
+  const pauseBtn = document.getElementById("pauseBtn");
   const layoutEl = document.querySelector(".layout");
   const broadcastEl = document.querySelector(".broadcast");
 
@@ -22,7 +23,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.42";
+  const BUILD_ID = "v2.43";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -121,6 +122,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return 7.8;
   });
 
+  // v2.43: hidden special-inside permissions based on the user's guide.
+  // No yellow guide or special line is ever rendered in-game or in stats.
+  const SPECIAL_INSIDE_SEGMENTS=new Set([
+    0,1,2,3,4,5,6,7,8,
+    11,12,13,14,15,16,17,18,
+    20,21,22,23,24,25,
+    27,28,29,30,31,32
+  ]);
+
   const segs = [];
   let routeLength = 0;
   for (let i=0;i<route.length-1;i++){
@@ -137,6 +147,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   let players = [];
   let observers = [];
   let running = false;
+  let paused = false;
+  let pauseStarted = 0;
   let raceStart = 0;
   let lastTs = 0;
   let raf = 0;
@@ -493,15 +505,57 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return s.start + Math.max(0,Math.min(s.L,along));
   }
 
+  function shiftObjectTimers(obj,delta){
+    if(!obj||!delta)return;
+    for(const k of Object.keys(obj)){
+      const v=obj[k];
+      if(typeof v==="number" && v>0 && /(Until|At|Cooldown)$/.test(k)) obj[k]=v+delta;
+    }
+  }
+
+  function togglePause(){
+    if(!running || !raceStart) return;
+    if(!paused){
+      paused=true;
+      pauseStarted=performance.now();
+      cancelAnimationFrame(raf);
+      if(pauseBtn){pauseBtn.textContent="▶ 계속";pauseBtn.classList.add("paused");}
+      render(pauseStarted);
+      return;
+    }
+    const now=performance.now();
+    const delta=Math.max(0,now-pauseStarted);
+    paused=false;
+    raceStart+=delta;
+    players.forEach(p=>shiftObjectTimers(p,delta));
+    observers.forEach(o=>shiftObjectTimers(o,delta));
+    if(replayLastCapture) replayLastCapture+=delta;
+    if(lastRankingRender) lastRankingRender+=delta;
+    if(lastLiveStatsRender) lastLiveStatsRender+=delta;
+    if(commentaryLastAt) commentaryLastAt+=delta;
+    if(commentaryLastGeneralAt) commentaryLastGeneralAt+=delta;
+    if(lastCloseBattleEventAt) lastCloseBattleEventAt+=delta;
+    if(broadcastStoryUntil) broadcastStoryUntil+=delta;
+    if(broadcastTickerUntil) broadcastTickerUntil+=delta;
+    if(raceEventUntil) raceEventUntil+=delta;
+    pauseStarted=0;
+    lastTs=now;
+    simClock=now;
+    simAccumulator=0;
+    if(pauseBtn){pauseBtn.textContent="⏸ 일시정지";pauseBtn.classList.remove("paused");}
+    raf=requestAnimationFrame(loop);
+  }
+
   function start(){
     if(running) return;
+    paused=false;
+    if(pauseBtn){pauseBtn.textContent="⏸ 일시정지";pauseBtn.classList.remove("paused");}
     if(players.every(p=>p.done)) return;
     running=true;
     const now=performance.now();
     if(!raceStart){
       raceStart=now;
-      resetCommentary();
-      commentaryLine(`start-${currentRound}`,`${currentRound}라운드 출발! 8명의 선수가 동시에 레이스를 시작합니다.`,raceStart,true);
+      // v2.43: LIVE commentary UI removed.
       // v2.14: each racer gets a small stat-driven launch quality.
       // This is a start skill effect, not comeback rubber-banding.
       for(let i=0;i<players.length;i++){
@@ -712,6 +766,37 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return (turn>0 ? 1 : -1)*half*apex;
   }
 
+  function specialInsideSide(si){
+    if(!SPECIAL_INSIDE_SEGMENTS.has(si)) return 0;
+    const direct=cornerInsideSide(si);
+    if(direct) return direct;
+    const future=futureInsideBias(si);
+    return Math.abs(future)>.08 ? (future>0?1:-1) : 0;
+  }
+
+  function specialInsideTarget(p,si,now,off){
+    const side=specialInsideSide(si);
+    if(!side) return off;
+    const skill=((p.stats.insideLine-72)/27)*.45+((p.stats.routeReading-72)/27)*.30+
+      ((p.stats.cornering-72)/27)*.25;
+    const localDanger=nearbyObservers(p.x,p.y,15).length;
+    const useChance=Math.max(.34,Math.min(.84,.48+skill*.26+(p.linePersonality||0)*.10-(localDanger>=7?.10:0)));
+    if(Math.random()>useChance*.055) return off;
+    const normalHalf=Math.max(1.8,widths[si]*.72);
+    const specialHalf=Math.max(normalHalf,widths[si]*(1.02+skill*.10));
+    return off*.28+(side*specialHalf)*.72;
+  }
+
+  function clampSpecialRoadOffset(si,lateral){
+    const normalHalf=Math.max(1.8,widths[si]*ROAD_MARGIN);
+    const side=specialInsideSide(si);
+    if(!side) return Math.max(-normalHalf,Math.min(normalHalf,lateral));
+    const specialHalf=Math.max(normalHalf,widths[si]*1.16);
+    const lo=side<0?-specialHalf:-normalHalf;
+    const hi=side>0? specialHalf: normalHalf;
+    return Math.max(lo,Math.min(hi,lateral));
+  }
+
   function clampToRoad(p){
     const si=Math.min(p.seg,segs.length-1);
     const s=segs[si];
@@ -721,10 +806,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let along=(rx*s.ux+ry*s.uy);
     let lateral=(rx*s.nx+ry*s.ny);
 
-    // Keep enough room for special controls while never allowing wall/black-area escapes.
-    const half=Math.max(1.8,widths[si]*ROAD_MARGIN);
+    // Standard corridor is preserved except for v2.43's hidden legal inside shortcuts.
     along=Math.max(-1.2,Math.min(s.L+2.2,along));
-    lateral=Math.max(-half,Math.min(half,lateral));
+    lateral=clampSpecialRoadOffset(si,lateral);
 
     p.x=s.a[0]+s.ux*along+s.nx*lateral;
     p.y=s.a[1]+s.uy*along+s.ny*lateral;
@@ -2018,6 +2102,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     targetOff=stabilizeDrivingLine(p,si,targetOff);
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
+    targetOff=specialInsideTarget(p,si,now,targetOff);
 
     let speedMul=humanDrive.speedMul;
     if(passPlan) speedMul*=passPlan.speedMul;
@@ -2092,7 +2177,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff += side*half*(0.52+controlSkill*0.07)*(failedControl?1.12:1);
       speedMul=(0.895+controlSkill*0.055)*(failedControl?.91:1);
     }
-targetOff=Math.max(-half,Math.min(half,targetOff));
+targetOff=clampSpecialRoadOffset(si,targetOff);
     const steerControl=(p.stats.control-72)/27;
     const steerTurn=cornerIntensity(si);
     const steerEase=Math.min(.082,dt*(.00245+steerControl*.00055+steerTurn*.00045));
@@ -3091,7 +3176,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   function pushRaceEvent(text,now=performance.now()){
     raceEventText=text;raceEventUntil=now+1600;
     const spoken=text.replace("OVERTAKE · ","추월! ").replace("NEW LEADER · ","새로운 선두! ").replace(/BEST SECTOR (\d+) · /,"최고 구간기록! ").replace("FINISH · ","결승선 통과! ");
-    commentaryLine(`event-${text}`,spoken,now,true);
+    // v2.43: LIVE commentary removed; highlights/events are still recorded.
   }
 
   function updateSectors(now){
@@ -4268,6 +4353,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     });
   }
 
+  if(pauseBtn) pauseBtn.addEventListener("click",togglePause);
   startBtn.addEventListener("click",start);
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("replayBtn").addEventListener("click",openReplay);
@@ -4318,7 +4404,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     version:BUILD_ID,schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),
     getLastResult:()=>lastMasterResult?clonePlain(lastMasterResult):null,
-    getCurrentState:()=>({build:BUILD_ID,running,currentRound,
+    getCurrentState:()=>({build:BUILD_ID,running,paused,currentRound,
       teamScores:{A:teamTotals.A,B:teamTotals.B},finished:players.filter(p=>p.done).length}),
     startCurrent:start,resetMatch:reset
   };

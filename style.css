@@ -379,3 +379,26 @@ body.game-focus-mode .broadcast{border:0;border-radius:0}
 .broadcast:fullscreen .focus-mode-btn{display:block}
 @media(max-width:1050px){.layout{grid-template-columns:minmax(0,1fr) 340px}}
 @media(max-width:900px){.layout{grid-template-columns:1fr}.ranking{max-height:none}.live-player-stat{grid-template-columns:18px 22px minmax(58px,1fr) 54px}.live-player-stat em{display:none}}
+
+/* v2.43 */
+.personal-score-board{
+  display:block!important;
+  top:96px;
+  left:10px;
+  width:188px;
+  padding:8px 9px;
+  background:rgba(5,8,13,.90);
+  backdrop-filter:blur(2px);
+}
+.personal-score-title{font-size:12px}
+.personal-score-row{min-height:21px;font-size:11px}
+.personal-score-row b{font-size:12px}
+.pause-btn{
+  padding:5px 9px;
+  font-size:11px;
+  font-weight:850;
+  border-radius:6px;
+  white-space:nowrap;
+}
+.pause-btn.paused{outline:1px solid rgba(255,255,255,.5)}
+.commentary-box{display:none!important}
