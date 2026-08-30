@@ -1,5 +1,5 @@
 {
-  "build": "v3.56",
+  "build": "v3.57",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "v3.56 NO-YELLOW: removed all hand-drawn/special yellow-route permissions and priority logic. Driving now uses only the real route corridor. Strong inside behavior is preserved by generic corner/apex planning up to 1.08x/1.10x of segment width, with ROAD_MARGIN 1.10 and both one-line edge strips legal. 5-o'clock thin-road protection remains."
+  "notes": "General one-line-road fix. Road ownership is now current-segment first; if x/y belongs to immediate previous/next corridor, only p.seg is repaired while x/y is preserved. Nearby parallel/wide roads can no longer steal a racer. Only a max 0.24-unit correction is allowed when outside all local corridors. Yellow/special guide logic remains fully removed; strong generic inside-line AI retained."
 }
