@@ -1,5 +1,5 @@
 {
-  "build": "v2.80",
+  "build": "v3.1",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "5-round standings repair, team-score rebuild, tighter race spread, Korean ELO traits, simplified stats, OBS 550, HIT 0.36, aggressive optimized-inside/yellow priority, cropped map width 172, performance pass."
+  "notes": "9 racers incl. HongKey; random 3v3v3 red/blue/yellow teams; 9-place points; yellow unit sprites for all 5 rounds; personal vision radius; route trap zones; escape-gate AI; follower shock survival reaction; observer-only Marseille-turn control; 9-player cache/rank/UI pass."
 }
