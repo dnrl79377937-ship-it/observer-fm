@@ -21,7 +21,7 @@ button:hover{background:#223047}
 .live-dot{width:9px;height:9px;border-radius:50%;background:#ff3d55;box-shadow:0 0 10px #ff3d55}
 #cameraLabel{color:var(--muted)}
 #clock{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:800}
-#race{display:block;width:100%;aspect-ratio:16/9;background:#000;image-rendering:pixelated}
+#race{display:block;width:100%;aspect-ratio:16/9;background:#000;image-rendering:auto}
 .ranking{padding:12px}
 .ranking h2{font-size:16px;margin:0 0 10px}
 .rank-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:7px;align-items:center;
@@ -417,7 +417,7 @@ body.game-focus-mode .broadcast{border:0;border-radius:0}
 /* v2.63 compact broadcast HUD + minimap + 10-second time bands */
 .minimap-wrap{position:absolute;left:10px;bottom:10px;z-index:24;width:126px;padding:4px;border:1px solid rgba(255,255,255,.28);border-radius:8px;background:rgba(3,7,12,.82);box-shadow:0 4px 18px rgba(0,0,0,.38);pointer-events:none}
 .minimap-wrap>span{display:block;font-size:8px;font-weight:900;letter-spacing:.12em;opacity:.72;margin:0 0 3px 2px}
-#miniMap{display:block;width:126px;height:123px;border-radius:4px;image-rendering:pixelated;opacity:.94}
+#miniMap{display:block;width:126px;height:123px;border-radius:4px;image-rendering:auto;opacity:.94}
 .rank-gap.time-u40{color:#ff5cf4}.rank-gap.time-40{color:#55e8ff}.rank-gap.time-50{color:#5dff9a}.rank-gap.time-60{color:#ffe66d}.rank-gap.time-70{color:#ffad5c}.rank-gap.time-80{color:#ff6b6b}.rank-gap.time-90{color:#a88cff}
 
 /* v2.7 records / fixed 1x */
@@ -448,3 +448,6 @@ body.game-focus-mode .broadcast{border:0;border-radius:0}
 .speed-controls button{padding:5px 7px;min-width:38px;border-radius:6px;border:1px solid rgba(255,255,255,.2);background:rgba(8,13,20,.82);color:#dbe7f3;font-size:11px;font-weight:850;cursor:pointer}
 .speed-controls button.active{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.62);color:#fff}
 @media(max-width:1050px){.speed-controls button{padding:4px 5px;min-width:34px}.team-score-board{width:92%}}
+
+/* v3.3 map clarity */
+#gameCanvas,#miniMap{image-rendering:auto}

@@ -23,7 +23,7 @@
   const STUN_MS = 2300;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.2";
+  const BUILD_ID = "v3.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -38,13 +38,25 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   unitSprites[3].A.src="wraith_a.png";    unitSprites[3].B.src="wraith_b.png";    unitSprites[3].C.src="wraith_c.png";   unitSprites[3].D.src="wraith_d.png";
   unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";   unitSprites[4].D.src="mutalisk_d.png";
   unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";   unitSprites[5].D.src="queen_d.png";
+  const unitGraySprites={
+    1:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    2:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    3:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    4:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
+    5:{A:new Image(),B:new Image(),C:new Image(),D:new Image()}
+  };
+  unitGraySprites[1].A.src="scourge_a_gray.png"; unitGraySprites[1].B.src="scourge_b_gray.png"; unitGraySprites[1].C.src="scourge_c_gray.png"; unitGraySprites[1].D.src="scourge_d_gray.png";
+  unitGraySprites[2].A.src="scout_a_gray.png"; unitGraySprites[2].B.src="scout_b_gray.png"; unitGraySprites[2].C.src="scout_c_gray.png"; unitGraySprites[2].D.src="scout_d_gray.png";
+  unitGraySprites[3].A.src="wraith_a_gray.png"; unitGraySprites[3].B.src="wraith_b_gray.png"; unitGraySprites[3].C.src="wraith_c_gray.png"; unitGraySprites[3].D.src="wraith_d_gray.png";
+  unitGraySprites[4].A.src="mutalisk_a_gray.png"; unitGraySprites[4].B.src="mutalisk_b_gray.png"; unitGraySprites[4].C.src="mutalisk_c_gray.png"; unitGraySprites[4].D.src="mutalisk_d_gray.png";
+  unitGraySprites[5].A.src="queen_a_gray.png"; unitGraySprites[5].B.src="queen_b_gray.png"; unitGraySprites[5].C.src="queen_c_gray.png"; unitGraySprites[5].D.src="queen_d_gray.png";
 
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
   const PLAYER_HIT_RADIUS = 0.36;     // unchanged collision feel
-  const PLAYER_VISUAL_SCALE = 0.50;   // v14 visual size
+  const PLAYER_VISUAL_SCALE = 0.575;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
-  const OBS_SPEED_RATIO = 0.684;         // observer speed ≈ 90% of player speed
+  const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
@@ -158,6 +170,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const map = new Image();
   map.src = "map.png";
+  const MAP_IMAGE_SCALE_X=696/172;
+  const MAP_IMAGE_SCALE_Y=720/178;
 
   let players = [];
   let observers = [];
@@ -368,7 +382,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.464395625,
         desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, hitGrayUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
+        hitFxUntil:0, hitGrayUntil:0, collisionGrayUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -2896,6 +2910,13 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     p.continuousRunMul=1+runFactor*.05;
     if(speedMul>0) speedMul*=p.continuousRunMul;
 
+    // v3.3 오른쪽 3시 구간(seg 5~11): 실제 옵저버 위협/컨트롤이 없으면
+    // 패스·코너 준비 AI 때문에 체감 감속이 생기지 않도록 정상 주행 속도를 보장.
+    if(si>=5 && si<=11 && now>=p.stunUntil && p.controlMode==="normal"){
+      const eastThreats=playerNearbyObservers(p,7.5);
+      if(!eastThreats.length) speedMul=Math.max(speedMul,.988);
+    }
+
     const step=p.speed*speedMul*dt/1000;
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
     p.x += p.steerX/steerLen*move;
@@ -2991,7 +3012,8 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         if(playerObserverHit(p,o)){
           p.hits++;
           p.hitFxUntil=now+240;
-          p.hitGrayUntil=now+STUN_MS+180;
+          p.hitGrayUntil=now+STUN_MS+INV_MS+320;
+          p.collisionGrayUntil=now+STUN_MS+INV_MS+320;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.match.collisions++;
@@ -3730,28 +3752,23 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       ctx.globalAlpha=1;
     }
 
-    const sprite=unitSprites[currentRound]?.[p.team];
+    const grayUntil=Math.max(p.hitGrayUntil||0,p.collisionGrayUntil||0,p.stunUntil||0);
+    const collisionGray=grayUntil>now;
+    const normalSprite=unitSprites[currentRound]?.[p.team];
+    const graySprite=unitGraySprites[currentRound]?.[p.team];
+    const sprite=collisionGray && graySprite?.complete && graySprite.naturalWidth ? graySprite : normalSprite;
     if(sprite && sprite.complete && sprite.naturalWidth){
       const size=r*2.65;
       ctx.save();
       ctx.rotate(p.visualAngle);
-      const grayUntil=Math.max(p.hitGrayUntil||0,p.stunUntil||0);
-      const grayLeft=Math.max(0,grayUntil-now);
-      if(grayLeft>0){
-        // v3.2: every observer collision renders the actual unit as unmistakable dark gray
-        // for the entire stun, independent of frame drops.
-        ctx.filter="grayscale(100%) saturate(0%) brightness(32%) contrast(135%)";
-        ctx.shadowColor="transparent";
-      }else{
-        ctx.filter="none";
-        ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : p.team==="B" ? "rgba(77,141,255,.45)" : p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)";
-      }
-      ctx.shadowBlur=Math.max(3,r*.28);
-      ctx.drawImage(sprite,-size/2,-size/2,size,size);
       ctx.filter="none";
+      ctx.shadowColor=collisionGray ? "transparent" :
+        (p.team==="A" ? "rgba(255,77,77,.45)" : p.team==="B" ? "rgba(77,141,255,.45)" : p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)");
+      ctx.shadowBlur=collisionGray?0:Math.max(2,r*.18);
+      ctx.drawImage(sprite,-size/2,-size/2,size,size);
       ctx.restore();
     }else{
-      const grayMix=((p.hitGrayUntil||p.stunUntil)>now)?1:0;
+      const grayMix=(Math.max(p.hitGrayUntil||0,p.collisionGrayUntil||0,p.stunUntil||0)>now)?1:0;
       if(grayMix>0){
         const base=p.team==="A"?[255,77,77]:p.team==="B"?[77,141,255]:p.team==="C"?[255,216,77]:[57,212,106], g=52;
         const rr=Math.round(base[0]*(1-grayMix)+g*grayMix),gg=Math.round(base[1]*(1-grayMix)+g*grayMix),bb=Math.round(base[2]*(1-grayMix)+g*grayMix);
@@ -3798,7 +3815,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const mx=mc.getContext("2d"),W=mc.width,H=mc.height;
     mx.clearRect(0,0,W,H);
     mx.globalAlpha=.78;
-    mx.drawImage(map,MINI_CROP.x*4,MINI_CROP.y*4,MINI_CROP.w*4,MINI_CROP.h*4,0,0,W,H);
+    mx.drawImage(map,MINI_CROP.x*MAP_IMAGE_SCALE_X,MINI_CROP.y*MAP_IMAGE_SCALE_Y,MINI_CROP.w*MAP_IMAGE_SCALE_X,MINI_CROP.h*MAP_IMAGE_SCALE_Y,0,0,W,H);
     mx.globalAlpha=1;
     const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
     for(let i=0;i<players.length;i++){
@@ -3819,7 +3836,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const view=getView();
     ctx.imageSmoothingEnabled=true;
     ctx.imageSmoothingQuality="high";
-    ctx.drawImage(map,view.sx*4,view.sy*4,view.viewW*4,view.viewH*4,0,0,W,H);
+    ctx.drawImage(map,view.sx*MAP_IMAGE_SCALE_X,view.sy*MAP_IMAGE_SCALE_Y,view.viewW*MAP_IMAGE_SCALE_X,view.viewH*MAP_IMAGE_SCALE_Y,0,0,W,H);
 
     // v2.07: cull + batch all visible observers into a few canvas paths.
     // This sharply reduces per-observer draw calls while preserving their look.
