@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 650;
+  const OBSERVER_COUNT = 700;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2300;
   const INV_MS = 1000;
-  const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.51";
+  const CAMERA_ZOOM = 3.30;
+  const BUILD_ID = "v2.52";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -37,8 +37,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.30;     // unchanged collision feel
-  const PLAYER_VISUAL_SCALE = 0.5889842578125;   // v14 visual size
+  const PLAYER_HIT_RADIUS = 0.32;     // unchanged collision feel
+  const PLAYER_VISUAL_SCALE = 0.50;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
   const OBS_SPEED_RATIO = 0.684;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
@@ -50,7 +50,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
   const AVOID_SAFE_BUFFER = 6.2;
   const AVOID_LANE_LOOKAHEAD = 2.60;
-  const AVOID_HORIZONS = [0.42,0.95,1.70,2.85];   // compare future lane safety
+  const AVOID_HORIZONS = [0.36,0.82,1.48,2.55,3.10];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
@@ -842,7 +842,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
-  const OBS_GRID_SIZE = 22;
+  const OBS_GRID_SIZE = 19;
   const OBS_GRID_COLS = Math.ceil(MAP_W/OBS_GRID_SIZE);
   const OBS_GRID_ROWS = Math.ceil(MAP_H/OBS_GRID_SIZE);
   const observerGrid = Array.from({length:OBS_GRID_COLS*OBS_GRID_ROWS},()=>[]);
@@ -1127,7 +1127,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Keep only the closest relevant threats in the expensive prediction matrix.
     // 660 observers remain simulated/rendered, but distant ones no longer multiply
     // avoidance cost for every racer.
-    const nearby=nearestThreats(nearbyRaw,p,8);
+    const nearby=nearestThreats(nearbyRaw,p,7);
     const predictionNorm=(p.stats.prediction-72)/27;
     const corridorBias=escapeCorridorBias(p,s,nearby);
     const clusterPlan=observerClusterPlan(p,s,nearby);
@@ -1189,7 +1189,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const skimChance=Math.min(.995,(.88+reactionNorm*.055+predictionNorm*.045+controlNorm*.025)*signatureOf(p).skim);
       if(Math.random()<skimChance){
         const sidePref=frontLat>=0?-1:1;
-        const skimMag=half*(.48+compactSkill*.12);
+        const skimMag=half*(.54+compactSkill*.14);
         const candA=Math.max(-half*.98,Math.min(half*.98,p.desiredOffset+sidePref*skimMag));
         const candB=Math.max(-half*.98,Math.min(half*.98,p.desiredOffset-sidePref*skimMag*.88));
         const riskA=candidateAvoidanceRisk(p,s,candA,.97,nearby);
