@@ -16,7 +16,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v24";
+  const BUILD_ID = "v25";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
@@ -125,7 +125,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
-        resumeEaseUntil:0
+        resumeEaseUntil:0,
+        linePlanOffset:0,
+        linePlanUntil:0
       };
     });
   }
@@ -187,7 +189,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     players=makePlayers();
     observers=spawnObservers();
     running=false;
-    raceStart=0; lastTs=0;
+    raceStart=0; lastTs=0; lastRankingRender=0;
     camX=28; camY=158;
     startBtn.textContent="LIVE 시작";
     render(0);
@@ -464,47 +466,114 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
-  function optimizedLookAheadTarget(p,si){
-    const cur=segs[si];
-    const maxAhead=Math.min(segs.length-1,si+4);
+  function plannedRacingOffset(p,si,now){
+    // Re-plan only a few times per second. This prevents rapid left/right
+    // oscillation when racers overlap while still reacting early to corners.
+    if(now < p.linePlanUntil) return p.linePlanOffset;
 
-    // Pick a farther waypoint so the racer prepares for the next turn early,
-    // rather than blindly following every centerline point.
-    let ahead=si+1;
-    let bestTurn=0;
+    const s=segs[si];
+    const half=Math.max(1.8,widths[si]*0.58);
+    const candidates=[-0.96,-0.72,-0.48,-0.24,0,0.24,0.48,0.72,0.96];
+    let bestOff=0;
+    let bestScore=Infinity;
+
+    const maxAhead=Math.min(segs.length-1,si+5);
+    for(const c of candidates){
+      const off=c*half;
+      let px=p.x, py=p.y;
+      let score=0;
+
+      // Cost of getting from the current position onto this candidate line.
+      const entryX=s.b[0]+s.nx*off;
+      const entryY=s.b[1]+s.ny*off;
+      score += Math.hypot(entryX-px,entryY-py);
+      px=entryX; py=entryY;
+
+      // Look through several future segments and compare total path length.
+      // Candidate offsets progressively prepare for the next apex.
+      for(let j=si+1;j<=maxAhead;j++){
+        const seg=segs[j];
+        const prev=segs[Math.max(si,j-1)];
+        const next=segs[Math.min(segs.length-1,j+1)];
+        const turn=prev.ux*next.uy-prev.uy*next.ux;
+        const h=Math.max(1.6,widths[j]*0.56);
+
+        let futureOff=off*0.52;
+        if(Math.abs(turn)>0.025){
+          // Evaluate the physically shorter inside line for the upcoming corner.
+          const inside=(turn>0 ? 1 : -1);
+          futureOff=inside*h*0.96;
+        }
+
+        const wx=seg.b[0]+seg.nx*futureOff;
+        const wy=seg.b[1]+seg.ny*futureOff;
+        score += Math.hypot(wx-px,wy-py);
+        px=wx; py=wy;
+      }
+
+      // Strong opening shortcut: 7→5 should ride the upper wall because the
+      // following road turns upward. In screen coordinates, upper = smaller y.
+      if(si<=8){
+        const projectedY=s.b[1]+s.ny*off;
+        score += Math.max(0,projectedY-151.2)*2.8;
+        score -= Math.max(0,154.5-projectedY)*0.65;
+      }
+
+      // Avoid wall scraping while still allowing near-apex lines.
+      score += Math.pow(Math.abs(c),5)*0.28;
+
+      // Higher line skill more strongly trusts the shortest candidate.
+      const skill=(p.profile.line-85)/15;
+      score *= (1.03-skill*0.035);
+
+      if(score<bestScore){
+        bestScore=score;
+        bestOff=off;
+      }
+    }
+
+    p.linePlanOffset=bestOff;
+    p.linePlanUntil=now+170+Math.random()*70;
+    return bestOff;
+  }
+
+  function optimizedLookAheadTarget(p,si,now){
+    const maxAhead=Math.min(segs.length-1,si+4);
+    const plannedOff=plannedRacingOffset(p,si,now);
+
+    // Aim farther ahead than one centerline point. This is what lets the racer
+    // cut a smooth diagonal instead of following the polyline point-by-point.
+    let ahead=Math.min(segs.length-1,si+2);
+    let strongest=0;
     for(let j=si+1;j<=maxAhead;j++){
-      const a=segs[Math.min(segs.length-1,j-1)];
+      const a=segs[Math.max(0,j-1)];
       const b=segs[j];
       const turn=a.ux*b.uy-a.uy*b.ux;
-      if(Math.abs(turn)>Math.abs(bestTurn)){
-        bestTurn=turn;
+      if(Math.abs(turn)>Math.abs(strongest)){
+        strongest=turn;
         ahead=j;
       }
     }
 
-    const targetSeg=segs[Math.min(segs.length-1,ahead)];
-    let off=0;
-
-    // Inside of upcoming turn.
-    if(Math.abs(bestTurn)>0.02){
-      const half=Math.max(1.7,widths[Math.min(ahead,widths.length-1)]*0.58);
-      // seg.n points to the left of travel when screen coordinates are accounted for
-      // by our route geometry; use turn sign consistently with actual current offset convention.
-      off=(bestTurn>0 ? 1 : -1)*half*0.985;
+    const targetSeg=segs[ahead];
+    let targetOff=plannedOff*0.58;
+    if(Math.abs(strongest)>0.02){
+      const half=Math.max(1.7,widths[ahead]*0.58);
+      targetOff=(strongest>0 ? 1 : -1)*half*0.985;
     }
 
-    let x=targetSeg.b[0]+targetSeg.nx*off;
-    let y=targetSeg.b[1]+targetSeg.ny*off;
+    let x=targetSeg.b[0]+targetSeg.nx*targetOff;
+    let y=targetSeg.b[1]+targetSeg.ny*targetOff;
 
-    // Opening 7→5 shortcut: stay clearly on the upper side of the horizontal run.
-    // This avoids the old behavior where following the centerline first caused a slower drop/lower arc.
+    // Explicit opening racing line. The route immediately after 5 o'clock turns
+    // upward, so this keeps the approach on the upper boundary instead of dropping.
     if(si<=8){
-      const progress=Math.max(0,Math.min(1,(p.x-21)/(148-21)));
-      const upperY=154.0 - 7.2*Math.pow(progress,0.72);
+      const progress=Math.max(0,Math.min(1,(p.x-20.5)/(148-20.5)));
+      const upperY=152.0 - 4.2*Math.pow(progress,0.78);
       y=Math.min(y,upperY);
     }
 
-    return {x,y};
+    return {x,y,off:plannedOff};
   }
 
   function updatePlayer(p, now, dt){
@@ -514,6 +583,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(p.stunUntil){
       p.stunUntil=0;
       p.invUntil=now+INV_MS;
+      p.lastAdvanceAt=now;
+      p.lastProgress=currentProgress(p);
     }
 
     chooseControl(p,now,dt);
@@ -522,6 +593,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const s=segs[si];
     const half=widths[si]*0.72;
     let targetOff=optimalOffsetFor(p);
+    const plannedOff=plannedRacingOffset(p,si,now);
+    // Blend toward the path-length winner before legacy apex logic.
+    targetOff=targetOff*0.24+plannedOff*0.76;
       // Kart-style cornering: aggressively approach the inside/apex on turns.
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
@@ -588,13 +662,13 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const next=segs[Math.min(segs.length-1,si+1)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
-    const optTarget=optimizedLookAheadTarget(p,si);
-    const optBlend = si<=8 ? 0.72 : 0.46;
+    const optTarget=optimizedLookAheadTarget(p,si,now);
+    const optBlend = si<=8 ? 0.90 : 0.62;
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
     if(next && si<segs.length-1){
-      const look=0.24;
+      const look=si<=8 ? 0.035 : 0.14;
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
@@ -646,6 +720,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
           p.hits++;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
+          p.lastAdvanceAt=p.stunUntil;
           break;
         }
       }
@@ -699,6 +774,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
   let cameraLeaderId=-1;
   let cameraLeaderHoldUntil=0;
+  let lastRankingRender=0;
 
   function updateCamera(dt){
     const active=[];
@@ -750,7 +826,10 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     for(const p of players) updatePlayer(p,ts,dt);
     updateCamera(dt);
     render(ts);
-    renderRanking();
+    if(ts-lastRankingRender>=125){
+      renderRanking();
+      lastRankingRender=ts;
+    }
 
     if(players.every(p=>p.done)){
       running=false;
@@ -843,19 +922,22 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     ctx.imageSmoothingEnabled=false;
     ctx.drawImage(map,view.sx,view.sy,view.viewW,view.viewH,0,0,W,H);
 
-    // Draw every observer that falls inside this 300% camera crop.
-    for(const o of observers) drawObserver(o,view);
+    // World-space culling avoids transforming/drawing all 660 observers every frame.
+    let visibleObs=0;
+    const pad=5;
+    const minX=view.sx-pad, maxX=view.sx+view.viewW+pad;
+    const minY=view.sy-pad, maxY=view.sy+view.viewH+pad;
+    for(const o of observers){
+      if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
+      visibleObs++;
+      drawObserver(o,view);
+    }
 
-    const ordered=[...players].sort((a,b)=>currentProgress(b)-currentProgress(a));
-    ordered.forEach((p,i)=>drawPlayer(p,view,i+1));
+    const ordered=players.map(p=>({p,prog:currentProgress(p)})).sort((a,b)=>b.prog-a.prog);
+    ordered.forEach((e,i)=>drawPlayer(e.p,view,i+1));
 
     const elapsed=raceStart ? Math.max(0,(ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
-    let visibleObs=0;
-    for(const o of observers){
-      const [ox,oy]=worldToScreen(o.x,o.y,view);
-      if(ox>=0 && oy>=0 && ox<=canvas.width && oy<=canvas.height) visibleObs++;
-    }
     cameraLabel.textContent=`${BUILD_ID} · OBS ${observers.length} · 화면 ${visibleObs} · 300%`;
   }
 
@@ -863,7 +945,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const ordered=[...players].sort((a,b)=>{
       if(a.done && b.done) return a.finishTime-b.finishTime;
       if(a.done) return -1;if(b.done) return 1;
-      return currentProgress(b)-currentProgress(a);
+      const diff=currentProgress(b)-currentProgress(a);
+      if(Math.abs(diff)<0.20) return a.index-b.index;
+      return diff;
     });
     rankingEl.innerHTML="";
     const leaderProg=currentProgress(ordered[0]);
