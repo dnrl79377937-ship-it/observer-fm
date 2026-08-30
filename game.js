@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.53";
+  const BUILD_ID = "v3.54";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -985,26 +985,33 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function clampToRoad(p){
-    // v3.53: road-edge lines are ordinary road. At a corner/join, choose the
-    // nearest legal point from current + adjacent route segments instead of
-    // forcing the racer back onto the CURRENT segment every frame. That old
-    // projection was the actual "invisible wall / bounce" behavior.
+    // v3.54: edge-line is legal road. Never "snap" to another segment after a hit.
+    // First keep the exact current position if it is inside ANY nearby legal
+    // corridor. Only correct the minimum overflow beyond the nearest boundary.
     const base=Math.min(p.seg,segs.length-1);
-    let best=null;
     const from=Math.max(0,base-1), to=Math.min(segs.length-1,base+2);
+    let best=null;
     for(let si=from;si<=to;si++){
       const s=segs[si];
       const rx=p.x-s.a[0], ry=p.y-s.a[1];
-      let along=rx*s.ux+ry*s.uy;
-      let lateral=rx*s.nx+ry*s.ny;
-      along=Math.max(-1.8,Math.min(s.L+2.8,along));
-      lateral=clampSpecialRoadOffset(si,lateral,p);
-      const x=s.a[0]+s.ux*along+s.nx*lateral;
-      const y=s.a[1]+s.uy*along+s.ny*lateral;
+      const rawAlong=rx*s.ux+ry*s.uy;
+      const rawLat=rx*s.nx+ry*s.ny;
+      const legalLat=clampSpecialRoadOffset(si,rawLat,p);
+      // Position already belongs to this road corridor: do not move it at all.
+      if(rawAlong>=-1.8 && rawAlong<=s.L+2.8 && Math.abs(rawLat-legalLat)<.0001) return;
+      const along=Math.max(-1.8,Math.min(s.L+2.8,rawAlong));
+      const x=s.a[0]+s.ux*along+s.nx*legalLat;
+      const y=s.a[1]+s.uy*along+s.ny*legalLat;
       const d2=(p.x-x)*(p.x-x)+(p.y-y)*(p.y-y);
       if(!best||d2<best.d2) best={x,y,d2};
     }
-    if(best){p.x=best.x;p.y=best.y;}
+    if(best){
+      // Minimum correction only; never teleport across the road.
+      const dx=best.x-p.x, dy=best.y-p.y, dist=Math.hypot(dx,dy);
+      const maxFix=.34;
+      if(dist<=maxFix){p.x=best.x;p.y=best.y;}
+      else if(dist>0){p.x+=dx/dist*maxFix;p.y+=dy/dist*maxFix;}
+    }
   }
 
   function rescueIfStuck(p,now){
@@ -5348,7 +5355,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v353SelfAudit(){
+  function v354SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==350)issues.push("옵저버350");
@@ -5364,7 +5371,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v353SelfAudit,
+    version:BUILD_ID,selfAudit:v354SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),
