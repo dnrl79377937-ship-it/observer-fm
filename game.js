@@ -17,6 +17,13 @@
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
 
+  // Engine safeguards. Visual sprite size is independent of collision radius.
+  const PLAYER_HIT_RADIUS = 1.40;     // unchanged collision feel
+  const PLAYER_VISUAL_SCALE = 0.50;   // requested: 50% smaller icon
+  const OBS_VISUAL_SCALE = 0.50;      // requested: 50% smaller observer
+  const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
+  const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
+
   const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika"];
   const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e"];
 
@@ -96,7 +103,11 @@
         hits:0, done:false, finishTime:null,
         controlMode:"normal", controlUntil:0,
         controlCooldown: 2400 + Math.random()*3600,
-        modeStart:0
+        modeStart:0,
+        lastProgress:0,
+        lastAdvanceAt:0,
+        lastX:20.5,
+        lastY:154.8 + (i-3.5)*0.48
       };
     });
   }
@@ -201,6 +212,50 @@
     return (turn>0 ? 1 : -1)*half*apex;
   }
 
+  function clampToRoad(p){
+    const si=Math.min(p.seg,segs.length-1);
+    const s=segs[si];
+
+    // Project player onto current segment coordinates.
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    let along=(rx*s.ux+ry*s.uy);
+    let lateral=(rx*s.nx+ry*s.ny);
+
+    // Keep enough room for special controls while never allowing wall/black-area escapes.
+    const half=Math.max(1.8,widths[si]*ROAD_MARGIN);
+    along=Math.max(-1.2,Math.min(s.L+2.2,along));
+    lateral=Math.max(-half,Math.min(half,lateral));
+
+    p.x=s.a[0]+s.ux*along+s.nx*lateral;
+    p.y=s.a[1]+s.uy*along+s.ny*lateral;
+  }
+
+  function rescueIfStuck(p,now){
+    const prog=currentProgress(p);
+    if(prog > p.lastProgress + 0.18){
+      p.lastProgress=prog;
+      p.lastAdvanceAt=now;
+      p.lastX=p.x; p.lastY=p.y;
+      return;
+    }
+
+    if(!p.lastAdvanceAt) p.lastAdvanceAt=now;
+    if(now-p.lastAdvanceAt < STUCK_RESCUE_MS) return;
+
+    // Snap gently ahead on the current centerline instead of freezing forever.
+    const si=Math.min(p.seg,segs.length-1);
+    const s=segs[si];
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    let along=rx*s.ux+ry*s.uy;
+    along=Math.max(0,Math.min(s.L,along+1.8));
+    p.x=s.a[0]+s.ux*along+s.nx*p.desiredOffset;
+    p.y=s.a[1]+s.uy*along+s.ny*p.desiredOffset;
+    p.controlMode="normal";
+    p.controlUntil=0;
+    p.lastProgress=currentProgress(p);
+    p.lastAdvanceAt=now;
+  }
+
   function updatePlayer(p, now, dt){
     if(p.done) return;
 
@@ -261,23 +316,41 @@
     p.x += dx/d*move;
     p.y += dy/d*move;
 
-    // Advance based on segment-plane crossing, never exact point collision.
-    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
-    if((along>=0.93 || Math.hypot(p.x-s.b[0],p.y-s.b[1])<3.0) && p.seg<segs.length-1){
-      p.seg++;
+    // Never allow AI steering to drift into black/non-drivable areas.
+    clampToRoad(p);
+
+    // Robust segment advancement: crossing the end plane OR entering the next joint zone.
+    // A short while-loop handles high FPS drops without skipping/sticking.
+    let advances=0;
+    while(p.seg<segs.length-1 && advances<3){
+      const cs=segs[p.seg];
+      const rx=p.x-cs.a[0], ry=p.y-cs.a[1];
+      const alongPx=rx*cs.ux+ry*cs.uy;
+      const nearEnd=Math.hypot(p.x-cs.b[0],p.y-cs.b[1])<3.4;
+      if(alongPx>=cs.L*0.91 || nearEnd){
+        p.seg++;
+        advances++;
+      } else break;
     }
 
-    if(p.seg>=segs.length-1 && Math.hypot(p.x-route.at(-1)[0],p.y-route.at(-1)[1])<5.5){
+    // Final section: once the finish gate is reached/passed, finish immediately.
+    const last=route[route.length-1];
+    const fs=segs[segs.length-1];
+    const frx=p.x-fs.a[0], fry=p.y-fs.a[1];
+    const finishAlong=frx*fs.ux+fry*fs.uy;
+    if(p.seg>=segs.length-1 && (finishAlong>=fs.L*0.88 || Math.hypot(p.x-last[0],p.y-last[1])<6.2)){
       p.done=true;
       p.finishTime=now-raceStart;
       return;
     }
 
+    rescueIfStuck(p,now);
+
     // Collision check. 4% is per encounter, not every animation frame.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
       for(const o of observers){
         if(Math.abs(o.seg-p.seg)>1) continue;
-        if(Math.hypot(p.x-o.x,p.y-o.y)<1.40){
+        if(Math.hypot(p.x-o.x,p.y-o.y)<PLAYER_HIT_RADIUS){
           p.collisionLockUntil=now+280; // debounce one overlap
           if(Math.random()<HIT_CHANCE){
             p.hits++;
@@ -291,10 +364,11 @@
   }
 
   function updateObservers(now){
+    const t1=now*0.0015, t2=now*0.003;
     for(const o of observers){
       const s=segs[o.seg];
-      const t=Math.max(0,Math.min(1,o.baseT+Math.sin(now*0.0015+o.phase)*o.sway*0.12));
-      const lateral=o.off+Math.sin(now*0.003+o.phase)*0.35;
+      const t=Math.max(0,Math.min(1,o.baseT+Math.sin(t1+o.phase)*o.sway*0.12));
+      const lateral=o.off+Math.sin(t2+o.phase)*0.35;
       o.x=s.a[0]+s.dx*t+s.nx*lateral;
       o.y=s.a[1]+s.dy*t+s.ny*lateral;
     }
@@ -316,7 +390,7 @@
   function loop(ts){
     if(!running) return;
     // Clamp dt so background-tab stalls never make the simulation explode.
-    const dt=Math.min(40,Math.max(0,ts-lastTs));
+    const dt=Math.min(32,Math.max(0,ts-lastTs));
     lastTs=ts;
 
     updateObservers(ts);
@@ -351,12 +425,12 @@
   function drawObserver(o,view){
     const [x,y]=worldToScreen(o.x,o.y,view);
     if(x<-12||y<-12||x>canvas.width+12||y>canvas.height+12) return;
-    const r=Math.max(4.2,view.scale*0.72);
+    const r=Math.max(2.1,view.scale*0.72*OBS_VISUAL_SCALE);
     ctx.save();
     ctx.translate(x,y);
     ctx.fillStyle="#d6e8ff";
     ctx.strokeStyle="#5f89ad";
-    ctx.lineWidth=Math.max(1,view.scale*.11);
+    ctx.lineWidth=Math.max(0.7,view.scale*.11*OBS_VISUAL_SCALE);
     ctx.beginPath();ctx.ellipse(0,0,r*1.20,r*.72,0,0,Math.PI*2);ctx.fill();ctx.stroke();
     ctx.fillStyle="#83bcdf";
     ctx.beginPath();ctx.arc(r*.20,0,r*.30,0,Math.PI*2);ctx.fill();
@@ -366,7 +440,7 @@
   function drawPlayer(p,view,rank){
     const [x,y]=worldToScreen(p.x,p.y,view);
     if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
-    const r=Math.max(10,view.scale*1.15);
+    const r=Math.max(5,view.scale*1.15*PLAYER_VISUAL_SCALE);
 
     ctx.save();
     ctx.translate(x,y);
@@ -390,10 +464,10 @@
     ctx.fillText(String(rank),0,1);
 
     // Nickname directly over the icon.
-    ctx.font=`800 ${Math.max(13,r*.72)}px system-ui`;
+    ctx.font=`800 ${Math.max(10,r*.82)}px system-ui`;
     const label=p.name;
     const tw=ctx.measureText(label).width+14;
-    const lh=Math.max(20,r*.92);
+    const lh=Math.max(15,r*1.02);
     const ly=-r*1.48;
     ctx.fillStyle="rgba(5,8,13,.88)";
     ctx.strokeStyle=p.color;ctx.lineWidth=1.5;
