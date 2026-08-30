@@ -18,7 +18,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.01";
+  const BUILD_ID = "v2.02";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -283,7 +283,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0;
     lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];
     broadcastFocusId=-1; broadcastFocusUntil=0; previousUiRanks=new Map();
-    diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0; raceLeaderChanges=0; raceTotalOvertakes=0;
+    diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
     camX=28; camY=158;
     roundTransitioning=false;
@@ -744,6 +744,60 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
+  function closeRivalContext(p,si){
+    const s=segs[Math.min(si,segs.length-1)];
+    const myProg=currentProgress(p);
+    const myOff=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+    let rival=null, bestGap=999, rivalOff=0, rivalProg=0;
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done) continue;
+      const qp=currentProgress(q);
+      const gap=Math.abs(qp-myProg);
+      if(gap<2.25 && gap<bestGap){
+        bestGap=gap; rival=q; rivalProg=qp;
+        rivalOff=(q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny;
+      }
+    }
+    if(!rival) return null;
+    return {rival,gap:bestGap,myProg,rivalProg,myOff,rivalOff};
+  }
+
+  function battleLaneAdjustment(p,si,baseOff){
+    const c=closeRivalContext(p,si);
+    if(!c) return baseOff;
+
+    const half=Math.max(1.8,widths[si]*0.56);
+    const aggression=(p.stats.aggression-72)/27;
+    const pressure=(p.stats.pressure-72)/27;
+    const control=(p.stats.control-72)/27;
+    const risk=(p.stats.riskControl-72)/27;
+    const inside=cornerInsideSide(si);
+
+    let side=c.rivalOff>=c.myOff ? -1 : 1;
+    const style=p.drivingStyle.name;
+
+    if(inside!==0 &&
+       (style==="attacker" || style==="opportunist" || style==="apexHunter" || aggression>.68) &&
+       Math.abs(c.rivalOff-inside*half)>half*.30){
+      side=inside;
+    }
+
+    if(style==="safeReader" || style==="patient"){
+      side=c.myOff>=0 ? 1 : -1;
+    }
+
+    const alongside=c.gap<1.05;
+    let commit=.38+aggression*.22+pressure*.12+control*.08-risk*.05;
+    if(alongside) commit+=.12;
+    if(c.rivalProg>c.myProg) commit+=.06;
+    commit=Math.max(.34,Math.min(.88,commit));
+
+    const attackTarget=side*half*commit;
+    const blend=alongside?.44:.30;
+    return baseOff*(1-blend)+attackTarget*blend;
+  }
+
   function packContextOffset(p,si,now){
     const s=segs[Math.min(si,segs.length-1)];
     const half=Math.max(1.8,widths[si]*0.56);
@@ -785,7 +839,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(nearestGap<4.0) commitment+=.10;
 
     p.packPlanOffset=side*half*Math.min(.92,commitment);
-    p.packPlanUntil=now+300+Math.random()*170;
+    p.packPlanOffset=battleLaneAdjustment(p,si,p.packPlanOffset);
+    p.packPlanUntil=now+(nearestGap<2.25?210:300)+Math.random()*150;
     return p.packPlanOffset;
   }
 
@@ -875,6 +930,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     p.linePlanOffset=bestOff;
     p.linePlanUntil=now+245+Math.random()*115;
     return bestOff;
+  }
+
+  function playerBattleSeparation(p,si,targetOff){
+    const c=closeRivalContext(p,si);
+    if(!c || c.gap>1.15) return targetOff;
+    const half=Math.max(1.8,widths[si]*0.54);
+    if(Math.abs(c.myOff-c.rivalOff)>=half*.28) return targetOff;
+    const dir=c.myOff<=c.rivalOff?-1:1;
+    const strength=(1-c.gap/1.15)*half*.13;
+    return Math.max(-half*.94,Math.min(half*.94,targetOff+dir*strength));
   }
 
   function stabilizeDrivingLine(p,si,targetOff){
@@ -1030,6 +1095,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*(0.40-insideCommit*0.12)+skillApex*(0.60+insideCommit*0.12);
     }
 
+    targetOff=playerBattleSeparation(p,si,targetOff);
     targetOff=stabilizeDrivingLine(p,si,targetOff);
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
@@ -1209,6 +1275,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   let previousUiRanks=new Map();
   let diagFrames=0, diagFps=0, diagLastFpsTs=0, diagFrameMs=0, diagMaxFrameMs=0;
   let raceLeaderChanges=0, raceTotalOvertakes=0;
+  let lastCloseBattleKey="", lastCloseBattleEventAt=0;
   const SECTOR_MARKS=[0.25,0.50,0.75];
   let bestSector=[null,null,null];
 
@@ -1270,12 +1337,13 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const bnow=performance.now();
     if(bnow<broadcastFocusUntil && broadcastFocusId>=0){
       const fp=players[broadcastFocusId];
-      if(fp && !fp.done){ tx=tx*.55+fp.x*.45; ty=ty*.55+fp.y*.45; }
+      if(fp && !fp.done){ tx=tx*.46+fp.x*.54; ty=ty*.46+fp.y*.54; }
     }else{
       const battle=chooseBroadcastBattle();
       if(battle){
-        const w=battle.label==="FINISH BATTLE"?.34:.46;
-        tx=battle.a.x*(1-w)+battle.b.x*w; ty=battle.a.y*(1-w)+battle.b.y*w;
+        const w=battle.label==="FINISH BATTLE"?.28:.48;
+        tx=battle.a.x*(1-w)+battle.b.x*w;
+        ty=battle.a.y*(1-w)+battle.b.y*w;
       }
     }
     const a=Math.min(0.085,dt*0.0028);
@@ -1409,6 +1477,14 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
           const secGap=gap/Math.max(1,battle.a.speed||1);
           leadBattle.textContent=`${battle.label} · ${battle.a.name} / ${battle.b.name} · ${secGap.toFixed(2)}s`;
           leadBattle.classList.remove("hidden");
+          const battleKey=`${battle.label}:${battle.a.index}:${battle.b.index}`;
+          if(battle.label==="CLOSE BATTLE" &&
+             battleKey!==lastCloseBattleKey &&
+             ts-lastCloseBattleEventAt>3000){
+            pushRaceEvent(`CLOSE BATTLE · ${battle.a.name} / ${battle.b.name}`,ts);
+            lastCloseBattleKey=battleKey;
+            lastCloseBattleEventAt=ts;
+          }
         }else leadBattle.classList.add("hidden");
       }
       const unitName=currentRound===1?"SCOURGE":currentRound===2?"SCOUT":"WRAITH";
@@ -1616,13 +1692,28 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   function chooseBroadcastBattle(){
-    const ranks=players.filter(p=>!p.done).map(p=>({p,prog:currentProgress(p)})).sort((a,b)=>b.prog-a.prog);
+    const ranks=players.filter(p=>!p.done)
+      .map(p=>({p,prog:currentProgress(p)}))
+      .sort((a,b)=>b.prog-a.prog);
     if(ranks.length<2) return null;
-    if(ranks[0].prog>routeLength*.90) return {a:ranks[0].p,b:ranks[1].p,label:"FINISH BATTLE"};
-    let best=null,score=999;
+
+    let best=null,bestScore=-999;
     for(let i=0;i<ranks.length-1;i++){
-      const gap=ranks[i].prog-ranks[i+1].prog, s=gap+i*.16;
-      if(gap<1.35 && s<score){score=s;best={a:ranks[i].p,b:ranks[i+1].p,label:i===0?"LEAD BATTLE":"CLOSE BATTLE"};}
+      const a=ranks[i], b=ranks[i+1];
+      const gap=a.prog-b.prog;
+      if(gap>2.15) continue;
+      const closeScore=Math.max(0,2.15-gap)*2.0;
+      const rankScore=i===0?2.5:i<3?1.2:.35;
+      const finishScore=a.prog>routeLength*.90?4.0:0;
+      const recentAttack=Math.min(1.5,((a.p.match.overtakes||0)+(b.p.match.overtakes||0))*.10);
+      const score=closeScore+rankScore+finishScore+recentAttack;
+      if(score>bestScore){
+        bestScore=score;
+        best={a:a.p,b:b.p,label:i===0?(a.prog>routeLength*.90?"FINISH BATTLE":"LEAD BATTLE"):"CLOSE BATTLE"};
+      }
+    }
+    if(!best && ranks[0].prog>routeLength*.93){
+      return {a:ranks[0].p,b:ranks[1].p,label:"FINISH BATTLE"};
     }
     return best;
   }

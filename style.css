@@ -14,7 +14,7 @@ h1{margin:0;font-size:20px;letter-spacing:.05em}
 button{border:1px solid #3c4d64;background:#182231;color:#fff;padding:10px 16px;border-radius:8px;
   cursor:pointer;font-weight:800}
 button:hover{background:#223047}
-.layout{max-width:1900px;margin:auto;display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:10px}
+.layout{max-width:1900px;margin:auto;display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:10px}
 .broadcast,.ranking{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .livebar{height:38px;padding:0 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);
   font-size:13px}
@@ -144,3 +144,21 @@ button:hover{background:#223047}
 .rank-trend{display:inline-block;min-width:14px;text-align:center;font-weight:900;opacity:.92}
 
 .diag-toggle{position:absolute;right:12px;bottom:12px;z-index:12;padding:6px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.25);background:rgba(5,8,14,.82);color:#fff;font-weight:800;cursor:pointer}.diagnostics{position:absolute;right:12px;bottom:50px;z-index:12;width:300px;padding:10px 12px;border-radius:8px;background:rgba(3,7,12,.91);border:1px solid rgba(255,255,255,.25);font-size:12px;line-height:1.55;pointer-events:none}.diagnostics.hidden{display:none}
+
+/* v2.02 ranking readability */
+.rank-row{
+  grid-template-columns:24px 16px 24px minmax(92px,1fr) minmax(112px,auto)!important;
+  gap:6px;
+}
+.rank-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.rank-gap{
+  min-width:112px;
+  white-space:nowrap;
+  text-align:right;
+  font-size:11px;
+}
