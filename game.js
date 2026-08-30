@@ -11,19 +11,19 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 660;
+  const OBSERVER_COUNT = 726;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v30";
+  const BUILD_ID = "v31";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.40;     // unchanged collision feel
+  const PLAYER_HIT_RADIUS = 0.36;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.69292265625;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
-  const OBS_SPEED_RATIO = 0.72;         // observer speed ≈ 90% of player speed
+  const OBS_SPEED_RATIO = 0.684;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
@@ -32,7 +32,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_PREDICT_SEC = 3.20;        // predict observer positions ahead
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
   const AVOID_SAFE_BUFFER = 6.2;
-  const AVOID_LANE_LOOKAHEAD = 2.60;   // compare future lane safety
+  const AVOID_LANE_LOOKAHEAD = 2.60;
+  const AVOID_HORIZONS = [0.38,0.82,1.35,2.05,3.05];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
@@ -138,7 +139,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           + ((stats.endurance-85)/14)*0.030
           + ((stats.luck-85)/14)*0.012
           + Math.random()*0.035
-        ) * 1.2075,
+        ) * 1.267875,
         desiredOffset:(i-3.5)*0.48,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hits:0, done:false, finishTime:null,
@@ -227,7 +228,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     players=makePlayers();
     observers=spawnObservers();
     running=false;
-    raceStart=0; lastTs=0; lastRankingRender=0;
+    raceStart=0; lastTs=0; lastRankingRender=0; seasonRecorded=false; prevRanks=new Map();
     camX=28; camY=158;
     startBtn.textContent="LIVE 시작";
     render(0);
@@ -359,6 +360,34 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const nearbyBufferPool = Array.from({length:8},()=>[]);
+  const threatObserverBuffers = Array.from({length:8},()=>[]);
+  const threatDistanceBuffers = Array.from({length:8},()=>[]);
+
+  function nearestThreats(raw,p,limit=8){
+    const obs=threatObserverBuffers[p.index];
+    const ds=threatDistanceBuffers[p.index];
+    obs.length=0; ds.length=0;
+    for(let ri=0;ri<raw.length;ri++){
+      const o=raw[ri];
+      const dx=o.x-p.x, dy=o.y-p.y;
+      const d=dx*dx+dy*dy;
+      let pos=ds.length;
+      if(pos<limit){
+        ds.push(d); obs.push(o);
+      }else if(d>=ds[pos-1]){
+        continue;
+      }else{
+        pos=limit-1;
+      }
+      while(pos>0 && d<ds[pos-1]){
+        if(pos<limit){ ds[pos]=ds[pos-1]; obs[pos]=obs[pos-1]; }
+        pos--;
+      }
+      ds[pos]=d; obs[pos]=o;
+      if(ds.length>limit){ ds.length=limit; obs.length=limit; }
+    }
+    return obs;
+  }
   let nearbyBufferIndex=0;
 
   function nearbyObservers(x,y,r){
@@ -379,8 +408,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return out;
   }
 
-  function observerVelocity(o){
-    return o.phase==="move" ? [o.vx||0,o.vy||0] : [0,0];
+  function predictedObserverX(o,t){
+    const vx=o.phase==="move" ? (o.vx||0) : 0;
+    return Math.max(2.5,Math.min(MAP_W-2.5,o.x+vx*t));
+  }
+
+  function predictedObserverY(o,t){
+    const vy=o.phase==="move" ? (o.vy||0) : 0;
+    return Math.max(2.5,Math.min(MAP_H-2.5,o.y+vy*t));
   }
 
 
@@ -435,21 +470,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return Math.max(-1,Math.min(1,score/weight));
   }
 
-  function predictedObserverPosition(o,t){
-    // During the current moving leg, extrapolate along the observer's heading.
-    // A stopped observer stays fixed. Clamp to map bounds so edge predictions
-    // cannot create impossible threat positions.
-    const [ovx,ovy]=observerVelocity(o);
-    return [
-      Math.max(2.5,Math.min(MAP_W-2.5,o.x+ovx*t)),
-      Math.max(2.5,Math.min(MAP_H-2.5,o.y+ovy*t))
-    ];
-  }
-
   function candidateAvoidanceRisk(p,s,targetOff,speedMul,nearby){
     // Sample several future moments. The score heavily punishes a predicted
     // collision, then rewards clearance and low time loss.
-    const horizons=[0.38,0.82,1.35,2.05,3.05];
+    const horizons=AVOID_HORIZONS;
     const lateralNow=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
     let minClear=999;
     let danger=0;
@@ -466,8 +490,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const py=p.y+s.uy*forward+s.ny*(off-lateralNow);
 
       for(const o of nearby){
-        const [ox,oy]=predictedObserverPosition(o,t);
-        const d=Math.hypot(px-ox,py-oy);
+        const ox=predictedObserverX(o,t);
+        const oy=predictedObserverY(o,t);
+        const dx=px-ox, dy=py-oy;
+        const d=Math.sqrt(dx*dx+dy*dy);
         if(d<minClear) minClear=d;
 
         // Very close predictions get an exponential-like penalty.
@@ -507,11 +533,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Keep only the closest relevant threats in the expensive prediction matrix.
     // 660 observers remain simulated/rendered, but distant ones no longer multiply
     // avoidance cost for every racer.
-    const nearby=nearbyRaw
-      .map(o=>({o,d:(o.x-p.x)*(o.x-p.x)+(o.y-p.y)*(o.y-p.y)}))
-      .sort((a,b)=>a.d-b.d)
-      .slice(0,10)
-      .map(e=>e.o);
+    const nearby=nearestThreats(nearbyRaw,p,8);
 
     // Fast pre-check. If nothing is remotely threatening, keep the racing line.
     let nearest=Infinity;
@@ -521,8 +543,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     for(const o of nearby){
       const d=Math.hypot(o.x-p.x,o.y-p.y);
       if(d<nearest) nearest=d;
-      const [ox,oy]=predictedObserverPosition(o,AVOID_PREDICT_SEC);
-      const fd=Math.hypot(ox-px3,oy-py3);
+      const ox=predictedObserverX(o,AVOID_PREDICT_SEC);
+      const oy=predictedObserverY(o,AVOID_PREDICT_SEC);
+      const fdx=ox-px3, fdy=oy-py3;
+      const fd=Math.sqrt(fdx*fdx+fdy*fdy);
       if(fd<nearestFuture) nearestFuture=fd;
     }
     if(nearest>15.5 && nearestFuture>12.0){
@@ -648,7 +672,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const s=segs[si];
     const lineSkill=(p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3;
     const half=Math.max(1.8,widths[si]*(0.54+(lineSkill-72)*0.0017));
-    const candidates=[-0.96,-0.64,-0.32,0,0.32,0.64,0.96];
+
+    // v31: when the local road is genuinely clear of observers, commit to a
+    // near-wall Kart-style apex instead of wasting space in the middle.
+    const cornerSide=cornerInsideSide(si);
+    const cornerPower=cornerIntensity(si);
+    const localObs=nearbyObservers(p.x,p.y,18.0);
+    if(localObs.length===0 && cornerSide!==0 && cornerPower>0.055){
+      p.linePlanOffset=cornerSide*half*0.995;
+      p.linePlanUntil=now+300+Math.random()*100;
+      return p.linePlanOffset;
+    }
+
+    const candidates=[-0.995,-0.68,-0.34,0,0.34,0.68,0.995];
     let bestOff=0;
     let bestScore=Infinity;
 
@@ -1005,27 +1041,25 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     lastTs=ts;
 
     updateObservers(ts,dt);
-    if(((Math.floor(ts/16))&1)===0) rebuildObserverGrid();
+    if((Math.floor(ts/16)%3)===0) rebuildObserverGrid();
     for(const p of players) updatePlayer(p,ts,dt);
     updateMatchRanks(dt);
     updateCamera(dt);
     render(ts);
-    if(ts-lastRankingRender>=180){
+    if(ts-lastRankingRender>=220){
       renderRanking();
       lastRankingRender=ts;
     }
 
     if(players.every(p=>p.done)){
       running=false;
+      recordSeasonResults();
       startBtn.textContent="경기 종료";
       return;
     }
     raf=requestAnimationFrame(loop);
   }
 
-  function worldToScreen(x,y,view){
-    return [(x-view.sx)*view.scale,(y-view.sy)*view.scale];
-  }
 
   function getView(){
     const W=canvas.width,H=canvas.height;
@@ -1039,7 +1073,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   function drawObserver(o,view){
-    const [x,y]=worldToScreen(o.x,o.y,view);
+    const x=(o.x-view.sx)*view.scale, y=(o.y-view.sy)*view.scale;
     if(x<-12||y<-12||x>canvas.width+12||y>canvas.height+12) return;
     const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
     ctx.save();
@@ -1054,7 +1088,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   function drawPlayer(p,view,rank){
-    const [x,y]=worldToScreen(p.x,p.y,view);
+    const x=(p.x-view.sx)*view.scale, y=(p.y-view.sy)*view.scale;
     if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
     const r=Math.max(8.6846,view.scale*1.48*PLAYER_VISUAL_SCALE);
 
@@ -1126,6 +1160,57 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   let prevRanks=new Map();
+  const SEASON_KEY="observerFM_v31_season";
+  let seasonRecorded=false;
+
+  function blankSeasonRow(){
+    return {starts:0,wins:0,top3:0,finishes:0,totalRank:0,totalTime:0,bestTime:null,
+      collisions:0,stops:0,avoids:0,overtakes:0,leadMs:0,distance:0};
+  }
+
+  function loadSeason(){
+    try{
+      const data=JSON.parse(localStorage.getItem(SEASON_KEY)||"{}");
+      for(const n of names) if(!data[n]) data[n]=blankSeasonRow();
+      return data;
+    }catch(e){
+      const data={}; for(const n of names) data[n]=blankSeasonRow(); return data;
+    }
+  }
+
+  function saveSeason(data){
+    try{ localStorage.setItem(SEASON_KEY,JSON.stringify(data)); }catch(e){}
+  }
+
+  function recordSeasonResults(){
+    if(seasonRecorded || !players.length || !players.every(p=>p.done)) return;
+    const season=loadSeason();
+    const ordered=[...players].sort((a,b)=>a.finishTime-b.finishTime);
+    ordered.forEach((p,idx)=>{
+      const s=season[p.name]||blankSeasonRow();
+      const rank=idx+1;
+      s.starts++; s.totalRank+=rank; s.finishes++;
+      if(rank===1) s.wins++;
+      if(rank<=3) s.top3++;
+      s.totalTime+=p.finishTime||0;
+      s.bestTime=s.bestTime==null ? p.finishTime : Math.min(s.bestTime,p.finishTime);
+      s.collisions+=p.match.collisions;
+      s.stops+=p.match.stops;
+      s.avoids+=p.match.avoids;
+      s.overtakes+=p.match.overtakes;
+      s.leadMs+=p.match.leadMs;
+      s.distance+=p.match.distance;
+      season[p.name]=s;
+    });
+    saveSeason(season);
+    seasonRecorded=true;
+  }
+
+  function resetSeason(){
+    if(!confirm("v31 시즌 누적 기록을 전부 초기화할까요?")) return;
+    localStorage.removeItem(SEASON_KEY);
+    alert("시즌 기록을 초기화했습니다.");
+  }
 
   function updateMatchRanks(dt){
     const ordered=[...players].sort((a,b)=>currentProgress(b)-currentProgress(a));
@@ -1184,6 +1269,30 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
   }
 
+  function seasonCardHtml(p){
+    const s=loadSeason()[p.name]||blankSeasonRow();
+    if(!s.starts) return `<div class="seasonBox"><h3>시즌 기록</h3><p>아직 누적 경기 기록이 없습니다.</p></div>`;
+    const avgRank=s.totalRank/s.starts;
+    const finishRate=s.finishes/s.starts*100;
+    const avgTime=s.finishes ? s.totalTime/s.finishes : 0;
+    const avgCollision=s.collisions/s.starts;
+    return `<div class="seasonBox">
+      <h3>시즌 누적 기록</h3>
+      <div class="seasonGrid">
+        <div><span>출전</span><b>${s.starts}</b></div>
+        <div><span>우승</span><b>${s.wins}</b></div>
+        <div><span>TOP3</span><b>${s.top3}</b></div>
+        <div><span>평균 순위</span><b>${avgRank.toFixed(2)}</b></div>
+        <div><span>완주율</span><b>${finishRate.toFixed(1)}%</b></div>
+        <div><span>평균 기록</span><b>${formatTime(avgTime)}</b></div>
+        <div><span>최고 기록</span><b>${s.bestTime?formatTime(s.bestTime):"-"}</b></div>
+        <div><span>경기당 충돌</span><b>${avgCollision.toFixed(2)}</b></div>
+        <div><span>총 추월</span><b>${s.overtakes}</b></div>
+        <div><span>선두 시간</span><b>${(s.leadMs/1000).toFixed(1)}s</b></div>
+      </div>
+    </div>`;
+  }
+
   function openPlayerCard(p){
     const modal=document.getElementById("playerModal");
     const title=document.getElementById("playerModalTitle");
@@ -1196,7 +1305,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
         <div><b>강점</b><span>${entries.slice(0,3).map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
         <div><b>약점</b><span>${entries.slice(-3).reverse().map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
       </div>
-      <div class="statGrid">${Object.entries(p.stats).map(([k,v])=>`<div class="statCell"><span>${statLabel(k)}</span><b>${v}</b></div>`).join("")}</div>`;
+      <div class="statGrid">${Object.entries(p.stats).map(([k,v])=>`<div class="statCell"><span>${statLabel(k)}</span><b>${v}</b></div>`).join("")}</div>
+      ${seasonCardHtml(p)}`;
     modal.classList.remove("hidden");
   }
 
@@ -1235,6 +1345,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   startBtn.addEventListener("click",start);
   restartBtn.addEventListener("click",()=>{ reset(); prevRanks=new Map(); start(); });
   document.getElementById("resultBtn").addEventListener("click",showMatchResults);
+  document.getElementById("seasonResetBtn").addEventListener("click",resetSeason);
   document.getElementById("resultClose").addEventListener("click",()=>document.getElementById("resultPanel").classList.add("hidden"));
   document.getElementById("playerModalClose").addEventListener("click",()=>document.getElementById("playerModal").classList.add("hidden"));
   document.getElementById("playerModal").addEventListener("click",e=>{
