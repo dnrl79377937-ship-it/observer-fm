@@ -5,6 +5,10 @@
   const canvas = document.getElementById("race");
   const ctx = canvas.getContext("2d");
   const rankingEl = document.getElementById("rankingList");
+  const focusModeBtn = document.getElementById("focusModeBtn");
+  const layoutEl = document.querySelector(".layout");
+  const broadcastEl = document.querySelector(".broadcast");
+
   const diagToggle=document.getElementById("diagToggle");
   const diagnostics=document.getElementById("diagnostics");
   const clockEl = document.getElementById("clock");
@@ -13,12 +17,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 600;
+  const OBSERVER_COUNT = 650;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.34";
+  const BUILD_ID = "v2.42";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -268,6 +272,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           drivingStyle.style==="patient" ? -.62 :
           drivingStyle.style==="safeReader" ? -.82 : 0
         ),
+        creativeRouteBudget:.30, creativeRouteUsed:0, creativeMode:0,
+        creativeModeUntil:0, creativeCooldown:900+Math.random()*1200,
+        creativeSide:Math.random()<.5?-1:1, creativePhase:Math.random()*Math.PI*2,
         x:20.5, y:154.8 + (i-3.5)*0.48,
         steerX:1, steerY:0,
         seg:0,
@@ -391,21 +398,55 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     o.vy=Math.sin(angle)*o.speed;
   }
 
+
+  let observerDensityZones=[];
+  function makeObserverDensityZones(){
+    const count=2+Math.floor(Math.random()*2);
+    const zones=[];
+    for(let i=0;i<count;i++){
+      zones.push({
+        x:18+Math.random()*(MAP_W-36),
+        y:16+Math.random()*(MAP_H-32),
+        rx:24+Math.random()*24,
+        ry:18+Math.random()*22,
+        strength:.30+Math.random()*.22
+      });
+    }
+    return zones;
+  }
+  function densitySpawnPoint(){
+    // Most observers remain globally random. A bounded share is biased into
+    // 2–3 random zones each round, so the dangerous area changes without
+    // turning observers into course-followers.
+    if(observerDensityZones.length && Math.random()<.43){
+      const z=observerDensityZones[Math.floor(Math.random()*observerDensityZones.length)];
+      for(let tries=0;tries<10;tries++){
+        const a=Math.random()*Math.PI*2, rr=Math.sqrt(Math.random());
+        const x=z.x+Math.cos(a)*z.rx*rr;
+        const y=z.y+Math.sin(a)*z.ry*rr;
+        if(x>3.5&&x<MAP_W-3.5&&y>3.5&&y<MAP_H-3.5) return {x,y};
+      }
+    }
+    return {x:3.5+Math.random()*(MAP_W-7),y:3.5+Math.random()*(MAP_H-7)};
+  }
+
   function spawnObservers(){
     const arr=[];
     const avgPlayerSpeed=9.72;
     const baseSpeed=avgPlayerSpeed*OBS_SPEED_RATIO;
+    observerDensityZones=makeObserverDensityZones();
 
     for(let i=0;i<OBSERVER_COUNT;i++){
+      const spawn=densitySpawnPoint();
       const o={
         id:i,
-        x:3.5+Math.random()*(MAP_W-7),
-        y:3.5+Math.random()*(MAP_H-7),
+        x:spawn.x,
+        y:spawn.y,
         vx:0, vy:0,
         speed:baseSpeed*(0.98+Math.random()*0.04),
         phase:"move",
         phaseUntil:0,
-        // Stagger phases so 600 observers do not stop simultaneously.
+        // Stagger phases so 650 observers do not stop simultaneously.
         cycleOffset:Math.random()*(OBS_MOVE_MS+OBS_STOP_MS)
       };
       pickObserverLeg(o);
@@ -1505,6 +1546,57 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {target:0,weight:0,seq};
   }
 
+  function creativeRouteAdjustment(p,si,now,baseOff){
+    const progress=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
+    const danger=nearbyObservers(p.x,p.y,18).length, lp=p.linePersonality||0;
+    // Dense fields temporarily raise the creative-route allowance and reduce
+    // the trigger threshold. Normal sections remain close to the v2.41 70/30 mix.
+    const denseBoost=danger>=8?.16:danger>=5?.11:danger>=3?.055:0;
+    const targetCreative=progress*Math.min(.46,p.creativeRouteBudget+denseBoost);
+    const triggerSlack=danger>=5?.040:.018;
+    if(now>=p.creativeModeUntil && now>=p.creativeCooldown && p.creativeRouteUsed+triggerSlack<targetCreative){
+      const roll=Math.random();
+      if(danger>=8) p.creativeMode=roll<.28?1:roll<.54?2:roll<.76?3:roll<.88?4:5;
+      else if(danger>=5) p.creativeMode=roll<.22?1:roll<.48?2:roll<.72?3:roll<.85?4:5;
+      else if(lp>.45) p.creativeMode=roll<.52?1:roll<.73?5:roll<.90?3:2;
+      else if(lp<-.45) p.creativeMode=roll<.55?2:roll<.78?4:roll<.92?3:5;
+      else p.creativeMode=roll<.25?1:roll<.50?2:roll<.72?3:roll<.84?4:5;
+      p.creativeSide=Math.random()<.5?-1:1;
+      const dense=danger>=5;
+      p.creativeModeUntil=now+(dense?720:520)+Math.random()*(dense?1350:1150);
+      p.creativeCooldown=now+(dense?620:1050)+Math.random()*(dense?980:1650);
+    }
+    if(now<p.creativeModeUntil){
+      p.creativeRouteUsed=Math.min(.46,p.creativeRouteUsed+(danger>=5?.00245:.0018));
+      const inside=cornerInsideSide(si);
+      if(p.creativeMode===1){
+        // WALL APEX: on a real corner, hug the legal road edge as tightly as possible.
+        // This is route choice only; observer avoidance can still override downstream.
+        return inside ? inside*half*.999 : baseOff*.48+p.creativeSide*half*.30;
+      }
+      if(p.creativeMode===2) return (inside?-inside:p.creativeSide)*half*(danger>=8?.96:danger>=5?.92:.72);
+      if(p.creativeMode===3){
+        const amp=half*(danger>=8?.70:danger>=5?.64:.38);
+        return Math.max(-half*.90,Math.min(half*.90,baseOff+Math.sin(now*.010+p.creativePhase)*amp));
+      }
+      if(p.creativeMode===4){
+        if(danger>=3 && p.controlMode==="normal" && now>=p.controlCooldown){
+          p.controlMode="stopcon";p.controlUntil=now+180+Math.random()*170;
+          p.controlCooldown=now+1500+Math.random()*1400;
+          p.match.controlAttempts++;p.match.controlByType.stopcon.attempts++;
+        }
+        return baseOff*.72;
+      }
+      if(p.creativeMode===5){
+        const phase=Math.max(0,Math.min(1,1-(p.creativeModeUntil-now)/1500));
+        const side=inside||p.creativeSide;
+        return side*half*(phase<.48?-.50:.72);
+      }
+    }
+    return baseOff;
+  }
+
   function plannedRacingOffset(p,si,now){
     // Re-plan only a few times per second. This prevents rapid left/right
     // oscillation when racers overlap while still reacting early to corners.
@@ -1694,6 +1786,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       off+=Math.sin(now*.018+p.index)*half*(.025+(1-stability)*.045);
       speedMul*=.988;
     }
+    off=creativeRouteAdjustment(p,si,now,off);
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
 
@@ -2739,10 +2832,12 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     // v2.31: use the already-maintained observer spatial grid for render culling.
     // We visit only buckets intersecting the camera instead of checking all 600.
     visibleObserverRender.length=0;
-    const gx0=Math.max(0,Math.floor(minX/OBS_GRID_SIZE));
-    const gx1=Math.min(OBS_GRID_COLS-1,Math.floor(maxX/OBS_GRID_SIZE));
-    const gy0=Math.max(0,Math.floor(minY/OBS_GRID_SIZE));
-    const gy1=Math.min(OBS_GRID_ROWS-1,Math.floor(maxY/OBS_GRID_SIZE));
+    // v2.40: one-cell render padding prevents edge flicker while still
+    // avoiding a full 650-observer scan every frame.
+    const gx0=Math.max(0,Math.floor(minX/OBS_GRID_SIZE)-1);
+    const gx1=Math.min(OBS_GRID_COLS-1,Math.floor(maxX/OBS_GRID_SIZE)+1);
+    const gy0=Math.max(0,Math.floor(minY/OBS_GRID_SIZE)-1);
+    const gy1=Math.min(OBS_GRID_ROWS-1,Math.floor(maxY/OBS_GRID_SIZE)+1);
     for(let gy=gy0;gy<=gy1;gy++){
       for(let gx=gx0;gx<=gx1;gx++){
         const bucket=observerGrid[gy*OBS_GRID_COLS+gx];
@@ -3060,23 +3155,48 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
   let lastLiveStatsRender=0;
   function renderLiveStats(now=performance.now()){
-    if(now-lastLiveStatsRender<650)return;
+    if(now-lastLiveStatsRender<950)return;
     lastLiveStatsRender=now;
-    const summary=document.getElementById("liveStatsSummary"),leaders=document.getElementById("liveStatsLeaders"),phase=document.getElementById("liveStatsPhase");
-    if(!summary||!leaders)return;
+    const summary=document.getElementById("liveStatsSummary");
+    const leaders=document.getElementById("liveStatsLeaders");
+    const raceBox=document.getElementById("liveStatsRace");
+    const playerBox=document.getElementById("liveStatsPlayers");
+    const phase=document.getElementById("liveStatsPhase");
+    if(!summary||!leaders||!raceBox||!playerBox)return;
     const ordered=liveOrderedPlayers();if(!ordered.length)return;
     const collisions=players.reduce((s,p)=>s+(p.match?.collisions||0),0);
     const overtakes=players.reduce((s,p)=>s+(p.match?.overtakes||0),0);
     const avoids=players.reduce((s,p)=>s+(p.match?.avoids||0),0);
     const controls=players.reduce((s,p)=>s+(p.match?.controlAttempts||0),0);
+    const stops=players.reduce((s,p)=>s+(p.match?.stops||0),0);
+    const p1=ordered[0],p2=ordered[1];
+    const gap=broadcastGapSeconds(p1,p2);
+    const eta=estimatedFinishSeconds(p1,now);
     const bestPass=[...players].sort((a,b)=>(b.match?.overtakes||0)-(a.match?.overtakes||0))[0];
     const bestAvoid=[...players].sort((a,b)=>(b.match?.avoids||0)-(a.match?.avoids||0))[0];
     const bestLead=[...players].sort((a,b)=>(b.match?.leadMs||0)-(a.match?.leadMs||0))[0];
-    const prog=Math.max(0,Math.min(1,currentProgress(ordered[0])/routeLength));
+    const bestGain=[...players].sort((a,b)=>(b.match?.maxRankGain||0)-(a.match?.maxRankGain||0))[0];
+    const prog=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
     if(phase)phase.textContent=`${currentRound}R · ${Math.round(prog*100)}%`;
-    summary.innerHTML=`<div><span>충돌</span><b>${collisions}</b></div><div><span>추월</span><b>${overtakes}</b></div><div><span>회피</span><b>${avoids}</b></div><div><span>컨트롤</span><b>${controls}</b></div>`;
+
+    summary.innerHTML=`<div><span>충돌</span><b>${collisions}</b></div><div><span>추월</span><b>${overtakes}</b></div><div><span>회피</span><b>${avoids}</b></div><div><span>컨트롤</span><b>${controls}</b></div><div><span>스탑</span><b>${stops}</b></div><div><span>선두교체</span><b>${raceLeaderChanges}</b></div>`;
+
     const row=(label,p,val)=>`<div class="live-stat-leader"><span>${label}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><strong>${val}</strong></div>`;
-    leaders.innerHTML=row("추월",bestPass,bestPass.match?.overtakes||0)+row("회피",bestAvoid,bestAvoid.match?.avoids||0)+row("선두",bestLead,`${((bestLead.match?.leadMs||0)/1000).toFixed(1)}초`);
+    leaders.innerHTML=row("추월",bestPass,bestPass.match?.overtakes||0)+
+      row("회피",bestAvoid,bestAvoid.match?.avoids||0)+
+      row("선두",bestLead,`${((bestLead.match?.leadMs||0)/1000).toFixed(1)}초`)+
+      row("상승",bestGain,`+${bestGain.match?.maxRankGain||0}`);
+
+    raceBox.innerHTML=`<div><span>현재 선두</span><b>${p1.name}</b></div>
+      <div><span>1↔2 격차</span><b>${gap==null?"--":gap.toFixed(2)+"초"}</b></div>
+      <div><span>선두 예상기록</span><b>${eta==null?"--":eta.toFixed(2)+"초"}</b></div>
+      <div><span>밀집구역</span><b>${observerDensityZones.length}곳</b></div>`;
+
+    playerBox.innerHTML=ordered.slice(0,5).map((p,i)=>{
+      const line=p.linePersonality>.45?"인코스":p.linePersonality<-.45?"안전/외곽":"균형";
+      const creative=Math.min(46,Math.round((p.creativeRouteUsed||0)*100));
+      return `<div class="live-player-stat"><span>${i+1}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><small>${line}</small><em>변칙 ${creative}% · 추월 ${p.match?.overtakes||0} · 충돌 ${p.match?.collisions||0}</em></div>`;
+    }).join("");
   }
 
   const rankRowCache=new Map();
@@ -4129,6 +4249,25 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   if(diagToggle && diagnostics){
     diagToggle.addEventListener("click",()=>{diagnostics.classList.toggle("hidden");renderDiagnostics();});
   }
+  if(focusModeBtn){
+    focusModeBtn.addEventListener("click",async()=>{
+      const entering=!document.body.classList.contains("game-focus-mode");
+      document.body.classList.toggle("game-focus-mode",entering);
+      focusModeBtn.textContent=entering?"통계 화면으로":"게임 전체화면";
+      if(entering && broadcastEl?.requestFullscreen){
+        try{ await broadcastEl.requestFullscreen(); }catch(e){}
+      }else if(!entering && document.fullscreenElement){
+        try{ await document.exitFullscreen(); }catch(e){}
+      }
+    });
+    document.addEventListener("fullscreenchange",()=>{
+      if(!document.fullscreenElement && document.body.classList.contains("game-focus-mode")){
+        document.body.classList.remove("game-focus-mode");
+        focusModeBtn.textContent="게임 전체화면";
+      }
+    });
+  }
+
   startBtn.addEventListener("click",start);
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("replayBtn").addEventListener("click",openReplay);

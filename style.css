@@ -354,3 +354,28 @@ button:hover{background:#223047}
 .live-stats-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.live-stats-head b{font-size:12px}.live-stats-head span{font-size:10px;opacity:.58}
 .live-stats-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px}.live-stats-summary div{padding:6px 3px;text-align:center;border-radius:6px;background:rgba(255,255,255,.045)}.live-stats-summary span{display:block;font-size:9px;opacity:.58}.live-stats-summary b{font-size:15px}
 .live-stats-leaders{display:flex;flex-direction:column;gap:4px}.live-stat-leader{display:grid;grid-template-columns:32px 22px 1fr auto;align-items:center;gap:6px;padding:4px 5px;border-top:1px solid rgba(255,255,255,.055);font-size:10px}.live-stat-leader>span{opacity:.58}.live-stat-leader strong{font-variant-numeric:tabular-nums}.live-stat-avatar{width:22px;height:22px;border-radius:5px}
+
+/* v2.40 broadcast + statistics layout */
+.layout{grid-template-columns:minmax(0,1fr) 390px;max-width:1780px}
+.broadcast{align-self:start}
+.ranking{max-height:calc(100vh - 105px);overflow:auto}
+.focus-mode-btn{margin-left:auto;padding:5px 9px;font-size:11px;border-radius:6px}
+#clock{margin-left:0}
+.live-stats-summary{grid-template-columns:repeat(3,1fr)}
+.live-stats-race{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:8px 0}
+.live-stats-race div{padding:6px;border-radius:6px;background:rgba(255,255,255,.04)}
+.live-stats-race span{display:block;font-size:9px;opacity:.58}.live-stats-race b{font-size:12px}
+.live-stats-players{display:flex;flex-direction:column;gap:3px;margin-top:7px}
+.live-player-stat{display:grid;grid-template-columns:18px 22px minmax(58px,1fr) 54px auto;align-items:center;gap:5px;padding:4px;border-top:1px solid rgba(255,255,255,.05);font-size:10px}
+.live-player-stat small{opacity:.62}.live-player-stat em{font-style:normal;opacity:.72;text-align:right;white-space:nowrap}
+
+/* Game-only viewing mode: hides stats and gives the race all available width. */
+body.game-focus-mode .topbar,body.game-focus-mode .ranking{display:none}
+body.game-focus-mode{padding:0;background:#000}
+body.game-focus-mode .layout{display:block;max-width:none;margin:0}
+body.game-focus-mode .broadcast{border:0;border-radius:0}
+.broadcast:fullscreen{width:100%;height:100%;background:#000;border:0;border-radius:0;display:flex;flex-direction:column}
+.broadcast:fullscreen #race{width:100%;height:auto;max-height:calc(100% - 38px);object-fit:contain;flex:1}
+.broadcast:fullscreen .focus-mode-btn{display:block}
+@media(max-width:1050px){.layout{grid-template-columns:minmax(0,1fr) 340px}}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.ranking{max-height:none}.live-player-stat{grid-template-columns:18px 22px minmax(58px,1fr) 54px}.live-player-stat em{display:none}}
