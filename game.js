@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.54";
+  const BUILD_ID = "v3.55";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -1026,16 +1026,22 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!p.lastAdvanceAt) p.lastAdvanceAt=now;
     if(now-p.lastAdvanceAt < STUCK_RESCUE_MS) return;
 
-    // Snap gently ahead on the current centerline instead of freezing forever.
+    // v3.55 NO-POSITION-TELEPORT rescue.
+    // The old anti-stuck rescue rewrote x/y using desiredOffset. On the thin
+    // 5-o'clock-to-upward edge road, a collision/stun could therefore snap a
+    // racer sideways onto the wide road. Recovery may reset steering state,
+    // but it must NEVER change the racer's world position.
     const si=Math.min(p.seg,segs.length-1);
     const s=segs[si];
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    let along=rx*s.ux+ry*s.uy;
-    along=Math.max(0,Math.min(s.L,along+1.8));
-    p.x=s.a[0]+s.ux*along+s.nx*p.desiredOffset;
-    p.y=s.a[1]+s.uy*along+s.ny*p.desiredOffset;
     p.controlMode="normal";
     p.controlUntil=0;
+    p.avoidPlanUntil=0;
+    p.avoidExitUntil=0;
+    p.packPlanUntil=0;
+    p.steerX=s.ux;
+    p.steerY=s.uy;
+    const lateral=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+    p.desiredOffset=clampSpecialRoadOffset(si,lateral,p);
     p.lastProgress=currentProgress(p);
     p.lastAdvanceAt=now;
   }
@@ -5355,7 +5361,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v354SelfAudit(){
+  function v355SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==350)issues.push("옵저버350");
@@ -5371,7 +5377,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v354SelfAudit,
+    version:BUILD_ID,selfAudit:v355SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),

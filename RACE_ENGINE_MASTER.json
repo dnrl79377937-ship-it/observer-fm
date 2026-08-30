@@ -1,5 +1,5 @@
 {
-  "build": "v3.54",
+  "build": "v3.55",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Fixed v3.53 edge-road collision teleport. clampToRoad now preserves exact position whenever racer is inside any nearby legal corridor, and only applies max 0.34-unit minimum boundary correction when truly outside. No cross-road/adjacent-segment snap. Edge-line remains legal road."
+  "notes": "Removed coordinate-changing anti-stuck rescue that caused post-collision sideways teleport from the thin 5-o'clock upward edge road to the wide right road. Rescue now resets control/avoidance/steering only and preserves x/y exactly."
 }
