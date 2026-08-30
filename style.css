@@ -140,3 +140,7 @@ button:hover{background:#223047}
   font-weight:900;letter-spacing:.03em;pointer-events:none;
 }
 .race-event.hidden{display:none}
+
+.rank-trend{display:inline-block;min-width:14px;text-align:center;font-weight:900;opacity:.92}
+
+.diag-toggle{position:absolute;right:12px;bottom:12px;z-index:12;padding:6px 10px;border-radius:7px;border:1px solid rgba(255,255,255,.25);background:rgba(5,8,14,.82);color:#fff;font-weight:800;cursor:pointer}.diagnostics{position:absolute;right:12px;bottom:50px;z-index:12;width:300px;padding:10px 12px;border-radius:8px;background:rgba(3,7,12,.91);border:1px solid rgba(255,255,255,.25);font-size:12px;line-height:1.55;pointer-events:none}.diagnostics.hidden{display:none}
