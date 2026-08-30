@@ -16,7 +16,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v25";
+  const BUILD_ID = "v26";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
@@ -27,9 +27,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
-  const AVOID_SCAN_RADIUS = 36.0;        // look ahead for nearby observers
+  const AVOID_SCAN_RADIUS = 38.0;        // look ahead for nearby observers
   const AVOID_CRITICAL_RADIUS = 9.5;     // emergency reaction zone
-  const AVOID_PREDICT_SEC = 3.00;        // predict observer positions ahead
+  const AVOID_PREDICT_SEC = 3.20;        // predict observer positions ahead
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
   const AVOID_SAFE_BUFFER = 6.2;
   const AVOID_LANE_LOOKAHEAD = 2.60;   // compare future lane safety
@@ -125,6 +125,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
+        avoidPlanOffset:0,
+        avoidPlanSpeedMul:1,
+        avoidPlanUntil:0,
+        avoidPlanRisk:0,
         resumeEaseUntil:0,
         linePlanOffset:0,
         linePlanUntil:0
@@ -397,72 +401,145 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return Math.max(-1,Math.min(1,score/weight));
   }
 
-  function chooseAvoidance(p,s,now){
-    if(safeAt(p.x,p.y)) return null;
+  function predictedObserverPosition(o,t){
+    // During the current moving leg, extrapolate along the observer's heading.
+    // A stopped observer stays fixed. Clamp to map bounds so edge predictions
+    // cannot create impossible threat positions.
+    const [ovx,ovy]=observerVelocity(o);
+    return [
+      Math.max(2.5,Math.min(MAP_W-2.5,o.x+ovx*t)),
+      Math.max(2.5,Math.min(MAP_H-2.5,o.y+ovy*t))
+    ];
+  }
 
-    let threat=null;
-    let threatScore=Infinity;
-    let immediate=false;
-    let leftDanger=0, rightDanger=0;
-    let nearestFuture=Infinity;
+  function candidateAvoidanceRisk(p,s,targetOff,speedMul,nearby){
+    // Sample several future moments. The score heavily punishes a predicted
+    // collision, then rewards clearance and low time loss.
+    const horizons=[0.28,0.52,0.78,1.05,1.35,1.70,2.10,2.55,3.05];
+    const lateralNow=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
+    let minClear=999;
+    let danger=0;
 
-    const pxFuture=p.x+s.ux*p.speed*AVOID_PREDICT_SEC;
-    const pyFuture=p.y+s.uy*p.speed*AVOID_PREDICT_SEC;
+    for(let hi=0;hi<horizons.length;hi++){
+      const t=horizons[hi];
+      const blend=Math.min(1,t/0.72);
+      const off=lateralNow+(targetOff-lateralNow)*blend;
+      const forward=p.speed*speedMul*t;
 
-    for(const o of nearbyObservers(p.x,p.y,AVOID_SCAN_RADIUS)){
-      const dx=o.x-p.x, dy=o.y-p.y;
-      const dist=Math.hypot(dx,dy);
-      if(dist>AVOID_SCAN_RADIUS) continue;
+      // Project player along the current route direction. This deliberately
+      // favors early evasive action before the observer reaches the player.
+      const px=p.x+s.ux*forward+s.nx*(off-lateralNow);
+      const py=p.y+s.uy*forward+s.ny*(off-lateralNow);
 
-      const [ovx,ovy]=observerVelocity(o);
-      const fx=o.x+ovx*AVOID_PREDICT_SEC;
-      const fy=o.y+ovy*AVOID_PREDICT_SEC;
-      const futureDist=Math.hypot(fx-pxFuture,fy-pyFuture);
-      nearestFuture=Math.min(nearestFuture,futureDist);
+      for(const o of nearby){
+        const [ox,oy]=predictedObserverPosition(o,t);
+        const d=Math.hypot(px-ox,py-oy);
+        if(d<minClear) minClear=d;
 
-      // Larger player body: reserve more room around observer traffic.
-      const side=dx*s.nx+dy*s.ny;
-      const danger=Math.max(0,AVOID_SCAN_RADIUS-dist) +
-                   Math.max(0,AVOID_SCAN_RADIUS-futureDist)*1.45;
-      if(side>=0) rightDanger+=danger;
-      else leftDanger+=danger;
-
-      const score=dist*0.48+futureDist*1.32;
-      if(score<threatScore){
-        threatScore=score;
-        threat=o;
-        immediate=dist<(AVOID_CRITICAL_RADIUS+AVOID_SAFE_BUFFER) ||
-                  futureDist<(AVOID_CRITICAL_RADIUS+AVOID_SAFE_BUFFER);
+        // Very close predictions get an exponential-like penalty.
+        if(d<2.0) danger += (2.0-d)*420;
+        else if(d<4.0) danger += (4.0-d)*82;
+        else if(d<7.0) danger += (7.0-d)*13;
+        else if(d<10.0) danger += (10.0-d)*2.2;
       }
     }
 
-    if(!threat || threatScore>24.0){
-      p.avoidThreatId=-1;
+    // Prefer moving over stopping and prefer smaller detours if equally safe.
+    const timeLoss=(1-speedMul)*19.0;
+    const detour=Math.abs(targetOff-p.desiredOffset)*0.34;
+    return {score:danger+timeLoss+detour,minClear};
+  }
+
+  function chooseAvoidance(p,s,now){
+    if(safeAt(p.x,p.y)){
+      p.avoidPlanUntil=0;
       return null;
     }
 
-    // New threat => almost always react. This is intentionally higher than v14
-    // because the visible player body is now 25% larger.
-    if(p.avoidThreatId!==threat.id){
-      p.avoidThreatId=threat.id;
-      p.avoidWillDodge=Math.random()<AVOID_REACTION_CHANCE;
-    }
-    if(!p.avoidWillDodge && !immediate && nearestFuture>8.5) return null;
-
-    // Prefer the less crowded side and make a stronger move before contact.
-    const openSide = leftDanger<=rightDanger ? -1 : 1;
-    const r=Math.random();
-
-    if(immediate || nearestFuture<6.5){
-      if(r<0.10) return {mode:"stop",side:openSide,strength:1.0};
-      if(r<0.76) return {mode:"diagonal",side:openSide,strength:1.18};
-      return {mode:"zigzag",side:openSide,strength:1.08};
+    // Keep the current decision briefly so overlapping racers do not trigger
+    // frame-by-frame left/right oscillation.
+    if(now < p.avoidPlanUntil){
+      return {
+        mode:p.avoidPlanSpeedMul<=0.03 ? "stop" : "planned",
+        targetOff:p.avoidPlanOffset,
+        speedMul:p.avoidPlanSpeedMul,
+        risk:p.avoidPlanRisk
+      };
     }
 
-    if(r<0.07) return {mode:"stop",side:openSide,strength:0.92};
-    if(r<0.73) return {mode:"diagonal",side:openSide,strength:1.08};
-    if(r<0.94) return {mode:"zigzag",side:openSide,strength:1.00};
-    return {mode:"wide",side:openSide,strength:0.98};
+    const nearby=nearbyObservers(p.x,p.y,AVOID_SCAN_RADIUS);
+    if(!nearby.length) return null;
+
+    // Fast pre-check. If nothing is remotely threatening, keep the racing line.
+    let nearest=Infinity;
+    let nearestFuture=Infinity;
+    const px3=p.x+s.ux*p.speed*AVOID_PREDICT_SEC;
+    const py3=p.y+s.uy*p.speed*AVOID_PREDICT_SEC;
+    for(const o of nearby){
+      const d=Math.hypot(o.x-p.x,o.y-p.y);
+      if(d<nearest) nearest=d;
+      const [ox,oy]=predictedObserverPosition(o,AVOID_PREDICT_SEC);
+      const fd=Math.hypot(ox-px3,oy-py3);
+      if(fd<nearestFuture) nearestFuture=fd;
+    }
+    if(nearest>15.5 && nearestFuture>12.0){
+      p.avoidPlanUntil=0;
+      return null;
+    }
+
+    const si=Math.min(p.seg,segs.length-1);
+    const half=Math.max(3.6,widths[si]*0.70);
+
+    // Candidate lanes + speed choices. The planner chooses the safest path that
+    // costs the least race time. Stop is evaluated only as an emergency option.
+    const laneFracs=[-0.94,-0.72,-0.48,-0.24,0,0.24,0.48,0.72,0.94];
+    const movingSpeeds=[1.02,0.94,0.84,0.70];
+    let best=null;
+
+    for(const frac of laneFracs){
+      const targetOff=frac*half;
+      for(const sm of movingSpeeds){
+        const r=candidateAvoidanceRisk(p,s,targetOff,sm,nearby);
+        const candidate={
+          mode:"planned",
+          targetOff,
+          speedMul:sm,
+          score:r.score,
+          minClear:r.minClear
+        };
+        if(!best || candidate.score<best.score) best=candidate;
+      }
+    }
+
+    // Compare against stopping, but impose a substantial time-loss penalty so
+    // the racer stops only when moving choices are genuinely unsafe.
+    const stopRisk=candidateAvoidanceRisk(p,s,p.desiredOffset,0,nearby);
+    const stopCandidate={
+      mode:"stop",
+      targetOff:p.desiredOffset,
+      speedMul:0,
+      score:stopRisk.score+8.5,
+      minClear:stopRisk.minClear
+    };
+
+    const movingUnsafe=!best || best.minClear<1.15 || best.score>260;
+    if(movingUnsafe && stopCandidate.score<best.score*1.12){
+      best=stopCandidate;
+    }
+
+    // No meaningful danger: don't disturb the optimal racing line.
+    if(best && best.minClear>8.8 && best.score<8.0 && nearest>10.5){
+      p.avoidPlanUntil=0;
+      return null;
+    }
+
+    // Persist 320–560 ms. Very dangerous situations re-plan sooner.
+    const emergency=best.minClear<2.7 || nearest<5.0;
+    p.avoidPlanOffset=best.targetOff;
+    p.avoidPlanSpeedMul=best.speedMul;
+    p.avoidPlanRisk=best.score;
+    p.avoidPlanUntil=now+(emergency ? 250+Math.random()*90 : 390+Math.random()*170);
+    return best;
   }
 
 
@@ -623,22 +700,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let speedMul=1;
     const controlSkill=(p.profile.control-85)/15;
 
-    // Reactive AI: scan moving observers and use an evasive move before contact.
+    // Predictive v26 avoidance: compare future lanes and speeds, then hold the
+    // selected plan briefly. This avoids both collisions and left/right twitching.
     const avoid=chooseAvoidance(p,s,now);
     if(avoid){
-      const evadeHalf=Math.max(4.2,widths[si]*1.02);
       if(avoid.mode==="stop"){
         speedMul=0;
-      }else if(avoid.mode==="diagonal"){
-        targetOff += avoid.side*evadeHalf*1.34*avoid.strength;
-        speedMul=1.01;
-      }else if(avoid.mode==="zigzag"){
-        targetOff += avoid.side*evadeHalf*1.18 +
-          Math.sin(now*0.031+p.index)*evadeHalf*0.38;
-        speedMul=0.96;
-      }else if(avoid.mode==="wide"){
-        targetOff += avoid.side*evadeHalf*1.30;
-        speedMul=0.94;
+      }else{
+        const urgency=Math.max(0,Math.min(1,(80-(avoid.risk||0))/80));
+        targetOff=targetOff*0.12+avoid.targetOff*0.88;
+        speedMul=avoid.speedMul;
       }
     }
     if(!avoid && p.controlMode==="zigzag"){
@@ -721,6 +792,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.lastAdvanceAt=p.stunUntil;
+          p.avoidPlanUntil=0;
           break;
         }
       }
