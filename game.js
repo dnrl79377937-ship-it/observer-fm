@@ -23,7 +23,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.35";
+  const BUILD_ID = "v3.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -38,20 +38,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   unitSprites[3].A.src="wraith_a.png";    unitSprites[3].B.src="wraith_b.png";    unitSprites[3].C.src="wraith_c.png";   unitSprites[3].D.src="wraith_d.png";
   unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";   unitSprites[4].D.src="mutalisk_d.png";
   unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";   unitSprites[5].D.src="queen_d.png";
-  const unitGraySprites={
-    1:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    2:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    3:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    4:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    5:{A:new Image(),B:new Image(),C:new Image(),D:new Image()}
-  };
-  unitGraySprites[1].A.src="scourge_a_gray.png"; unitGraySprites[1].B.src="scourge_b_gray.png"; unitGraySprites[1].C.src="scourge_c_gray.png"; unitGraySprites[1].D.src="scourge_d_gray.png";
-  unitGraySprites[2].A.src="scout_a_gray.png"; unitGraySprites[2].B.src="scout_b_gray.png"; unitGraySprites[2].C.src="scout_c_gray.png"; unitGraySprites[2].D.src="scout_d_gray.png";
-  unitGraySprites[3].A.src="wraith_a_gray.png"; unitGraySprites[3].B.src="wraith_b_gray.png"; unitGraySprites[3].C.src="wraith_c_gray.png"; unitGraySprites[3].D.src="wraith_d_gray.png";
-  unitGraySprites[4].A.src="mutalisk_a_gray.png"; unitGraySprites[4].B.src="mutalisk_b_gray.png"; unitGraySprites[4].C.src="mutalisk_c_gray.png"; unitGraySprites[4].D.src="mutalisk_d_gray.png";
-  unitGraySprites[5].A.src="queen_a_gray.png"; unitGraySprites[5].B.src="queen_b_gray.png"; unitGraySprites[5].C.src="queen_c_gray.png"; unitGraySprites[5].D.src="queen_d_gray.png";
-
-
   // Engine safeguards. Visual sprite size is independent of collision radius.
   const PLAYER_HIT_RADIUS = 0.38;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.69;   // v14 visual size
@@ -381,7 +367,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.464395625,
         desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, hitGrayUntil:0, collisionGrayUntil:0, grayVerifyLoggedUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
+        hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -621,7 +607,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     replaySpeed=1; replayLastTs=0; replayFocusId=-1;
     replayArchive={}; highlightArchive={}; photoFinishArchive={}; replaySelectedRound=1;
 
-    collisionVerifyLog.length=0;
     createTeams();
     initTournament();
     resetRound();
@@ -2670,7 +2655,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return;
     }
     if(p.stunUntil){
-      logCollisionVerify("정지종료",p,now);
       p.stunUntil=0;
       p.invUntil=now+INV_MS;
       p.lastAdvanceAt=now;
@@ -3035,12 +3019,9 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
         if(playerObserverHit(p,o)){
           p.hits++;
           p.hitFxUntil=now+240;
-          p.hitGrayUntil=now+STUN_MS;
-          p.collisionGrayUntil=now+STUN_MS;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.match.collisions++;
-          logCollisionVerify("충돌",p,now,{observerId:o.id});
           p.match.deathPoints.push({
             round:currentRound,
             t:Math.max(0,now-raceStart),
@@ -3454,8 +3435,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     let collisions=0,finishes=0,totalTime=0;
     for(const p of players){collisions+=p.match.collisions||0;if(p.done&&p.finishTime!=null){finishes++;totalTime+=p.finishTime;}}
     const avg=finishes?formatTime(totalTime/finishes):"--";
-    const cv=collisionVerifySnapshot();
-    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms · 자동보호 ${fpsProtectLevel}<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>회색검증 ${cv.ok?"정상":"오류"} · 현재정지 ${cv.active.length}명 · 완주 ${finishes}/12 · 평균 ${avg}`;
+    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms · 자동보호 ${fpsProtectLevel}<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>완주 ${finishes}/12 · 평균 ${avg}`;
   }
 
   const SIM_STEP_MS = 1000/50;
@@ -3463,28 +3443,6 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   let simClock=0;
   let simTickCounter=0;
   let simAccumulator=0;
-  const COLLISION_VERIFY_MAX=80;
-  const collisionVerifyLog=[];
-  function logCollisionVerify(type,p,now,extra={}){
-    collisionVerifyLog.push({
-      type,player:p?.name||"",playerIndex:p?.index??-1,round:currentRound,
-      t:raceStart?Math.max(0,now-raceStart):0,
-      stunUntil:p?.stunUntil||0,
-      grayUntil:Math.max(p?.hitGrayUntil||0,p?.collisionGrayUntil||0),
-      ...extra
-    });
-    if(collisionVerifyLog.length>COLLISION_VERIFY_MAX) collisionVerifyLog.shift();
-  }
-  function collisionVerifySnapshot(){
-    const now=gameNow();
-    const active=players.filter(p=>(p.stunUntil||0)>now).map(p=>({
-      name:p.name,
-      stunLeft:Math.max(0,p.stunUntil-now),
-      grayLeft:Math.max(0,Math.max(p.hitGrayUntil||0,p.collisionGrayUntil||0)-now)
-    }));
-    const bad=active.filter(x=>x.grayLeft<=0);
-    return {ok:bad.length===0,active,bad,events:collisionVerifyLog.slice(-20)};
-  }
   function gameNow(){
     return (running && raceStart && simClock) ? simClock : performance.now();
   }
@@ -3828,39 +3786,20 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       ctx.globalAlpha=1;
     }
 
-    const grayUntil=Math.max(p.hitGrayUntil||0,p.collisionGrayUntil||0,p.stunUntil||0);
-    const collisionGray=(p.stunUntil||0)>now || grayUntil>now;
-    if(collisionGray && (p.grayVerifyLoggedUntil||0)<(p.stunUntil||0)){
-      p.grayVerifyLoggedUntil=p.stunUntil||now;
-      logCollisionVerify("회색렌더",p,now,{grayAssetReady:!!(unitGraySprites[currentRound]?.[p.team]?.complete)});
-    }
-    const normalSprite=unitSprites[currentRound]?.[p.team];
-    const graySprite=unitGraySprites[currentRound]?.[p.team];
-    const sprite=collisionGray && graySprite?.complete && graySprite.naturalWidth ? graySprite : normalSprite;
+    const sprite=unitSprites[currentRound]?.[p.team];
     if(sprite && sprite.complete && sprite.naturalWidth){
       const size=r*2.65;
       ctx.save();
       ctx.rotate(p.visualAngle);
-      // v3.31 double guarantee: even if a dedicated gray asset is late/missing,
-      // collision state forces grayscale on whichever sprite is actually drawable.
-      ctx.filter=collisionGray ? "grayscale(100%) saturate(0%) brightness(38%) contrast(135%)" : "none";
-      ctx.shadowColor=collisionGray ? "transparent" :
-        (p.team==="A" ? "rgba(255,77,77,.45)" : p.team==="B" ? "rgba(77,141,255,.45)" : p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)");
-      ctx.shadowBlur=collisionGray?0:Math.max(2,r*.18);
+      ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" :
+        p.team==="B" ? "rgba(77,141,255,.45)" :
+        p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)";
+      ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
-      ctx.filter="none";
-      if(collisionGray){
-        ctx.globalCompositeOperation="source-atop";ctx.globalAlpha=.72;ctx.fillStyle="#3b3f43";
-        ctx.fillRect(-size/2,-size/2,size,size);ctx.globalAlpha=1;ctx.globalCompositeOperation="source-over";
-      }
       ctx.restore();
     }else{
-      const grayMix=(Math.max(p.hitGrayUntil||0,p.collisionGrayUntil||0,p.stunUntil||0)>now)?1:0;
-      if(grayMix>0){
-        const base=p.team==="A"?[255,77,77]:p.team==="B"?[77,141,255]:p.team==="C"?[255,216,77]:[57,212,106], g=52;
-        const rr=Math.round(base[0]*(1-grayMix)+g*grayMix),gg=Math.round(base[1]*(1-grayMix)+g*grayMix),bb=Math.round(base[2]*(1-grayMix)+g*grayMix);
-        ctx.fillStyle=`rgb(${rr},${gg},${bb})`;
-      }else ctx.fillStyle=teamColor(p.team);
+      // Sprite-load fallback stays team-colored; collision never changes the icon.
+      ctx.fillStyle=teamColor(p.team);
       ctx.strokeStyle="#07111a";
       ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -5388,7 +5327,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v332SelfAudit(){
+  function v34SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==400)issues.push("옵저버400");
@@ -5397,12 +5336,12 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(STUN_MS!==2000)issues.push("정지2초");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
-    if(!unitSprites[1]?.D||!unitSprites[5]?.D||!unitGraySprites[1]?.D||!unitGraySprites[5]?.D)issues.push("4팀스프라이트");
+    if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v332SelfAudit,collisionVerify:collisionVerifySnapshot,
+    version:BUILD_ID,selfAudit:v34SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),

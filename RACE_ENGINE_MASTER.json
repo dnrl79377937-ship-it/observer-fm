@@ -1,5 +1,5 @@
 {
-  "build": "v3.35",
+  "build": "v3.4",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Observer survival priority increased: early natural lateral weave, wider safety buffer/critical radius, optimized/yellow line yields to avoidance under real observer risk, smooth high-speed rejoin; v3.34 FPS protection and collision verification retained."
+  "notes": "Classic Observer tile map restored from v3.3 pre-sky-blue map. All gray unit images, gray state fields, gray rendering/filter/fallback, and gray verification removed. Collision now only stops the racer for 2.0 seconds while normal team-color sprite remains visible. v3.35 avoidance and FPS protection retained."
 }
