@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.63";
+  const BUILD_ID = "v3.7";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -2770,10 +2770,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return dx*dx+dy*dy;
   }
   function playerObserverHit(p,o){
+    // v3.7 RELATIVE-MOTION SWEPT COLLISION:
+    // Sweep BOTH moving objects over the same 20 ms simulation step.
+    // In relative coordinates this is one segment from
+    // (playerPrev-observerPrev) to (playerNow-observerNow) against the origin.
+    // This prevents fast crossing contacts from being missed and avoids inflating HIT.
     const r=PLAYER_HIT_RADIUS;
-    if(segmentPointDistanceSq(p.simPrevX,p.simPrevY,p.x,p.y,o.x,o.y)<r*r) return true;
-    const dx=p.x-o.x,dy=p.y-o.y;
-    return dx*dx+dy*dy<r*r;
+    const opx=Number.isFinite(o.simPrevX)?o.simPrevX:o.x;
+    const opy=Number.isFinite(o.simPrevY)?o.simPrevY:o.y;
+    const r0x=p.simPrevX-opx, r0y=p.simPrevY-opy;
+    const r1x=p.x-o.x, r1y=p.y-o.y;
+    if(segmentPointDistanceSq(r0x,r0y,r1x,r1y,0,0)<r*r) return true;
+    return r1x*r1x+r1y*r1y<r*r;
   }
 
   function updatePlayer(p, now, dt){
@@ -2935,14 +2943,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // v3.62: visible Marseille-style hook. Three phases:
       // commit to the open side -> curl back across the threat -> rejoin forward line.
       // It never mutates p.seg and the final offset is still clamped by the real road.
-      const hook=t<.34
-        ? Math.sin((t/.34)*Math.PI*.5)
-        : t<.72
-          ? 1-Math.sin(((t-.34)/.38)*Math.PI)*1.55
-          : -0.55*(1-(t-.72)/.28);
-      const curl=Math.sin(t*Math.PI*2)*.24;
-      targetOff += p.marseilleSide*half*(hook*.72+curl);
-      speedMul*=.94+Math.sin(t*Math.PI)*.055;
+      // v3.7: clearer four-phase Marseille motion:
+      // 1) hard side feint, 2) hook behind the threat, 3) opposite-side curl,
+      // 4) smooth forward rejoin. Still only an offset/speed decision: never seg mutation.
+      const hook=t<.25
+        ? Math.sin((t/.25)*Math.PI*.5)
+        : t<.56
+          ? 1-Math.sin(((t-.25)/.31)*Math.PI)*1.72
+          : t<.80
+            ? -.72+Math.sin(((t-.56)/.24)*Math.PI*.5)*.54
+            : -.18*(1-(t-.80)/.20);
+      const curl=Math.sin(t*Math.PI*2)*.30;
+      targetOff += p.marseilleSide*half*(hook*.78+curl);
+      speedMul*=.925+Math.sin(t*Math.PI)*.070;
     } else if(controlCanOverride && p.controlMode==="backcon"){
       const elapsed=now-p.modeStart;
       const style=p.backconStyle||"long";
@@ -3148,9 +3161,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // Collision check: actual observer contact = guaranteed stop outside invincible safe zones.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
       for(const o of playerNearbyObservers(p,PLAYER_HIT_RADIUS+1.0)){
-        const broad=PLAYER_HIT_RADIUS+Math.hypot(p.x-p.simPrevX,p.y-p.simPrevY)+.18;
-        if(Math.abs(o.x-p.x)>broad && Math.abs(o.x-p.simPrevX)>broad) continue;
-        if(Math.abs(o.y-p.y)>broad && Math.abs(o.y-p.simPrevY)>broad) continue;
+        const observerStep=Math.hypot(o.x-(o.simPrevX??o.x),o.y-(o.simPrevY??o.y));
+        const broad=PLAYER_HIT_RADIUS+Math.hypot(p.x-p.simPrevX,p.y-p.simPrevY)+observerStep+.18;
+        const opx=o.simPrevX??o.x, opy=o.simPrevY??o.y;
+        const xFar=Math.abs(o.x-p.x)>broad && Math.abs(o.x-p.simPrevX)>broad &&
+          Math.abs(opx-p.x)>broad && Math.abs(opx-p.simPrevX)>broad;
+        const yFar=Math.abs(o.y-p.y)>broad && Math.abs(o.y-p.simPrevY)>broad &&
+          Math.abs(opy-p.y)>broad && Math.abs(opy-p.simPrevY)>broad;
+        if(xFar||yFar) continue;
         if(playerObserverHit(p,o)){
           p.hits++;
           p.hitFxUntil=now+240;
@@ -3205,6 +3223,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     for(let oi=0;oi<observers.length;oi++){
       const o=observers[oi];
+      // v3.7: retain the exact previous simulation position for relative swept collision.
+      o.simPrevX=o.x; o.simPrevY=o.y;
       if(!o.phaseUntil){
         const offset=o.cycleOffset||0;
         if(offset<OBS_MOVE_MS){
@@ -3921,11 +3941,30 @@ targetOff=clampRoadOffset(si,targetOff,p);
       ctx.globalAlpha=1;
     }
 
+    // v3.7 Marseille visual cue: short curved after-image + extra body rotation.
+    // It is intentionally subtle and exists only while the real control is active.
+    let marseilleVisualSpin=0;
+    if(p.controlMode==="marseille" && now<p.marseilleUntil){
+      const dur=Math.max(1,p.controlUntil-p.modeStart);
+      const mt=Math.max(0,Math.min(1,(now-p.modeStart)/dur));
+      marseilleVisualSpin=p.marseilleSide*Math.sin(mt*Math.PI)*1.05;
+      ctx.save();
+      ctx.globalAlpha=.16+.18*Math.sin(mt*Math.PI);
+      ctx.strokeStyle=teamColor(p.team);
+      ctx.lineWidth=Math.max(2,r*.22);
+      ctx.lineCap="round";
+      ctx.beginPath();
+      ctx.arc(-p.marseilleSide*r*.18,r*.10,r*(1.18+mt*.34),
+        Math.PI*(.20+mt*.34),Math.PI*(1.02+mt*.74),p.marseilleSide<0);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     const sprite=unitSprites[currentRound]?.[p.team];
     if(sprite && sprite.complete && sprite.naturalWidth){
       const size=r*2.65;
       ctx.save();
-      ctx.rotate(p.visualAngle);
+      ctx.rotate(p.visualAngle+marseilleVisualSpin);
       ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" :
         p.team==="B" ? "rgba(77,141,255,.45)" :
         p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)";
