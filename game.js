@@ -11,12 +11,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 726;
+  const OBSERVER_COUNT = 650;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v32";
+  const BUILD_ID = "v32.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -37,7 +37,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
-  const AVOID_SCAN_RADIUS = 38.0;        // look ahead for nearby observers
+  const AVOID_SCAN_RADIUS = 34.0;        // look ahead for nearby observers
   const AVOID_CRITICAL_RADIUS = 9.5;     // emergency reaction zone
   const AVOID_PREDICT_SEC = 3.20;        // predict observer positions ahead
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
@@ -474,6 +474,25 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return Math.max(2.5,Math.min(MAP_H-2.5,o.y+vy*t));
   }
 
+  const OBS_PRED_X = AVOID_HORIZONS.map(()=>new Float32Array(OBSERVER_COUNT));
+  const OBS_PRED_Y = AVOID_HORIZONS.map(()=>new Float32Array(OBSERVER_COUNT));
+
+  function precomputeObserverPredictions(){
+    for(let hi=0;hi<AVOID_HORIZONS.length;hi++){
+      const t=AVOID_HORIZONS[hi];
+      const px=OBS_PRED_X[hi], py=OBS_PRED_Y[hi];
+      for(let i=0;i<observers.length;i++){
+        const o=observers[i];
+        const vx=o.phase==="move" ? (o.vx||0) : 0;
+        const vy=o.phase==="move" ? (o.vy||0) : 0;
+        let x=o.x+vx*t, y=o.y+vy*t;
+        if(x<2.5) x=2.5; else if(x>MAP_W-2.5) x=MAP_W-2.5;
+        if(y<2.5) y=2.5; else if(y>MAP_H-2.5) y=MAP_H-2.5;
+        px[i]=x; py[i]=y;
+      }
+    }
+  }
+
 
   function cornerInsideSide(si){
     const i=Math.max(1,Math.min(route.length-2,si));
@@ -527,11 +546,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function candidateAvoidanceRisk(p,s,targetOff,speedMul,nearby){
-    // Sample several future moments. The score heavily punishes a predicted
-    // collision, then rewards clearance and low time loss.
     const horizons=AVOID_HORIZONS;
     const lateralNow=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
-    let minClear=999;
+    let minClearSq=1e9;
     let danger=0;
 
     for(let hi=0;hi<horizons.length;hi++){
@@ -539,31 +556,26 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const blend=Math.min(1,t/0.72);
       const off=lateralNow+(targetOff-lateralNow)*blend;
       const forward=p.speed*speedMul*t;
-
-      // Project player along the current route direction. This deliberately
-      // favors early evasive action before the observer reaches the player.
       const px=p.x+s.ux*forward+s.nx*(off-lateralNow);
       const py=p.y+s.uy*forward+s.ny*(off-lateralNow);
+      const predX=OBS_PRED_X[hi], predY=OBS_PRED_Y[hi];
 
-      for(const o of nearby){
-        const ox=predictedObserverX(o,t);
-        const oy=predictedObserverY(o,t);
-        const dx=px-ox, dy=py-oy;
-        const d=Math.sqrt(dx*dx+dy*dy);
-        if(d<minClear) minClear=d;
+      for(let oi=0;oi<nearby.length;oi++){
+        const o=nearby[oi];
+        const dx=px-predX[o.id], dy=py-predY[o.id];
+        const d2=dx*dx+dy*dy;
+        if(d2<minClearSq) minClearSq=d2;
 
-        // Very close predictions get an exponential-like penalty.
-        if(d<2.0) danger += (2.0-d)*420;
-        else if(d<4.0) danger += (4.0-d)*82;
-        else if(d<7.0) danger += (7.0-d)*13;
-        else if(d<10.0) danger += (10.0-d)*2.2;
+        if(d2<4.0) danger += (4.0-d2)*105;
+        else if(d2<16.0) danger += (16.0-d2)*11.0;
+        else if(d2<49.0) danger += (49.0-d2)*0.72;
+        else if(d2<100.0) danger += (100.0-d2)*0.06;
       }
     }
 
-    // Prefer moving over stopping and prefer smaller detours if equally safe.
     const timeLoss=(1-speedMul)*19.0;
     const detour=Math.abs(targetOff-p.desiredOffset)*0.34;
-    return {score:danger+timeLoss+detour,minClear};
+    return {score:danger+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
   }
 
   function chooseAvoidance(p,s,now){
@@ -589,7 +601,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Keep only the closest relevant threats in the expensive prediction matrix.
     // 660 observers remain simulated/rendered, but distant ones no longer multiply
     // avoidance cost for every racer.
-    const nearby=nearestThreats(nearbyRaw,p,8);
+    const nearby=nearestThreats(nearbyRaw,p,6);
 
     // Fast pre-check. If nothing is remotely threatening, keep the racing line.
     let nearest=Infinity;
@@ -1159,7 +1171,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     lastTs=ts;
 
     updateObservers(ts,dt);
-    if((Math.floor(ts/16)%4)===0) rebuildObserverGrid();
+    precomputeObserverPredictions();
+    if((Math.floor(ts/16)%5)===0) rebuildObserverGrid();
     for(const p of players) updatePlayer(p,ts,dt);
     updateCamera(dt);
     render(ts);
@@ -1194,15 +1207,12 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const x=(o.x-view.sx)*view.scale, y=(o.y-view.sy)*view.scale;
     if(x<-12||y<-12||x>canvas.width+12||y>canvas.height+12) return;
     const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
-    ctx.save();
-    ctx.translate(x,y);
     ctx.fillStyle="#d6e8ff";
     ctx.strokeStyle="#5f89ad";
     ctx.lineWidth=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
-    ctx.beginPath();ctx.ellipse(0,0,r*1.20,r*.72,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.ellipse(x,y,r*1.20,r*.72,0,0,Math.PI*2);ctx.fill();ctx.stroke();
     ctx.fillStyle="#83bcdf";
-    ctx.beginPath();ctx.arc(r*.20,0,r*.30,0,Math.PI*2);ctx.fill();
-    ctx.restore();
+    ctx.beginPath();ctx.arc(x+r*.20,y,r*.30,0,Math.PI*2);ctx.fill();
   }
 
   function drawPlayer(p,view,rank){
