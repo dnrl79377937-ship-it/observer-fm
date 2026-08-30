@@ -16,7 +16,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v26";
+  const BUILD_ID = "v30";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
@@ -41,19 +41,36 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika"];
   const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e"];
 
-  // Hidden FM-style driving profiles.
-  // These shape line precision, pace and evasive-control behavior,
-  // raw pace and how often/skillfully each player uses special controls.
-  const profiles = [
-    { pace:96, line:95, control:91, aggression:82 }, // Angel
-    { pace:93, line:92, control:95, aggression:68 }, // Egle
-    { pace:97, line:88, control:94, aggression:91 }, // GhostRider
-    { pace:91, line:96, control:86, aggression:62 }, // Bacilius
-    { pace:95, line:91, control:90, aggression:78 }, // Zino
-    { pace:90, line:89, control:96, aggression:73 }, // Chotbul
-    { pace:94, line:94, control:87, aggression:70 }, // Kaka
-    { pace:92, line:90, control:92, aggression:84 }  // Pika
+  // v29: 20 FM-style attributes + individual driving personality.
+  // Values are fixed for this build so a player's identity does not reroll on refresh.
+  const playerStats = [
+    {pace:75,acceleration:95,cornering:82,insideLine:78,routeReading:74,avoidance:83,reaction:91,prediction:96,control:79,stability:98,braking:98,recovery:99,consistency:98,focus:90,aggression:95,riskControl:87,pressure:81,start:97,endurance:79,luck:96}, // Angel
+    {pace:78,acceleration:92,cornering:97,insideLine:82,routeReading:94,avoidance:98,reaction:88,prediction:73,control:73,stability:74,braking:85,recovery:77,consistency:81,focus:86,aggression:98,riskControl:94,pressure:75,start:92,endurance:80,luck:96}, // Egle
+    {pace:86,acceleration:97,cornering:75,insideLine:79,routeReading:72,avoidance:95,reaction:81,prediction:80,control:73,stability:82,braking:92,recovery:97,consistency:81,focus:95,aggression:75,riskControl:96,pressure:77,start:87,endurance:97,luck:97}, // GhostRider
+    {pace:82,acceleration:95,cornering:94,insideLine:97,routeReading:93,avoidance:84,reaction:90,prediction:88,control:93,stability:77,braking:83,recovery:84,consistency:92,focus:72,aggression:85,riskControl:84,pressure:94,start:93,endurance:76,luck:74}, // Bacilius
+    {pace:88,acceleration:90,cornering:97,insideLine:74,routeReading:84,avoidance:88,reaction:76,prediction:99,control:93,stability:96,braking:83,recovery:97,consistency:76,focus:84,aggression:97,riskControl:84,pressure:98,start:93,endurance:94,luck:93}, // Zino
+    {pace:74,acceleration:97,cornering:91,insideLine:75,routeReading:84,avoidance:84,reaction:76,prediction:88,control:86,stability:98,braking:86,recovery:88,consistency:77,focus:93,aggression:94,riskControl:83,pressure:89,start:94,endurance:77,luck:76}, // Chotbul
+    {pace:88,acceleration:94,cornering:74,insideLine:94,routeReading:88,avoidance:91,reaction:78,prediction:99,control:97,stability:95,braking:96,recovery:96,consistency:82,focus:84,aggression:99,riskControl:84,pressure:83,start:96,endurance:86,luck:88}, // Kaka
+    {pace:83,acceleration:98,cornering:96,insideLine:98,routeReading:90,avoidance:94,reaction:86,prediction:95,control:80,stability:96,braking:72,recovery:83,consistency:79,focus:88,aggression:90,riskControl:96,pressure:89,start:85,endurance:81,luck:99}, // Pika
   ];
+
+  const drivingStyles = [
+    {style:"apexHunter",attack:1.1,safety:0.88,pack:1.06}, // Angel
+    {style:"safeReader",attack:0.92,safety:1.14,pack:0.96}, // Egle
+    {style:"attacker",attack:1.15,safety:0.82,pack:1.1}, // GhostRider
+    {style:"lineMaster",attack:1.05,safety:1.02,pack:1.0}, // Bacilius
+    {style:"balanced",attack:1.0,safety:1.0,pack:1.0}, // Zino
+    {style:"controller",attack:0.94,safety:1.12,pack:0.94}, // Chotbul
+    {style:"patient",attack:0.96,safety:1.08,pack:0.97}, // Kaka
+    {style:"opportunist",attack:1.08,safety:0.94,pack:1.05}, // Pika
+  ];
+
+  const profiles = playerStats.map(s => ({
+    pace:s.pace,
+    line:Math.round((s.cornering+s.insideLine+s.routeReading)/3),
+    control:Math.round((s.control+s.stability+s.reaction)/3),
+    aggression:s.aggression
+  }));
 
   // Centerline based on the user's supplied map.
   const route = [
@@ -105,13 +122,23 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function makePlayers(){
     return names.map((name,i)=>{
       const pf=profiles[i];
+      const stats=playerStats[i];
+      const drivingStyle=drivingStyles[i];
       const paceNorm=(pf.pace-90)/10;
       return {
-        index:i,name,color:colors[i],profile:pf,
+        index:i,name,color:colors[i],profile:pf,stats,drivingStyle,
         x:20.5, y:154.8 + (i-3.5)*0.48,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
-        speed: (9.50 + paceNorm*0.42 + Math.random()*0.08) * 1.2075,
+        speed: (
+          9.43
+          + paceNorm*0.31
+          + ((stats.acceleration-85)/14)*0.075
+          + ((stats.consistency-85)/14)*0.045
+          + ((stats.endurance-85)/14)*0.030
+          + ((stats.luck-85)/14)*0.012
+          + Math.random()*0.035
+        ) * 1.2075,
         desiredOffset:(i-3.5)*0.48,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hits:0, done:false, finishTime:null,
@@ -129,7 +156,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         avoidPlanSpeedMul:1,
         avoidPlanUntil:0,
         avoidPlanRisk:0,
+        packPlanOffset:0,
+        packPlanUntil:0,
         resumeEaseUntil:0,
+        match:{
+          collisions:0,stops:0,avoids:0,overtakes:0,leadMs:0,
+          maxRankGain:0,maxRankLoss:0,startRank:i+1,bestRank:i+1,worstRank:i+1,
+          distance:0,lastX:route[0][0],lastY:route[0][1]
+        },
         linePlanOffset:0,
         linePlanUntil:0
       };
@@ -415,7 +449,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function candidateAvoidanceRisk(p,s,targetOff,speedMul,nearby){
     // Sample several future moments. The score heavily punishes a predicted
     // collision, then rewards clearance and low time loss.
-    const horizons=[0.28,0.52,0.78,1.05,1.35,1.70,2.10,2.55,3.05];
+    const horizons=[0.38,0.82,1.35,2.05,3.05];
     const lateralNow=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
     let minClear=999;
     let danger=0;
@@ -467,8 +501,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       };
     }
 
-    const nearby=nearbyObservers(p.x,p.y,AVOID_SCAN_RADIUS);
-    if(!nearby.length) return null;
+    const nearbyRaw=nearbyObservers(p.x,p.y,AVOID_SCAN_RADIUS);
+    if(!nearbyRaw.length) return null;
+
+    // Keep only the closest relevant threats in the expensive prediction matrix.
+    // 660 observers remain simulated/rendered, but distant ones no longer multiply
+    // avoidance cost for every racer.
+    const nearby=nearbyRaw
+      .map(o=>({o,d:(o.x-p.x)*(o.x-p.x)+(o.y-p.y)*(o.y-p.y)}))
+      .sort((a,b)=>a.d-b.d)
+      .slice(0,10)
+      .map(e=>e.o);
 
     // Fast pre-check. If nothing is remotely threatening, keep the racing line.
     let nearest=Infinity;
@@ -488,12 +531,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
 
     const si=Math.min(p.seg,segs.length-1);
-    const half=Math.max(3.6,widths[si]*0.70);
+    const evadeSkill=(p.stats.avoidance+p.stats.reaction+p.stats.prediction)/3;
+    const half=Math.max(3.6,widths[si]*(0.63+(evadeSkill-72)*0.0020)*p.drivingStyle.safety);
 
     // Candidate lanes + speed choices. The planner chooses the safest path that
     // costs the least race time. Stop is evaluated only as an emergency option.
-    const laneFracs=[-0.94,-0.72,-0.48,-0.24,0,0.24,0.48,0.72,0.94];
-    const movingSpeeds=[1.02,0.94,0.84,0.70];
+    const laneFracs=[-0.92,-0.56,0,0.56,0.92];
+    const movingSpeeds=[1.00,0.82,0.66];
     let best=null;
 
     for(const frac of laneFracs){
@@ -518,7 +562,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       mode:"stop",
       targetOff:p.desiredOffset,
       speedMul:0,
-      score:stopRisk.score+8.5,
+      score:stopRisk.score + 8.5
+        + (p.drivingStyle.attack-1)*18
+        - (p.drivingStyle.safety-1)*15
+        + ((p.stats.braking-85)/14)*-2.2,
       minClear:stopRisk.minClear
     };
 
@@ -535,13 +582,63 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     // Persist 320–560 ms. Very dangerous situations re-plan sooner.
     const emergency=best.minClear<2.7 || nearest<5.0;
+    const react=(p.stats.reaction+p.stats.prediction)/2;
+    const smooth=(p.stats.control+p.stats.stability)/2;
+    const baseHold=430+(smooth-85)*5;
     p.avoidPlanOffset=best.targetOff;
     p.avoidPlanSpeedMul=best.speedMul;
     p.avoidPlanRisk=best.score;
-    p.avoidPlanUntil=now+(emergency ? 250+Math.random()*90 : 390+Math.random()*170);
+    p.match.avoids++;
+    if(best.mode==="stop") p.match.stops++;
+    p.avoidPlanUntil=now+(emergency
+      ? Math.max(205,285-(react-85)*4)+Math.random()*75
+      : Math.max(350,baseHold)+Math.random()*150);
     return best;
   }
 
+
+  function packContextOffset(p,si,now){
+    if(now<p.packPlanUntil) return p.packPlanOffset;
+
+    const myProg=currentProgress(p);
+    let nearestAhead=null, nearestGap=999;
+    let nearestSide=0;
+
+    for(const q of players){
+      if(q===p || q.done) continue;
+      const gap=currentProgress(q)-myProg;
+      if(gap>0 && gap<nearestGap){
+        nearestGap=gap;
+        nearestAhead=q;
+        const s=segs[si];
+        nearestSide=(q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny;
+      }
+    }
+
+    let off=0;
+    if(nearestAhead && nearestGap<10.5){
+      const half=Math.max(1.8,widths[si]*0.56);
+      const style=p.drivingStyle;
+      const pressure=(p.stats.pressure-72)/27;
+      const aggression=(p.stats.aggression-72)/27;
+
+      if(style.style==="safeReader" || style.style==="controller" || style.style==="patient"){
+        // Safer racers avoid stacking directly behind the leader.
+        off = nearestSide>=0 ? -half*0.48 : half*0.48;
+      }else if(style.style==="attacker" || style.style==="opportunist" || style.style==="apexHunter"){
+        // Attackers choose the larger opposite-side gap and commit harder under pressure.
+        const commit=(0.50+aggression*0.34+pressure*0.16)*style.pack;
+        off = nearestSide>=0 ? -half*commit : half*commit;
+      }else{
+        // Balanced / line master: only a small de-stack offset.
+        off = nearestSide>=0 ? -half*0.24 : half*0.24;
+      }
+    }
+
+    p.packPlanOffset=off;
+    p.packPlanUntil=now+360+Math.random()*240;
+    return off;
+  }
 
   function plannedRacingOffset(p,si,now){
     // Re-plan only a few times per second. This prevents rapid left/right
@@ -549,8 +646,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(now < p.linePlanUntil) return p.linePlanOffset;
 
     const s=segs[si];
-    const half=Math.max(1.8,widths[si]*0.58);
-    const candidates=[-0.96,-0.72,-0.48,-0.24,0,0.24,0.48,0.72,0.96];
+    const lineSkill=(p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3;
+    const half=Math.max(1.8,widths[si]*(0.54+(lineSkill-72)*0.0017));
+    const candidates=[-0.96,-0.64,-0.32,0,0.32,0.64,0.96];
     let bestOff=0;
     let bestScore=Infinity;
 
@@ -599,9 +697,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Avoid wall scraping while still allowing near-apex lines.
       score += Math.pow(Math.abs(c),5)*0.28;
 
-      // Higher line skill more strongly trusts the shortest candidate.
-      const skill=(p.profile.line-85)/15;
-      score *= (1.03-skill*0.035);
+      // v29: cornering/inside-line/route-reading and personality determine
+      // how aggressively the racer trusts the shortest apex.
+      const skill=(lineSkill-72)/27;
+      const risk=(p.stats.riskControl-72)/27;
+      const attack=p.drivingStyle.attack;
+      score *= (1.045-skill*0.050);
+      score += Math.abs(c)*Math.max(0,1-risk)*0.22/attack;
 
       if(score<bestScore){
         bestScore=score;
@@ -610,7 +712,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
 
     p.linePlanOffset=bestOff;
-    p.linePlanUntil=now+170+Math.random()*70;
+    p.linePlanUntil=now+245+Math.random()*115;
     return bestOff;
   }
 
@@ -662,6 +764,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p.invUntil=now+INV_MS;
       p.lastAdvanceAt=now;
       p.lastProgress=currentProgress(p);
+      const recovery=(p.stats.recovery-72)/27;
+      p.resumeEaseUntil=now+(470-recovery*150);
     }
 
     chooseControl(p,now,dt);
@@ -671,8 +775,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const half=widths[si]*0.72;
     let targetOff=optimalOffsetFor(p);
     const plannedOff=plannedRacingOffset(p,si,now);
-    // Blend toward the path-length winner before legacy apex logic.
-    targetOff=targetOff*0.24+plannedOff*0.76;
+    const packOff=packContextOffset(p,si,now);
+    // Ability-based line plus a persistent pack decision. This makes racers
+    // separate naturally in close battles without physics-pushing each other.
+    const packWeight=Math.min(0.34,0.12+(p.drivingStyle.pack-0.90)*0.55);
+    targetOff=targetOff*0.18+plannedOff*(0.82-packWeight)+packOff*packWeight;
       // Kart-style cornering: aggressively approach the inside/apex on turns.
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
@@ -755,6 +862,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     // Never allow AI steering to drift into black/non-drivable areas.
     clampToRoad(p);
+    p.match.distance += Math.hypot(p.x-p.match.lastX,p.y-p.match.lastY);
+    p.match.lastX=p.x;
+    p.match.lastY=p.y;
 
     // Robust segment advancement: crossing the end plane OR entering the next joint zone.
     // A short while-loop handles high FPS drops without skipping/sticking.
@@ -791,6 +901,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
           p.hits++;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
+          p.match.collisions++;
           p.lastAdvanceAt=p.stunUntil;
           p.avoidPlanUntil=0;
           break;
@@ -894,11 +1005,12 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     lastTs=ts;
 
     updateObservers(ts,dt);
-    rebuildObserverGrid();
+    if(((Math.floor(ts/16))&1)===0) rebuildObserverGrid();
     for(const p of players) updatePlayer(p,ts,dt);
+    updateMatchRanks(dt);
     updateCamera(dt);
     render(ts);
-    if(ts-lastRankingRender>=125){
+    if(ts-lastRankingRender>=180){
       renderRanking();
       lastRankingRender=ts;
     }
@@ -1013,6 +1125,23 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     cameraLabel.textContent=`${BUILD_ID} · OBS ${observers.length} · 화면 ${visibleObs} · 300%`;
   }
 
+  let prevRanks=new Map();
+
+  function updateMatchRanks(dt){
+    const ordered=[...players].sort((a,b)=>currentProgress(b)-currentProgress(a));
+    ordered.forEach((p,idx)=>{
+      const rank=idx+1;
+      p.match.bestRank=Math.min(p.match.bestRank,rank);
+      p.match.worstRank=Math.max(p.match.worstRank,rank);
+      p.match.maxRankGain=Math.max(p.match.maxRankGain,p.match.startRank-rank);
+      p.match.maxRankLoss=Math.max(p.match.maxRankLoss,rank-p.match.startRank);
+      const prev=prevRanks.get(p.index);
+      if(prev!=null && rank<prev) p.match.overtakes += (prev-rank);
+      prevRanks.set(p.index,rank);
+    });
+    if(ordered[0] && !ordered[0].done) ordered[0].match.leadMs += dt;
+  }
+
   function renderRanking(){
     const ordered=[...players].sort((a,b)=>{
       if(a.done && b.done) return a.finishTime-b.finishTime;
@@ -1030,9 +1159,70 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       if(p.done) gap=formatTime(p.finishTime);
       else if(i===0) gap="LEADER";
       else gap=`-${Math.max(0,leaderProg-currentProgress(p)).toFixed(1)}m`;
-      row.innerHTML=`<span class="rank-no">${i+1}</span><span class="rank-name">${p.name}</span><span class="rank-gap">${gap}</span>`;
+      row.innerHTML=`<span class="rank-no">${i+1}</span><button class="rank-name player-link" data-player="${p.index}">${p.name}</button><span class="rank-gap">${gap}</span>`;
+      row.querySelector(".player-link").addEventListener("click",()=>openPlayerCard(p));
       rankingEl.appendChild(row);
     });
+  }
+
+  function statLabel(k){
+    const labels={pace:"속도",acceleration:"가속",cornering:"코너링",insideLine:"인코스",routeReading:"루트판단",
+      avoidance:"회피",reaction:"반응속도",prediction:"예측",control:"컨트롤",stability:"안정성",braking:"브레이킹",
+      recovery:"회복",consistency:"일관성",focus:"집중력",aggression:"공격성",riskControl:"리스크관리",
+      pressure:"압박대응",start:"스타트",endurance:"지구력",luck:"운"};
+    return labels[k]||k;
+  }
+
+  function styleLabel(style){
+    const labels={apexHunter:"인코스 공격형",safeReader:"안전 예측형",attacker:"공격형",lineMaster:"최단라인형",
+      balanced:"밸런스형",controller:"컨트롤형",patient:"신중형",opportunist:"기회포착형"};
+    return labels[style]||style;
+  }
+
+  function overallOf(p){
+    const vals=Object.values(p.stats);
+    return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
+  }
+
+  function openPlayerCard(p){
+    const modal=document.getElementById("playerModal");
+    const title=document.getElementById("playerModalTitle");
+    const body=document.getElementById("playerModalBody");
+    const entries=Object.entries(p.stats).sort((a,b)=>b[1]-a[1]);
+    title.textContent=`${p.name} · OVR ${overallOf(p)} · ${styleLabel(p.drivingStyle.style)}`;
+    body.innerHTML=`
+      <div class="profileSummary">
+        <div><b>주행 성향</b><span>${styleLabel(p.drivingStyle.style)}</span></div>
+        <div><b>강점</b><span>${entries.slice(0,3).map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
+        <div><b>약점</b><span>${entries.slice(-3).reverse().map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
+      </div>
+      <div class="statGrid">${Object.entries(p.stats).map(([k,v])=>`<div class="statCell"><span>${statLabel(k)}</span><b>${v}</b></div>`).join("")}</div>`;
+    modal.classList.remove("hidden");
+  }
+
+  function showMatchResults(){
+    const panel=document.getElementById("resultPanel");
+    const body=document.getElementById("resultBody");
+    const ordered=[...players].sort((a,b)=>{
+      if(a.done&&b.done) return a.finishTime-b.finishTime;
+      if(a.done) return -1;
+      if(b.done) return 1;
+      return currentProgress(b)-currentProgress(a);
+    });
+    body.innerHTML=ordered.map((p,i)=>{
+      const m=p.match;
+      const avgSpeed=p.finishTime ? m.distance/(p.finishTime/1000) : 0;
+      return `<tr>
+        <td>${i+1}</td><td><button class="result-name player-link" data-player="${p.index}">${p.name}</button></td>
+        <td>${p.done?formatTime(p.finishTime):"DNF"}</td><td>${m.collisions}</td><td>${m.stops}</td><td>${m.avoids}</td>
+        <td>${m.overtakes}</td><td>${(m.leadMs/1000).toFixed(1)}s</td><td>${m.maxRankGain}</td><td>${m.maxRankLoss}</td>
+        <td>${m.distance.toFixed(1)}</td><td>${avgSpeed.toFixed(2)}</td>
+      </tr>`;
+    }).join("");
+    body.querySelectorAll(".result-name").forEach(el=>{
+      el.addEventListener("click",()=>openPlayerCard(players[Number(el.dataset.player)]));
+    });
+    panel.classList.remove("hidden");
   }
 
   function formatTime(ms){
@@ -1043,7 +1233,13 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   }
 
   startBtn.addEventListener("click",start);
-  restartBtn.addEventListener("click",()=>{ reset(); start(); });
+  restartBtn.addEventListener("click",()=>{ reset(); prevRanks=new Map(); start(); });
+  document.getElementById("resultBtn").addEventListener("click",showMatchResults);
+  document.getElementById("resultClose").addEventListener("click",()=>document.getElementById("resultPanel").classList.add("hidden"));
+  document.getElementById("playerModalClose").addEventListener("click",()=>document.getElementById("playerModal").classList.add("hidden"));
+  document.getElementById("playerModal").addEventListener("click",e=>{
+    if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
+  });
 
   map.addEventListener("load",reset);
   if(map.complete) reset();
