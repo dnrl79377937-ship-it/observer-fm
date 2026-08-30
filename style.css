@@ -180,3 +180,9 @@ button:hover{background:#223047}
 @media(max-width:900px){.match-awards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* v2.05: race engine performance/balance pass; visual layout retained. */
+
+/* v2.06: leader-first broadcast camera; race HUD retained. */
+
+/* v2.07: OBS 600 + batched observer rendering + deterministic prediction refresh. */
+
+/* v2.08: smoother steering + rare tactical inside-line variation. */

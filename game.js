@@ -13,12 +13,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 620;
+  const OBSERVER_COUNT = 600;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v2.05";
+  const BUILD_ID = "v2.08";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -179,6 +179,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return {
         index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
         x:20.5, y:154.8 + (i-3.5)*0.48,
+        steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
         speed: (
@@ -215,6 +216,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         avoidSideLockUntil:0,
         avoidRecoverUntil:0,
         avoidRecoverOffset:0,
+        variantMode:0,
+        variantUntil:0,
+        variantCooldown:6500+Math.random()*7000,
+        variantSide:0,
+        variantStrength:0,
         packPlanOffset:0,
         packPlanUntil:0,
         resumeEaseUntil:0,
@@ -286,7 +292,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     players=makePlayers();
     observers=spawnObservers();
     running=false;
-    raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0;
+    raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0; simTickCounter=0;
     lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];
     broadcastFocusId=-1; broadcastFocusUntil=0; previousUiRanks=new Map();
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
@@ -641,7 +647,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // 660 observers remain simulated/rendered, but distant ones no longer multiply
     // avoidance cost for every racer.
     const nearby=nearestThreats(nearbyRaw,p,6);
+    const predictionNorm=(p.stats.prediction-72)/27;
     const corridorBias=escapeCorridorBias(p,s,nearby);
+    const corridorCommit=Math.min(.34,Math.abs(corridorBias)*(.16+predictionNorm*.12));
 
     // Fast pre-check. If nothing is remotely threatening, keep the racing line.
     let nearestSq=Infinity;
@@ -668,10 +676,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const si=Math.min(p.seg,segs.length-1);
     const evadeSkill=(p.stats.avoidance+p.stats.reaction+p.stats.prediction)/3;
     const reactionNorm=(p.stats.reaction-72)/27;
-    const predictionNorm=(p.stats.prediction-72)/27;
     const controlNorm=(p.stats.control-72)/27;
     const compactSkill=(reactionNorm+predictionNorm+controlNorm)/3;
-    const half=Math.max(3.6,widths[si]*(0.66-compactSkill*0.055+(evadeSkill-72)*0.0014)*p.drivingStyle.safety);
+    const evadeNorm=(evadeSkill-72)/27;
+    const half=Math.max(3.6,widths[si]*(0.675-compactSkill*0.070+evadeNorm*0.035)*p.drivingStyle.safety);
 
     // Candidate lanes + speed choices. The planner chooses the safest path that
     // costs the least race time. Stop is evaluated only as an emergency option.
@@ -683,11 +691,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const targetOff=frac*half;
       for(const sm of movingSpeeds){
         const r=candidateAvoidanceRisk(p,s,targetOff,sm,nearby);
+        const side=Math.sign(targetOff);
+        const corridorBonus=(side!==0 && Math.sign(corridorBias)===side) ? corridorCommit*8.5 : 0;
         const candidate={
           mode:"planned",
           targetOff,
           speedMul:sm,
-          score:r.score,
+          score:r.score-corridorBonus,
           minClear:r.minClear
         };
         if(!best || candidate.score<best.score) best=candidate;
@@ -729,7 +739,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     if(Math.sign(best.targetOff)!==0){
       p.avoidLastSide=Math.sign(best.targetOff);
-      p.avoidSideLockUntil=now+(emergency?170:430);
+      const stable=(p.stats.stability-72)/27;
+      p.avoidSideLockUntil=now+(emergency?170:430+stable*150);
     }
 
     const react=(p.stats.reaction+p.stats.prediction)/2;
@@ -750,6 +761,56 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return best;
   }
 
+
+  function tacticalVariantOffset(p,si,now,baseOff){
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+
+    if(now<p.variantUntil && p.variantMode){
+      return Math.max(-half*.998,Math.min(half*.998,
+        baseOff*(1-p.variantStrength)+p.variantSide*half*p.variantStrength));
+    }
+
+    if(p.variantMode && now>=p.variantUntil){
+      p.variantMode=0;
+      p.variantSide=0;
+      p.variantStrength=0;
+    }
+
+    if(now<p.variantCooldown) return baseOff;
+
+    // Never gamble into immediate observer danger.
+    const nearby=nearbyObservers(p.x,p.y,11.5);
+    if(nearby.length>0){
+      p.variantCooldown=now+1600+Math.random()*2200;
+      return baseOff;
+    }
+
+    const inside=cornerInsideSide(si);
+    const power=cornerIntensity(si);
+    if(inside===0 || power<0.045){
+      p.variantCooldown=now+1800+Math.random()*2600;
+      return baseOff;
+    }
+
+    const aggression=(p.stats.aggression-72)/27;
+    const insideSkill=(p.stats.insideLine-72)/27;
+    const control=(p.stats.control-72)/27;
+    const pressure=(p.stats.pressure-72)/27;
+
+    // Very low probability tactical gamble: attack an extreme apex for a pass.
+    const chance=.010 + aggression*.009 + insideSkill*.007 + pressure*.004;
+    if(Math.random()<chance){
+      p.variantMode=1;
+      p.variantSide=inside;
+      p.variantStrength=Math.min(.995,.88+insideSkill*.07+control*.025);
+      p.variantUntil=now+520+Math.random()*620;
+      p.variantCooldown=now+8500+Math.random()*8500;
+      return baseOff*(1-p.variantStrength)+inside*half*p.variantStrength;
+    }
+
+    p.variantCooldown=now+2200+Math.random()*3000;
+    return baseOff;
+  }
 
   function packContextOffset(p,si,now){
     const s=segs[Math.min(si,segs.length-1)];
@@ -811,7 +872,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     const s=segs[si];
     const lineSkill=(p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3;
-    const half=Math.max(1.8,widths[si]*(0.54+(lineSkill-72)*0.0017));
+    const lineNorm=(lineSkill-72)/27;
+    const half=Math.max(1.8,widths[si]*(0.535+lineNorm*0.060));
 
     // v31: when the local road is genuinely clear of observers, commit to a
     // near-wall Kart-style apex instead of wasting space in the middle.
@@ -853,9 +915,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         let futureOff=off*(0.58-routeRead*.10);
         if(Math.abs(turn)>0.025){
           const inside=(turn>0 ? 1 : -1);
-          const apexCommit=0.86+routeRead*.115;
-          const nextApex=inside*h*Math.min(.985,apexCommit);
-          const prep=0.70+routeRead*.20;
+          const apexCommit=0.82+routeRead*.16+((p.stats.insideLine-72)/27)*.035;
+          const nextApex=inside*h*Math.min(.992,apexCommit);
+          const prep=0.64+routeRead*.27;
           futureOff=futureOff*(1-prep)+nextApex*prep;
         }
 
@@ -1008,17 +1070,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let targetOff=optimalOffsetFor(p);
     const plannedOff=plannedRacingOffset(p,si,now);
     const packOff=packContextOffset(p,si,now);
-    // Ability-based line plus a persistent pack decision. This makes racers
-    // separate naturally in close battles without physics-pushing each other.
-    const packWeight=Math.min(0.34,0.12+(p.drivingStyle.pack-0.90)*0.55);
-    targetOff=targetOff*0.18+plannedOff*(0.82-packWeight)+packOff*packWeight;
+    // Players are non-solid. Pack logic only adds subtle tactical route variety.
+    const packWeight=Math.min(0.22,0.07+(p.drivingStyle.pack-0.90)*0.36);
+    targetOff=targetOff*0.16+plannedOff*(0.84-packWeight)+packOff*packWeight;
       // Kart-style cornering: aggressively approach the inside/apex on turns.
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
       if(insideSide!==0 && turnPower>0.055){
         const halfRoad=Math.max(1.8,widths[si]*0.58);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
-        const apexBlend=Math.min(0.999,0.76+turnPower*2.10);
+        const apexBlend=Math.min(0.965,0.66+turnPower*1.72);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
       }
 
@@ -1028,7 +1089,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(Math.abs(futureInside)>0.10){
         const halfRoad2=Math.max(1.8,widths[si]*0.59);
         const futureApex=futureInside*halfRoad2*0.998;
-        targetOff=targetOff*0.15+futureApex*0.85;
+        targetOff=targetOff*0.28+futureApex*0.72;
       }
 
     // Lower line skill adds slightly more steering error, while everyone still
@@ -1049,6 +1110,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*(0.40-insideCommit*0.12)+skillApex*(0.60+insideCommit*0.12);
     }
 
+    targetOff=tacticalVariantOffset(p,si,now,targetOff);
     targetOff=stabilizeDrivingLine(p,si,targetOff);
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
@@ -1098,19 +1160,22 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       speedMul=0.875+controlSkill*0.065;
     }
 targetOff=Math.max(-half,Math.min(half,targetOff));
-    p.desiredOffset += (targetOff-p.desiredOffset)*Math.min(0.095,dt*0.0035);
+    const steerControl=(p.stats.control-72)/27;
+    const steerTurn=cornerIntensity(si);
+    const steerEase=Math.min(.082,dt*(.00245+steerControl*.00055+steerTurn*.00045));
+    p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
     const next=segs[Math.min(segs.length-1,si+1)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
     const optTarget=optimizedLookAheadTarget(p,si,now);
-    const optBlend = si<=8 ? 0.90 : 0.62;
+    const optBlend = si<=8 ? 0.84 : 0.56;
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
     if(next && si<segs.length-1){
-      const look=si<=8 ? 0.035 : 0.14;
+      const look=si<=8 ? 0.045 : 0.18;
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
@@ -1119,10 +1184,15 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     let dx=tx-p.x, dy=ty-p.y;
     const d=Math.hypot(dx,dy) || 1;
+    const ndx=dx/d, ndy=dy/d;
+    const steerBlend=Math.min(.24,.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06);
+    p.steerX += (ndx-p.steerX)*steerBlend;
+    p.steerY += (ndy-p.steerY)*steerBlend;
+    const steerLen=Math.hypot(p.steerX,p.steerY)||1;
     const step=p.speed*speedMul*dt/1000;
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
-    p.x += dx/d*move;
-    p.y += dy/d*move;
+    p.x += p.steerX/steerLen*move;
+    p.y += p.steerY/steerLen*move;
 
     // Never allow AI steering to drift into black/non-drivable areas.
     clampToRoad(p);
@@ -1184,7 +1254,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const sec=Math.min(0.05,Math.max(0,dt/1000));
     const margin=2.8;
 
-    for(const o of observers){
+    for(let oi=0;oi<observers.length;oi++){
+      const o=observers[oi];
       if(!o.phaseUntil){
         const offset=o.cycleOffset||0;
         if(offset<OBS_MOVE_MS){
@@ -1242,74 +1313,57 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   let bestSector=[null,null,null];
 
   function updateCamera(dt){
-    let top=null, topProg=-Infinity;
-    let held=null, heldProg=-Infinity;
+    let leader=null, leaderProg=-Infinity;
     let second=null, secondProg=-Infinity;
 
     for(let i=0;i<players.length;i++){
       const p=players[i];
       if(p.done) continue;
       const prog=currentProgress(p);
-      if(p.index===cameraLeaderId){ held=p; heldProg=prog; }
-      if(prog>topProg){
-        second=top; secondProg=topProg;
-        top=p; topProg=prog;
+      if(prog>leaderProg){
+        second=leader; secondProg=leaderProg;
+        leader=p; leaderProg=prog;
       }else if(prog>secondProg){
         second=p; secondProg=prog;
       }
     }
-    if(!top) return;
+    if(!leader) return;
 
     const now=performance.now();
-    let leader=top, leaderProg=topProg;
-    if(held && now<cameraLeaderHoldUntil && topProg-heldProg<8.0){
-      leader=held; leaderProg=heldProg;
-    }
-    if(!held || (leader===top && top.index!==cameraLeaderId)){
-      cameraLeaderId=leader.index;
-      cameraLeaderHoldUntil=now+1100;
+
+    // v2.06 broadcast rule: stay on P1 almost all the time.
+    // A prior leader is only retained very briefly to avoid camera jitter during
+    // near-identical overlaps/rapid timing swaps.
+    if(cameraLeaderId!==leader.index){
+      const held=players[cameraLeaderId];
+      if(held && !held.done && now<cameraLeaderHoldUntil){
+        const heldProg=currentProgress(held);
+        if(leaderProg-heldProg<0.55){
+          leader=held;
+          leaderProg=heldProg;
+        }else{
+          cameraLeaderId=leader.index;
+          cameraLeaderHoldUntil=now+650;
+        }
+      }else{
+        cameraLeaderId=leader.index;
+        cameraLeaderHoldUntil=now+650;
+      }
     }
 
     let tx=leader.x, ty=leader.y;
-    let followSecond=second;
-    let followSecondProg=secondProg;
-    if(leader!==top){
-      followSecond=top; followSecondProg=topProg;
+
+    // Only include P2 subtly when the lead battle is genuinely close.
+    if(second && Math.abs(leaderProg-secondProg)<0.85){
+      tx=leader.x*.94+second.x*.06;
+      ty=leader.y*.94+second.y*.06;
     }
-    if(followSecond && Math.abs(leaderProg-followSecondProg)<1.6){
-      tx=leader.x*.90+followSecond.x*.10;
-      ty=leader.y*.90+followSecond.y*.10;
-    }else{
-      // Broadcast cut: when 2nd/3rd are in a tighter fight than the leader,
-      // let the camera lean toward that battle without abandoning race context.
-      let ranks=[];
-      for(let i=0;i<players.length;i++){
-        if(!players[i].done) ranks.push({p:players[i],prog:currentProgress(players[i])});
-      }
-      ranks.sort((a,b)=>b.prog-a.prog);
-      if(ranks.length>=3){
-        const gap12=ranks[0].prog-ranks[1].prog;
-        const gap23=ranks[1].prog-ranks[2].prog;
-        if(gap23<0.9 && gap12>2.4){
-          tx=ranks[1].p.x*.55+ranks[2].p.x*.45;
-          ty=ranks[1].p.y*.55+ranks[2].p.y*.45;
-        }
-      }
-    }
-    const bnow=performance.now();
-    if(bnow<broadcastFocusUntil && broadcastFocusId>=0){
-      const fp=players[broadcastFocusId];
-      if(fp && !fp.done){ tx=tx*.46+fp.x*.54; ty=ty*.46+fp.y*.54; }
-    }else{
-      const battle=chooseBroadcastBattle();
-      if(battle){
-        const w=battle.label==="FINISH BATTLE"?.28:.48;
-        tx=battle.a.x*(1-w)+battle.b.x*w;
-        ty=battle.a.y*(1-w)+battle.b.y*w;
-      }
-    }
-    const a=Math.min(0.085,dt*0.0028);
-    camX+=(tx-camX)*a; camY+=(ty-camY)*a;
+
+    // Overtake/battle events remain on the HUD, but no longer pull the camera
+    // away from the leader. This prevents constant broadcast cuts.
+    const a=Math.min(0.068,dt*0.00220);
+    camX+=(tx-camX)*a;
+    camY+=(ty-camY)*a;
   }
 
   function finalizeRound(){
@@ -1402,13 +1456,17 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   const SIM_STEP_MS = 1000/50;
   const MAX_SIM_STEPS = 2;
   let simClock=0;
+  let simTickCounter=0;
   let simAccumulator=0;
 
   function simulateStep(now,dt){
     updateObservers(now,dt);
+    simTickCounter++;
 
-    // Refresh spatial lookup and prediction buffers together every few sim ticks.
-    if((Math.floor(now/SIM_STEP_MS)%5)===0){
+    // v2.07: deterministic 10Hz observer lookup/prediction refresh.
+    // Explicit ticks avoid duplicate refreshes caused by timestamp rounding.
+    if(simTickCounter>=5){
+      simTickCounter=0;
       rebuildObserverGrid();
       precomputeObserverPredictions();
     }
@@ -1444,7 +1502,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     render(ts);
 
-    if(ts-lastRankingRender>=300){
+    if(ts-lastRankingRender>=320){
       const rankingDt=ts-lastRankingRender;
       updateMatchRanks(rankingDt);
       updateSectors(ts);
@@ -1495,16 +1553,47 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     return {sx,sy,viewW,viewH,scale};
   }
 
-  function drawObserver(o,view){
-    const x=(o.x-view.sx)*view.scale, y=(o.y-view.sy)*view.scale;
-    if(x<-12||y<-12||x>canvas.width+12||y>canvas.height+12) return;
+  function drawObservers(view){
+    const pad=5;
+    const minX=view.sx-pad, maxX=view.sx+view.viewW+pad;
+    const minY=view.sy-pad, maxY=view.sy+view.viewH+pad;
     const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
+    const lineW=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
+    let visible=0;
+
+    // Body fill: one path for every visible observer.
+    ctx.beginPath();
+    for(let i=0;i<observers.length;i++){
+      const o=observers[i];
+      if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
+      const x=(o.x-view.sx)*view.scale;
+      const y=(o.y-view.sy)*view.scale;
+      ctx.moveTo(x+r*1.20,y);
+      ctx.ellipse(x,y,r*1.20,r*.72,0,0,Math.PI*2);
+      visible++;
+    }
     ctx.fillStyle="#d6e8ff";
+    ctx.fill();
+
+    // Body outline in one stroke pass.
     ctx.strokeStyle="#5f89ad";
-    ctx.lineWidth=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
-    ctx.beginPath();ctx.ellipse(x,y,r*1.20,r*.72,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.lineWidth=lineW;
+    ctx.stroke();
+
+    // Observer cores in one fill pass.
+    ctx.beginPath();
+    for(let i=0;i<observers.length;i++){
+      const o=observers[i];
+      if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
+      const x=(o.x-view.sx)*view.scale;
+      const y=(o.y-view.sy)*view.scale;
+      ctx.moveTo(x+r*.50,y);
+      ctx.arc(x+r*.20,y,r*.30,0,Math.PI*2);
+    }
     ctx.fillStyle="#83bcdf";
-    ctx.beginPath();ctx.arc(x+r*.20,y,r*.30,0,Math.PI*2);ctx.fill();
+    ctx.fill();
+
+    return visible;
   }
 
   function drawPlayer(p,view,rank){
@@ -1591,16 +1680,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     ctx.imageSmoothingEnabled=false;
     ctx.drawImage(map,view.sx,view.sy,view.viewW,view.viewH,0,0,W,H);
 
-    // World-space culling avoids transforming/drawing all 660 observers every frame.
-    let visibleObs=0;
-    const pad=5;
-    const minX=view.sx-pad, maxX=view.sx+view.viewW+pad;
-    const minY=view.sy-pad, maxY=view.sy+view.viewH+pad;
-    for(const o of observers){
-      if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
-      visibleObs++;
-      drawObserver(o,view);
-    }
+    // v2.07: cull + batch all visible observers into a few canvas paths.
+    // This sharply reduces per-observer draw calls while preserving their look.
+    const visibleObs=drawObservers(view);
 
     renderOrder.length=0;
     for(let i=0;i<players.length;i++) renderOrder.push(players[i]);
@@ -1741,8 +1823,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
         p.match.overtakes += (prev-rank);
         if(prev-rank>=1){
           pushRaceEvent(`OVERTAKE · ${p.name} ${prev}위 → ${rank}위`); raceTotalOvertakes+=(prev-rank);
-          broadcastFocusId=p.index;
-          broadcastFocusUntil=performance.now()+950;
+          // v2.06: overtake events are shown in the HUD only; camera remains leader-focused.
         }
       }
       prevRanks.set(p.index,rank);
