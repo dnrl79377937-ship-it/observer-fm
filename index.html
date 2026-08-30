@@ -13,9 +13,9 @@
   <header class="topbar">
     <div>
       <h1>OBSERVER AVOIDANCE FM</h1>
-      <p>v32.1 · 1R 스커지 · 2R 스카웃 · 3R 레이스 · 렉/전체 멈춤 집중 최적화 · OBS 650</p>
+      <p>v32.5 · GAP/구간기록 · 추월/NEW LEADER · 중계 카메라 강화 · OBS 650</p>
     </div>
-    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v32.1</div>
+    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v32.5</div>
     <div class="controls">
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
@@ -28,11 +28,13 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v32.1 · SCOURGE → SCOUT → WRAITH · OBS 650</span>
+        <span id="cameraLabel">v32.5 · SCOURGE → SCOUT → WRAITH · OBS 650</span>
         <span id="clock">00:00.0</span>
       </div>
       <div id="teamScoreBoard" class="team-score-board"></div>
       <div id="personalScoreBoard" class="personal-score-board"></div>
+      <div id="leadBattle" class="lead-battle hidden">LEAD BATTLE</div>
+      <div id="raceEvent" class="race-event hidden"></div>
       <canvas id="race" width="1600" height="900"></canvas>
     </section>
 
@@ -65,6 +67,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=3211"></script>
+  <script src="game.js?v=3251"></script>
 </body>
 </html>

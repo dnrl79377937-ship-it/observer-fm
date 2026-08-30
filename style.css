@@ -124,3 +124,19 @@ button:hover{background:#223047}
   .team-score-board{width:66%;top:48px}
   .personal-score-board{width:170px;top:108px}
 }
+
+.lead-battle{
+  position:absolute;top:72px;left:50%;transform:translateX(-50%);
+  z-index:8;padding:7px 15px;border-radius:999px;background:rgba(10,12,18,.78);
+  border:1px solid rgba(255,255,255,.32);font-weight:900;letter-spacing:.08em;
+  pointer-events:none;backdrop-filter:blur(3px)
+}
+.lead-battle.hidden{display:none}
+
+.race-event{
+  position:absolute;top:108px;left:50%;transform:translateX(-50%);
+  z-index:9;min-width:180px;text-align:center;padding:7px 12px;border-radius:8px;
+  background:rgba(5,8,14,.82);border:1px solid rgba(255,255,255,.28);
+  font-weight:900;letter-spacing:.03em;pointer-events:none;
+}
+.race-event.hidden{display:none}

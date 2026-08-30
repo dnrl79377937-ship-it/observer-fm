@@ -16,7 +16,7 @@
   const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
-  const BUILD_ID = "v32.1";
+  const BUILD_ID = "v32.5";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -43,7 +43,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
   const AVOID_SAFE_BUFFER = 6.2;
   const AVOID_LANE_LOOKAHEAD = 2.60;
-  const AVOID_HORIZONS = [0.38,0.82,1.35,2.05,3.05];   // compare future lane safety
+  const AVOID_HORIZONS = [0.42,0.95,1.70,2.85];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
@@ -188,6 +188,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.267875,
         desiredOffset:(i-3.5)*0.48,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
+        hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1],
+        sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         hits:0, done:false, finishTime:null,
         controlMode:"normal", controlUntil:0,
         controlCooldown: 2400 + Math.random()*3600,
@@ -274,7 +276,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     players=makePlayers();
     observers=spawnObservers();
     running=false;
-    raceStart=0; lastTs=0; lastRankingRender=0; seasonRecorded=false; prevRanks=new Map();
+    raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0;
+    lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];
+    seasonRecorded=false; prevRanks=new Map();
     camX=28; camY=158;
     roundTransitioning=false;
     startBtn.textContent=`${currentRound}R 시작`;
@@ -303,6 +307,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const now=performance.now();
     if(!raceStart) raceStart=now;
     lastTs=now;
+    simClock=now; simAccumulator=0;
+    rebuildObserverGrid();
+    precomputeObserverPredictions();
     startBtn.textContent="진행 중";
     raf=requestAnimationFrame(loop);
   }
@@ -416,6 +423,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const nearbyBufferPool = Array.from({length:8},()=>[]);
+  const localPlayerBuffers = Array.from({length:8},()=>[]);
   const threatObserverBuffers = Array.from({length:8},()=>[]);
   const threatDistanceBuffers = Array.from({length:8},()=>[]);
 
@@ -493,6 +501,38 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
   }
 
+
+  function localPlayerContext(p,range=13){
+    const out=localPlayerBuffers[p.index];
+    out.length=0;
+    const pp=currentProgress(p);
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done) continue;
+      const gap=currentProgress(q)-pp;
+      if(gap>-4 && gap<range) out.push({q,gap});
+    }
+    return out;
+  }
+
+  function escapeCorridorBias(p,s,nearby){
+    // Look at several threats as one obstacle field instead of dodging only the
+    // nearest observer. Positive/negative scores represent safer road sides.
+    let leftRisk=0,rightRisk=0;
+    const px=p.x+s.ux*p.speed*1.15;
+    const py=p.y+s.uy*p.speed*1.15;
+    for(let i=0;i<nearby.length;i++){
+      const o=nearby[i];
+      const dx=o.x-px, dy=o.y-py;
+      const along=dx*s.ux+dy*s.uy;
+      if(along<-3 || along>16) continue;
+      const lat=dx*s.nx+dy*s.ny;
+      const weight=Math.max(0,16-Math.abs(along));
+      if(lat<0) leftRisk+=weight/(1+Math.abs(lat));
+      else rightRisk+=weight/(1+Math.abs(lat));
+    }
+    return Math.max(-1,Math.min(1,(leftRisk-rightRisk)/8));
+  }
 
   function cornerInsideSide(si){
     const i=Math.max(1,Math.min(route.length-2,si));
@@ -602,6 +642,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // 660 observers remain simulated/rendered, but distant ones no longer multiply
     // avoidance cost for every racer.
     const nearby=nearestThreats(nearbyRaw,p,6);
+    const corridorBias=escapeCorridorBias(p,s,nearby);
 
     // Fast pre-check. If nothing is remotely threatening, keep the racing line.
     let nearest=Infinity;
@@ -677,6 +718,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const react=(p.stats.reaction+p.stats.prediction)/2;
     const smooth=(p.stats.control+p.stats.stability)/2;
     const baseHold=430+(smooth-85)*5;
+    if(Math.abs(corridorBias)>.12){
+      const roadHalf=Math.max(1.8,widths[Math.min(p.seg,widths.length-1)]*.55);
+      best.targetOff=best.targetOff*.72+corridorBias*roadHalf*.28;
+    }
     p.avoidPlanOffset=best.targetOff;
     p.avoidPlanSpeedMul=best.speedMul;
     p.avoidPlanRisk=best.score;
@@ -690,46 +735,48 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   function packContextOffset(p,si,now){
+    const s=segs[Math.min(si,segs.length-1)];
+    const half=Math.max(1.8,widths[si]*0.56);
+
     if(now<p.packPlanUntil) return p.packPlanOffset;
 
-    const myProg=currentProgress(p);
+    const context=localPlayerContext(p,12.5);
     let nearestAhead=null, nearestGap=999;
-    let nearestSide=0;
-
-    for(const q of players){
-      if(q===p || q.done) continue;
-      const gap=currentProgress(q)-myProg;
-      if(gap>0 && gap<nearestGap){
-        nearestGap=gap;
-        nearestAhead=q;
-        const s=segs[si];
-        nearestSide=(q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny;
-      }
+    for(let i=0;i<context.length;i++){
+      const e=context[i];
+      if(e.gap>0 && e.gap<nearestGap){ nearestAhead=e.q; nearestGap=e.gap; }
+    }
+    if(!nearestAhead){
+      p.packPlanOffset=0;
+      p.packPlanUntil=now+260;
+      return 0;
     }
 
-    let off=0;
-    if(nearestAhead && nearestGap<10.5){
-      const half=Math.max(1.8,widths[si]*0.56);
-      const style=p.drivingStyle;
-      const pressure=(p.stats.pressure-72)/27;
-      const aggression=(p.stats.aggression-72)/27;
+    const q=nearestAhead;
+    const qOff=((q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny);
+    const myOff=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
+    const aggression=(p.stats.aggression-72)/27;
+    const pressure=(p.stats.pressure-72)/27;
+    const control=(p.stats.control-72)/27;
+    const inside=cornerInsideSide(si);
 
-      if(style.style==="safeReader" || style.style==="controller" || style.style==="patient"){
-        // Safer racers avoid stacking directly behind the leader.
-        off = nearestSide>=0 ? -half*0.48 : half*0.48;
-      }else if(style.style==="attacker" || style.style==="opportunist" || style.style==="apexHunter"){
-        // Attackers choose the larger opposite-side gap and commit harder under pressure.
-        const commit=(0.50+aggression*0.34+pressure*0.16)*style.pack;
-        off = nearestSide>=0 ? -half*commit : half*commit;
-      }else{
-        // Balanced / line master: only a small de-stack offset.
-        off = nearestSide>=0 ? -half*0.24 : half*0.24;
-      }
+    // Prefer the open side. Opportunists/attackers exploit an open inside lane.
+    let side=(qOff>=myOff)?-1:1;
+    if(inside!==0 && Math.abs(qOff-inside*half)>half*.34 &&
+       (p.drivingStyle.name==="opportunist" || p.drivingStyle.name==="attacker" || aggression>.62)){
+      side=inside;
     }
 
-    p.packPlanOffset=off;
-    p.packPlanUntil=now+360+Math.random()*240;
-    return off;
+    let commitment=.42;
+    if(p.drivingStyle.name==="safeReader" || p.drivingStyle.name==="patient") commitment=.34;
+    else if(p.drivingStyle.name==="attacker" || p.drivingStyle.name==="opportunist") commitment=.72;
+    else if(p.drivingStyle.name==="controller") commitment=.48;
+    commitment+=aggression*.10+pressure*.07+control*.04;
+    if(nearestGap<4.0) commitment+=.10;
+
+    p.packPlanOffset=side*half*Math.min(.92,commitment);
+    p.packPlanUntil=now+300+Math.random()*170;
+    return p.packPlanOffset;
   }
 
   function plannedRacingOffset(p,si,now){
@@ -906,7 +953,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Lower line skill adds slightly more steering error, while everyone still
     // follows the optimized racing line most of the time.
     const lineError=(100-p.profile.line)/100;
-    targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*(0.018+lineError*0.16);
+    const precision=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/300;
+    const precisionNoise=0.010+(1-precision)*0.20;
+    targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*precisionNoise;
+
+    // High inside-line racers visibly hold a tighter apex; lower line skill leaves
+    // a little more safety margin, making player identities readable in motion.
+    const insideNow=cornerInsideSide(si);
+    if(insideNow!==0 && cornerIntensity(si)>0.06){
+      const insideCommit=(p.stats.insideLine-72)/27;
+      const styleApex=(p.drivingStyle.name==="attacker"||p.drivingStyle.name==="apexHunter")?.045:
+        (p.drivingStyle.name==="safeReader"||p.drivingStyle.name==="patient")?-.035:0;
+      const skillApex=insideNow*half*Math.min(.995,0.72+insideCommit*0.25+styleApex);
+      targetOff=targetOff*(0.40-insideCommit*0.12)+skillApex*(0.60+insideCommit*0.12);
+    }
 
     let speedMul=1;
     const controlSkill=(p.profile.control-85)/15;
@@ -922,6 +982,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         targetOff=targetOff*0.12+avoid.targetOff*0.88;
         speedMul=avoid.speedMul;
       }
+    }
+    if(!avoid && p.avoidPlanUntil && now>=p.avoidPlanUntil){
+      // Once the threat is gone, recover the optimal racing line promptly instead
+      // of drifting on the old evasive lane.
+      p.avoidPlanOffset=targetOff;
+      p.avoidPlanSpeedMul=1;
+      p.avoidPlanRisk=0;
+      p.avoidPlanUntil=0;
     }
     if(!avoid && p.controlMode==="zigzag"){
       targetOff += Math.sin(now*0.020+p.index)*half*(0.50+controlSkill*0.10);
@@ -977,7 +1045,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       const cs=segs[p.seg];
       const rx=p.x-cs.a[0], ry=p.y-cs.a[1];
       const alongPx=rx*cs.ux+ry*cs.uy;
-      const nearEnd=Math.hypot(p.x-cs.b[0],p.y-cs.b[1])<3.4;
+      const endDx=p.x-cs.b[0], endDy=p.y-cs.b[1];
+      const nearEnd=endDx*endDx+endDy*endDy<11.56;
       if(alongPx>=cs.L*0.91 || nearEnd){
         p.seg++;
         advances++;
@@ -989,7 +1058,8 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     const fs=segs[segs.length-1];
     const frx=p.x-fs.a[0], fry=p.y-fs.a[1];
     const finishAlong=frx*fs.ux+fry*fs.uy;
-    if(p.seg>=segs.length-1 && (finishAlong>=fs.L*0.88 || Math.hypot(p.x-last[0],p.y-last[1])<6.2)){
+    const finishDx=p.x-last[0], finishDy=p.y-last[1];
+    if(p.seg>=segs.length-1 && (finishAlong>=fs.L*0.88 || finishDx*finishDx+finishDy*finishDy<38.44)){
       p.done=true;
       p.finishTime=now-raceStart;
       return;
@@ -1001,8 +1071,10 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
       for(const o of nearbyObservers(p.x,p.y,PLAYER_HIT_RADIUS+1.0)){
         if(Math.abs(o.x-p.x)>PLAYER_HIT_RADIUS || Math.abs(o.y-p.y)>PLAYER_HIT_RADIUS) continue;
-        if(Math.hypot(p.x-o.x,p.y-o.y)<PLAYER_HIT_RADIUS){
+        const cdx=p.x-o.x, cdy=p.y-o.y;
+        if(cdx*cdx+cdy*cdy<PLAYER_HIT_RADIUS*PLAYER_HIT_RADIUS){
           p.hits++;
+          p.hitFxUntil=now+240;
           p.stunUntil=now+STUN_MS;
           p.collisionLockUntil=now+STUN_MS+INV_MS;
           p.match.collisions++;
@@ -1062,6 +1134,12 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
   let cameraLeaderId=-1;
   let cameraLeaderHoldUntil=0;
   let lastRankingRender=0;
+  let lastVisibleObs=0;
+  let lastLeaderName="";
+  let raceEventText="";
+  let raceEventUntil=0;
+  const SECTOR_MARKS=[0.25,0.50,0.75];
+  let bestSector=[null,null,null];
 
   function updateCamera(dt){
     let top=null, topProg=-Infinity;
@@ -1099,8 +1177,24 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       followSecond=top; followSecondProg=topProg;
     }
     if(followSecond && Math.abs(leaderProg-followSecondProg)<1.6){
-      tx=leader.x*.94+followSecond.x*.06;
-      ty=leader.y*.94+followSecond.y*.06;
+      tx=leader.x*.90+followSecond.x*.10;
+      ty=leader.y*.90+followSecond.y*.10;
+    }else{
+      // Broadcast cut: when 2nd/3rd are in a tighter fight than the leader,
+      // let the camera lean toward that battle without abandoning race context.
+      let ranks=[];
+      for(let i=0;i<players.length;i++){
+        if(!players[i].done) ranks.push({p:players[i],prog:currentProgress(players[i])});
+      }
+      ranks.sort((a,b)=>b.prog-a.prog);
+      if(ranks.length>=3){
+        const gap12=ranks[0].prog-ranks[1].prog;
+        const gap23=ranks[1].prog-ranks[2].prog;
+        if(gap23<0.9 && gap12>2.4){
+          tx=ranks[1].p.x*.55+ranks[2].p.x*.45;
+          ty=ranks[1].p.y*.55+ranks[2].p.y*.45;
+        }
+      }
     }
     const a=Math.min(0.085,dt*0.0028);
     camX+=(tx-camX)*a; camY+=(ty-camY)*a;
@@ -1164,22 +1258,67 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       </div>`).join("");
   }
 
+  const SIM_STEP_MS = 1000/60;
+  const MAX_SIM_STEPS = 3;
+  let simClock=0;
+  let simAccumulator=0;
+
+  function simulateStep(now,dt){
+    updateObservers(now,dt);
+    precomputeObserverPredictions();
+
+    // Spatial lookup does not need rebuilding every visual frame. This phase is
+    // staggered by simulation time, so a slow render frame cannot bunch all work.
+    if((Math.floor(now/SIM_STEP_MS)%5)===0) rebuildObserverGrid();
+
+    for(let i=0;i<players.length;i++) updatePlayer(players[i],now,dt);
+    updateCamera(dt);
+  }
+
   function loop(ts){
     if(!running) return;
-    // Clamp dt so background-tab stalls never make the simulation explode.
-    const dt=Math.min(18,Math.max(0,ts-lastTs));
-    lastTs=ts;
 
-    updateObservers(ts,dt);
-    precomputeObserverPredictions();
-    if((Math.floor(ts/16)%5)===0) rebuildObserverGrid();
-    for(const p of players) updatePlayer(p,ts,dt);
-    updateCamera(dt);
+    let frameDelta=ts-lastTs;
+    lastTs=ts;
+    if(frameDelta<0) frameDelta=0;
+    if(frameDelta>50) frameDelta=50;
+    simAccumulator+=frameDelta;
+
+    if(!simClock) simClock=ts-simAccumulator;
+
+    let steps=0;
+    while(simAccumulator>=SIM_STEP_MS && steps<MAX_SIM_STEPS){
+      simClock+=SIM_STEP_MS;
+      simulateStep(simClock,SIM_STEP_MS);
+      simAccumulator-=SIM_STEP_MS;
+      steps++;
+    }
+
+    // Never allow a backlog to grow for seconds after a browser/GC stall.
+    if(simAccumulator>SIM_STEP_MS*2) simAccumulator=SIM_STEP_MS*2;
+
     render(ts);
+
     if(ts-lastRankingRender>=220){
       const rankingDt=ts-lastRankingRender;
       updateMatchRanks(rankingDt);
+      updateSectors(ts);
       renderRanking();
+      const raceEvent=document.getElementById("raceEvent");
+      if(raceEvent && ts>=raceEventUntil) raceEvent.classList.add("hidden");
+      const leadBattle=document.getElementById("leadBattle");
+      if(leadBattle){
+        let first=-Infinity, second=-Infinity;
+        for(let i=0;i<players.length;i++){
+          if(players[i].done) continue;
+          const pr=currentProgress(players[i]);
+          if(pr>first){ second=first; first=pr; }
+          else if(pr>second) second=pr;
+        }
+        leadBattle.classList.toggle("hidden", !(second>-Infinity && first-second<2.0));
+      }
+      const unitName=currentRound===1?"SCOURGE":currentRound===2?"SCOUT":"WRAITH";
+      cameraLabel.textContent=`${BUILD_ID} · ${unitName} · OBS ${observers.length} · 화면 ${lastVisibleObs} · 300%`;
       lastRankingRender=ts;
     }
 
@@ -1220,10 +1359,28 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
     const r=Math.max(8.6846,view.scale*1.48*PLAYER_VISUAL_SCALE);
 
+    const now=performance.now();
+    const mdx=p.x-p.prevX, mdy=p.y-p.prevY;
+    if(mdx*mdx+mdy*mdy>0.0004){
+      const targetAngle=Math.atan2(mdy,mdx)+Math.PI/2;
+      let da=targetAngle-p.visualAngle;
+      while(da>Math.PI) da-=Math.PI*2;
+      while(da<-Math.PI) da+=Math.PI*2;
+      p.visualAngle+=da*0.18;
+      p.prevX=p.x; p.prevY=p.y;
+    }
+
     ctx.save();
     ctx.translate(x,y);
 
-    if(performance.now()<p.invUntil){
+    if(now<p.hitFxUntil){
+      const pulse=1-(p.hitFxUntil-now)/240;
+      ctx.strokeStyle="rgba(255,235,130,.95)";
+      ctx.lineWidth=Math.max(2,5*(1-pulse));
+      ctx.beginPath();ctx.arc(0,0,r*(1.15+pulse*.9),0,Math.PI*2);ctx.stroke();
+    }
+
+    if(now<p.invUntil){
       ctx.globalAlpha=.48+.35*Math.abs(Math.sin(performance.now()*.018));
       ctx.strokeStyle="#fff";
       ctx.lineWidth=3;
@@ -1235,8 +1392,9 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     if(sprite && sprite.complete && sprite.naturalWidth){
       const size=r*2.65;
       ctx.save();
-      ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.60)" : "rgba(77,141,255,.60)";
-      ctx.shadowBlur=Math.max(4,r*.35);
+      ctx.rotate(p.visualAngle);
+      ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" : "rgba(77,141,255,.45)";
+      ctx.shadowBlur=Math.max(3,r*.28);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
       ctx.restore();
     }else{
@@ -1298,8 +1456,7 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
 
     const elapsed=raceStart ? Math.max(0,(ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
-    const unitName=currentRound===1?"SCOURGE":currentRound===2?"SCOUT":"WRAITH";
-    cameraLabel.textContent=`${BUILD_ID} · ${unitName} · OBS ${observers.length} · 화면 ${visibleObs} · 300%`;
+    lastVisibleObs=visibleObs;
   }
 
   let prevRanks=new Map();
@@ -1355,6 +1512,34 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
     alert("시즌 기록을 초기화했습니다.");
   }
 
+  function pushRaceEvent(text,now=performance.now()){
+    raceEventText=text;
+    raceEventUntil=now+1600;
+    const el=document.getElementById("raceEvent");
+    if(el){ el.textContent=text; el.classList.remove("hidden"); }
+  }
+
+  function updateSectors(now){
+    if(!raceStart) return;
+    for(let i=0;i<players.length;i++){
+      const p=players[i];
+      if(p.done || p.sectorIndex>=SECTOR_MARKS.length) continue;
+      const frac=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
+      while(p.sectorIndex<SECTOR_MARKS.length && frac>=SECTOR_MARKS[p.sectorIndex]){
+        const elapsed=now-raceStart;
+        const sectorMs=elapsed-p.sectorStartMs;
+        p.sectorTimes[p.sectorIndex]=sectorMs;
+        const si=p.sectorIndex;
+        p.sectorStartMs=elapsed;
+        p.sectorIndex++;
+        if(!bestSector[si] || sectorMs<bestSector[si].time){
+          bestSector[si]={name:p.name,time:sectorMs};
+          pushRaceEvent(`BEST SECTOR ${si+1} · ${p.name} ${formatTime(sectorMs)}`,now);
+        }
+      }
+    }
+  }
+
   function updateMatchRanks(dt){
     const ordered=[...players].sort((a,b)=>currentProgress(b)-currentProgress(a));
     ordered.forEach((p,idx)=>{
@@ -1364,10 +1549,19 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       p.match.maxRankGain=Math.max(p.match.maxRankGain,p.match.startRank-rank);
       p.match.maxRankLoss=Math.max(p.match.maxRankLoss,rank-p.match.startRank);
       const prev=prevRanks.get(p.index);
-      if(prev!=null && rank<prev) p.match.overtakes += (prev-rank);
+      if(prev!=null && rank<prev){
+        p.match.overtakes += (prev-rank);
+        if(prev-rank>=1) pushRaceEvent(`${p.name} · ${prev}위 → ${rank}위`);
+      }
       prevRanks.set(p.index,rank);
     });
-    if(ordered[0] && !ordered[0].done) ordered[0].match.leadMs += dt;
+    if(ordered[0] && !ordered[0].done){
+      ordered[0].match.leadMs += dt;
+      if(lastLeaderName && lastLeaderName!==ordered[0].name){
+        pushRaceEvent(`NEW LEADER · ${ordered[0].name}`);
+      }
+      lastLeaderName=ordered[0].name;
+    }
   }
 
   function renderRanking(){
@@ -1386,7 +1580,11 @@ targetOff=Math.max(-half,Math.min(half,targetOff));
       let gap;
       if(p.done) gap=formatTime(p.finishTime);
       else if(i===0) gap="LEADER";
-      else gap=`-${Math.max(0,leaderProg-currentProgress(p)).toFixed(1)}m`;
+      else {
+        const distGap=Math.max(0,leaderProg-currentProgress(p));
+        const leaderSpeed=Math.max(1.0,ordered[0].speed||1);
+        gap=`+${(distGap/leaderSpeed).toFixed(2)}s`;
+      }
       row.innerHTML=`<span class="rank-no">${i+1}</span><span class="team-mini team-${p.team.toLowerCase()}">${p.team}</span><button class="rank-name player-link" data-player="${p.index}">${p.name}</button><span class="rank-gap">${gap}</span>`;
       row.querySelector(".player-link").addEventListener("click",()=>openPlayerCard(p));
       rankingEl.appendChild(row);
