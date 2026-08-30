@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="ko">
 <head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Observer Avoidance FM — Live</title>
@@ -10,9 +13,9 @@
   <header class="topbar">
     <div>
       <h1>OBSERVER AVOIDANCE FM</h1>
-      <p>v23 · 유저 크기 -15% · 옵저버 660기 · 옵저버 속도 -20% · 겹침/카메라 버벅임 추가 개선</p>
+      <p>v24 · 고정 구조(index.html + game.js) · 유저 -15% · 옵저버 660 · 옵저버 속도 -20%</p>
     </div>
-    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v23</div>
+    <div id="buildBadge" style="font-weight:800;margin-right:12px">BUILD v24</div>
     <div class="controls">
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
@@ -23,7 +26,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v23 · OBS 660 · 로딩 중</span>
+        <span id="cameraLabel">v24 · OBS 660 · 로딩 중</span>
         <span id="clock">00:00.0</span>
       </div>
       <canvas id="race" width="1600" height="900"></canvas>
@@ -35,6 +38,6 @@
     </aside>
   </main>
 
-  <script src="game-v23.js?v=2301"></script>
+  <script src="game.js?v=2401"></script>
 </body>
 </html>

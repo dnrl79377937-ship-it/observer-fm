@@ -11,23 +11,30 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 600;
+  const OBSERVER_COUNT = 660;
   const HIT_CHANCE = 1.00;
-  const STUN_MS = 1500;
+  const STUN_MS = 2000;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
+  const BUILD_ID = "v24";
+window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 1.40;     // unchanged collision feel
-  const PLAYER_VISUAL_SCALE = 0.50;   // requested: 50% smaller icon
-  const OBS_VISUAL_SCALE = 0.50;      // requested: 50% smaller observer
-  const OBS_SPEED_RATIO = 0.74;         // observer speed ≈ 70% of player speed
+  const PLAYER_HIT_RADIUS = 0.40;     // unchanged collision feel
+  const PLAYER_VISUAL_SCALE = 0.69292265625;   // v14 visual size
+  const OBS_VISUAL_SCALE = 0.51;      // v14 visual size
+  const OBS_SPEED_RATIO = 0.72;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
-  const AVOID_SCAN_RADIUS = 10.5;        // look ahead for nearby observers
-  const AVOID_CRITICAL_RADIUS = 4.2;     // emergency reaction zone
-  const AVOID_PREDICT_SEC = 0.95;        // predict observer positions ahead
+  const AVOID_SCAN_RADIUS = 36.0;        // look ahead for nearby observers
+  const AVOID_CRITICAL_RADIUS = 9.5;     // emergency reaction zone
+  const AVOID_PREDICT_SEC = 3.00;        // predict observer positions ahead
+  const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
+  const AVOID_SAFE_BUFFER = 6.2;
+  const AVOID_LANE_LOOKAHEAD = 2.60;   // compare future lane safety
+  const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
+        // extra body-size safety margin
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
@@ -104,7 +111,7 @@
         x:20.5, y:154.8 + (i-3.5)*0.48,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
-        speed: 9.50 + paceNorm*0.42 + Math.random()*0.08,
+        speed: (9.50 + paceNorm*0.42 + Math.random()*0.08) * 1.2075,
         desiredOffset:(i-3.5)*0.48,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hits:0, done:false, finishTime:null,
@@ -114,9 +121,42 @@
         lastProgress:0,
         lastAdvanceAt:0,
         lastX:20.5,
-        lastY:154.8 + (i-3.5)*0.48
+        lastY:154.8 + (i-3.5)*0.48,
+        avoidDecisionUntil:0,
+        avoidWillDodge:true,
+        avoidThreatId:-1,
+        resumeEaseUntil:0
       };
     });
+  }
+
+  function pickObserverLeg(o){
+    const legSeconds=OBS_MOVE_MS/1000;
+    const legDistance=o.speed*legSeconds;
+    const margin=3.5;
+
+    // Choose a straight heading whose 10-second endpoint remains inside the map.
+    // This guarantees a visibly large movement leg instead of circling locally.
+    let angle=0, found=false;
+    for(let tries=0;tries<40;tries++){
+      angle=Math.random()*Math.PI*2;
+      const ex=o.x+Math.cos(angle)*legDistance;
+      const ey=o.y+Math.sin(angle)*legDistance;
+      if(ex>=margin && ex<=MAP_W-margin && ey>=margin && ey<=MAP_H-margin){
+        found=true;
+        break;
+      }
+    }
+
+    if(!found){
+      // Near awkward edges, aim roughly toward a distant interior point.
+      const tx=MAP_W*(0.25+Math.random()*0.50);
+      const ty=MAP_H*(0.25+Math.random()*0.50);
+      angle=Math.atan2(ty-o.y,tx-o.x);
+    }
+
+    o.vx=Math.cos(angle)*o.speed;
+    o.vy=Math.sin(angle)*o.speed;
   }
 
   function spawnObservers(){
@@ -125,19 +165,19 @@
     const baseSpeed=avgPlayerSpeed*OBS_SPEED_RATIO;
 
     for(let i=0;i<OBSERVER_COUNT;i++){
-      const angle=Math.random()*Math.PI*2;
-      const speed=baseSpeed*(0.94+Math.random()*0.12);
-
-      arr.push({
-        x:3+Math.random()*(MAP_W-6),
-        y:3+Math.random()*(MAP_H-6),
-        vx:Math.cos(angle)*speed,
-        vy:Math.sin(angle)*speed,
-        speed,
+      const o={
+        id:i,
+        x:3.5+Math.random()*(MAP_W-7),
+        y:3.5+Math.random()*(MAP_H-7),
+        vx:0, vy:0,
+        speed:baseSpeed*(0.98+Math.random()*0.04),
         phase:"move",
         phaseUntil:0,
+        // Stagger phases so 600 observers do not stop simultaneously.
         cycleOffset:Math.random()*(OBS_MOVE_MS+OBS_STOP_MS)
-      });
+      };
+      pickObserverLeg(o);
+      arr.push(o);
     }
     return arr;
   }
@@ -262,19 +302,112 @@
     p.lastAdvanceAt=now;
   }
 
+
+  const OBS_GRID_SIZE = 22;
+  let observerGrid = new Map();
+
+  function rebuildObserverGrid(){
+    observerGrid.clear();
+    for(const o of observers){
+      const gx=Math.floor(o.x/OBS_GRID_SIZE);
+      const gy=Math.floor(o.y/OBS_GRID_SIZE);
+      const key=gx+","+gy;
+      let bucket=observerGrid.get(key);
+      if(!bucket){ bucket=[]; observerGrid.set(key,bucket); }
+      bucket.push(o);
+    }
+  }
+
+  const nearbyBufferPool = Array.from({length:8},()=>[]);
+  let nearbyBufferIndex=0;
+
+  function nearbyObservers(x,y,r){
+    const out=nearbyBufferPool[nearbyBufferIndex];
+    nearbyBufferIndex=(nearbyBufferIndex+1)%nearbyBufferPool.length;
+    out.length=0;
+    const minX=Math.floor((x-r)/OBS_GRID_SIZE);
+    const maxX=Math.floor((x+r)/OBS_GRID_SIZE);
+    const minY=Math.floor((y-r)/OBS_GRID_SIZE);
+    const maxY=Math.floor((y+r)/OBS_GRID_SIZE);
+    for(let gx=minX;gx<=maxX;gx++){
+      for(let gy=minY;gy<=maxY;gy++){
+        const bucket=observerGrid.get(gx+","+gy);
+        if(!bucket) continue;
+        for(let i=0;i<bucket.length;i++) out.push(bucket[i]);
+      }
+    }
+    return out;
+  }
+
   function observerVelocity(o){
     return o.phase==="move" ? [o.vx||0,o.vy||0] : [0,0];
+  }
+
+
+  function cornerInsideSide(si){
+    const i=Math.max(1,Math.min(route.length-2,si));
+    const a=route[i-1], b=route[i], c=route[i+1];
+    const v1x=b[0]-a[0], v1y=b[1]-a[1];
+    const v2x=c[0]-b[0], v2y=c[1]-b[1];
+    const cross=v1x*v2y-v1y*v2x;
+    if(Math.abs(cross)<0.20) return 0;
+    // Route normal convention: +off is right side, -off is left side.
+    // Left turn => inside is left (-1); right turn => inside is right (+1).
+    return cross>0 ? -1 : 1;
+  }
+
+  function cornerIntensity(si){
+    const i=Math.max(1,Math.min(route.length-2,si));
+    const a=route[i-1], b=route[i], c=route[i+1];
+    const v1x=b[0]-a[0], v1y=b[1]-a[1];
+    const v2x=c[0]-b[0], v2y=c[1]-b[1];
+    const l1=Math.hypot(v1x,v1y)||1, l2=Math.hypot(v2x,v2y)||1;
+    const dot=Math.max(-1,Math.min(1,(v1x*v2x+v1y*v2y)/(l1*l2)));
+    return Math.acos(dot)/Math.PI;
+  }
+
+
+
+  function openingInsideBias(si){
+    // Positive screen Y is downward. For the opening 7→5 run we explicitly
+    // target the upper wall before the vertical climb, because that is shorter.
+    if(si>=0 && si<=2) return -0.78;
+    if(si>=3 && si<=4) return -0.92;
+    if(si>=5 && si<=6) return -0.98;
+    if(si>=7 && si<=8) return -0.84;
+    if(si>=9 && si<=10) return -0.55;
+    return 0;
+  }
+
+  function futureInsideBias(si){
+    let score=0, weight=0;
+    for(let k=0;k<4;k++){
+      const idx=Math.min(route.length-2,si+k);
+      const side=cornerInsideSide(idx);
+      const power=cornerIntensity(idx);
+      if(side!==0 && power>0.025){
+        const w=1/(1+k*0.55);
+        score+=side*power*w;
+        weight+=power*w;
+      }
+    }
+    if(weight<0.01) return 0;
+    return Math.max(-1,Math.min(1,score/weight));
   }
 
   function chooseAvoidance(p,s,now){
     if(safeAt(p.x,p.y)) return null;
 
-    let nearest=null;
-    let nearestScore=Infinity;
+    let threat=null;
+    let threatScore=Infinity;
     let immediate=false;
+    let leftDanger=0, rightDanger=0;
+    let nearestFuture=Infinity;
 
-    // Predict observer positions and react before actual contact.
-    for(const o of observers){
+    const pxFuture=p.x+s.ux*p.speed*AVOID_PREDICT_SEC;
+    const pyFuture=p.y+s.uy*p.speed*AVOID_PREDICT_SEC;
+
+    for(const o of nearbyObservers(p.x,p.y,AVOID_SCAN_RADIUS)){
       const dx=o.x-p.x, dy=o.y-p.y;
       const dist=Math.hypot(dx,dy);
       if(dist>AVOID_SCAN_RADIUS) continue;
@@ -282,44 +415,96 @@
       const [ovx,ovy]=observerVelocity(o);
       const fx=o.x+ovx*AVOID_PREDICT_SEC;
       const fy=o.y+ovy*AVOID_PREDICT_SEC;
+      const futureDist=Math.hypot(fx-pxFuture,fy-pyFuture);
+      nearestFuture=Math.min(nearestFuture,futureDist);
 
-      // Compare the future observer position to a point ahead of the player.
-      const px=p.x+s.ux*p.speed*AVOID_PREDICT_SEC;
-      const py=p.y+s.uy*p.speed*AVOID_PREDICT_SEC;
-      const futureDist=Math.hypot(fx-px,fy-py);
+      // Larger player body: reserve more room around observer traffic.
+      const side=dx*s.nx+dy*s.ny;
+      const danger=Math.max(0,AVOID_SCAN_RADIUS-dist) +
+                   Math.max(0,AVOID_SCAN_RADIUS-futureDist)*1.45;
+      if(side>=0) rightDanger+=danger;
+      else leftDanger+=danger;
 
-      // Lower score = more dangerous.
-      const score=Math.min(dist*0.72+futureDist*0.95, futureDist*1.35);
-      if(score<nearestScore){
-        nearestScore=score;
-        nearest=o;
-        immediate=dist<AVOID_CRITICAL_RADIUS || futureDist<AVOID_CRITICAL_RADIUS;
+      const score=dist*0.48+futureDist*1.32;
+      if(score<threatScore){
+        threatScore=score;
+        threat=o;
+        immediate=dist<(AVOID_CRITICAL_RADIUS+AVOID_SAFE_BUFFER) ||
+                  futureDist<(AVOID_CRITICAL_RADIUS+AVOID_SAFE_BUFFER);
       }
     }
 
-    if(!nearest || nearestScore>9.6) return null;
-
-    // Find which side of the racing line has more free space.
-    const rx=nearest.x-p.x, ry=nearest.y-p.y;
-    const side=rx*s.nx+ry*s.ny;
-    const awaySide = side>=0 ? -1 : 1;
-
-    // Almost always dodge. A tiny hesitation chance keeps players from looking robotic.
-    const skill=(p.profile.control-85)/15;
-    const dodgeChance=Math.min(0.995,0.955+skill*0.04);
-    if(Math.random()>dodgeChance && !immediate) return null;
-
-    const r=Math.random();
-    if(immediate){
-      if(r<0.24) return {mode:"stop", side:awaySide, strength:1.0};
-      if(r<0.61) return {mode:"diagonal", side:awaySide, strength:1.0};
-      return {mode:"zigzag", side:awaySide, strength:1.0};
+    if(!threat || threatScore>24.0){
+      p.avoidThreatId=-1;
+      return null;
     }
 
-    if(r<0.18) return {mode:"stop", side:awaySide, strength:0.88};
-    if(r<0.58) return {mode:"diagonal", side:awaySide, strength:0.95};
-    if(r<0.83) return {mode:"zigzag", side:awaySide, strength:0.92};
-    return {mode:"wide", side:awaySide, strength:0.86};
+    // New threat => almost always react. This is intentionally higher than v14
+    // because the visible player body is now 25% larger.
+    if(p.avoidThreatId!==threat.id){
+      p.avoidThreatId=threat.id;
+      p.avoidWillDodge=Math.random()<AVOID_REACTION_CHANCE;
+    }
+    if(!p.avoidWillDodge && !immediate && nearestFuture>8.5) return null;
+
+    // Prefer the less crowded side and make a stronger move before contact.
+    const openSide = leftDanger<=rightDanger ? -1 : 1;
+    const r=Math.random();
+
+    if(immediate || nearestFuture<6.5){
+      if(r<0.10) return {mode:"stop",side:openSide,strength:1.0};
+      if(r<0.76) return {mode:"diagonal",side:openSide,strength:1.18};
+      return {mode:"zigzag",side:openSide,strength:1.08};
+    }
+
+    if(r<0.07) return {mode:"stop",side:openSide,strength:0.92};
+    if(r<0.73) return {mode:"diagonal",side:openSide,strength:1.08};
+    if(r<0.94) return {mode:"zigzag",side:openSide,strength:1.00};
+    return {mode:"wide",side:openSide,strength:0.98};
+  }
+
+
+  function optimizedLookAheadTarget(p,si){
+    const cur=segs[si];
+    const maxAhead=Math.min(segs.length-1,si+4);
+
+    // Pick a farther waypoint so the racer prepares for the next turn early,
+    // rather than blindly following every centerline point.
+    let ahead=si+1;
+    let bestTurn=0;
+    for(let j=si+1;j<=maxAhead;j++){
+      const a=segs[Math.min(segs.length-1,j-1)];
+      const b=segs[j];
+      const turn=a.ux*b.uy-a.uy*b.ux;
+      if(Math.abs(turn)>Math.abs(bestTurn)){
+        bestTurn=turn;
+        ahead=j;
+      }
+    }
+
+    const targetSeg=segs[Math.min(segs.length-1,ahead)];
+    let off=0;
+
+    // Inside of upcoming turn.
+    if(Math.abs(bestTurn)>0.02){
+      const half=Math.max(1.7,widths[Math.min(ahead,widths.length-1)]*0.58);
+      // seg.n points to the left of travel when screen coordinates are accounted for
+      // by our route geometry; use turn sign consistently with actual current offset convention.
+      off=(bestTurn>0 ? 1 : -1)*half*0.985;
+    }
+
+    let x=targetSeg.b[0]+targetSeg.nx*off;
+    let y=targetSeg.b[1]+targetSeg.ny*off;
+
+    // Opening 7→5 shortcut: stay clearly on the upper side of the horizontal run.
+    // This avoids the old behavior where following the centerline first caused a slower drop/lower arc.
+    if(si<=8){
+      const progress=Math.max(0,Math.min(1,(p.x-21)/(148-21)));
+      const upperY=154.0 - 7.2*Math.pow(progress,0.72);
+      y=Math.min(y,upperY);
+    }
+
+    return {x,y};
   }
 
   function updatePlayer(p, now, dt){
@@ -337,6 +522,24 @@
     const s=segs[si];
     const half=widths[si]*0.72;
     let targetOff=optimalOffsetFor(p);
+      // Kart-style cornering: aggressively approach the inside/apex on turns.
+      const insideSide=cornerInsideSide(si);
+      const turnPower=cornerIntensity(si);
+      if(insideSide!==0 && turnPower>0.055){
+        const halfRoad=Math.max(1.8,widths[si]*0.58);
+        const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
+        const apexBlend=Math.min(0.999,0.76+turnPower*2.10);
+        targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
+      }
+
+      // Look ahead several route segments so the racer hugs the inside wall before
+      // the corner actually begins instead of waiting until the midpoint.
+      const futureInside=futureInsideBias(si);
+      if(Math.abs(futureInside)>0.10){
+        const halfRoad2=Math.max(1.8,widths[si]*0.59);
+        const futureApex=futureInside*halfRoad2*0.998;
+        targetOff=targetOff*0.15+futureApex*0.85;
+      }
 
     // Lower line skill adds slightly more steering error, while everyone still
     // follows the optimized racing line most of the time.
@@ -349,19 +552,19 @@
     // Reactive AI: scan moving observers and use an evasive move before contact.
     const avoid=chooseAvoidance(p,s,now);
     if(avoid){
-      const evadeHalf=Math.max(2.0,widths[si]*0.82);
+      const evadeHalf=Math.max(4.2,widths[si]*1.02);
       if(avoid.mode==="stop"){
         speedMul=0;
       }else if(avoid.mode==="diagonal"){
-        targetOff += avoid.side*evadeHalf*0.92*avoid.strength;
-        speedMul=0.99;
+        targetOff += avoid.side*evadeHalf*1.34*avoid.strength;
+        speedMul=1.01;
       }else if(avoid.mode==="zigzag"){
-        targetOff += avoid.side*evadeHalf*0.72 +
-          Math.sin(now*0.031+p.index)*evadeHalf*0.32;
-        speedMul=0.95;
+        targetOff += avoid.side*evadeHalf*1.18 +
+          Math.sin(now*0.031+p.index)*evadeHalf*0.38;
+        speedMul=0.96;
       }else if(avoid.mode==="wide"){
-        targetOff += avoid.side*evadeHalf*0.88;
-        speedMul=0.92;
+        targetOff += avoid.side*evadeHalf*1.30;
+        speedMul=0.94;
       }
     }
     if(!avoid && p.controlMode==="zigzag"){
@@ -378,14 +581,18 @@
       targetOff += (p.index%2?1:-1)*half*(0.56+controlSkill*0.08);
       speedMul=0.875+controlSkill*0.065;
     }
-
-    targetOff=Math.max(-half,Math.min(half,targetOff));
-    p.desiredOffset += (targetOff-p.desiredOffset)*Math.min(1,dt*0.006);
+targetOff=Math.max(-half,Math.min(half,targetOff));
+    p.desiredOffset += (targetOff-p.desiredOffset)*Math.min(0.095,dt*0.0035);
 
     // Look ahead to create smoother apex cutting.
     const next=segs[Math.min(segs.length-1,si+1)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
+    const optTarget=optimizedLookAheadTarget(p,si);
+    const optBlend = si<=8 ? 0.72 : 0.46;
+    tx=tx*(1-optBlend)+optTarget.x*optBlend;
+    ty=ty*(1-optBlend)+optTarget.y*optBlend;
+
     if(next && si<segs.length-1){
       const look=0.24;
       const nx=next.b[0]+next.nx*p.desiredOffset;
@@ -433,7 +640,7 @@
 
     // Collision check: actual contact = guaranteed stop outside invincible safe zones.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
-      for(const o of observers){
+      for(const o of nearbyObservers(p.x,p.y,PLAYER_HIT_RADIUS+1.0)){
         if(Math.abs(o.x-p.x)>PLAYER_HIT_RADIUS || Math.abs(o.y-p.y)>PLAYER_HIT_RADIUS) continue;
         if(Math.hypot(p.x-o.x,p.y-o.y)<PLAYER_HIT_RADIUS){
           p.hits++;
@@ -447,7 +654,7 @@
 
   function updateObservers(now,dt=16){
     const sec=Math.min(0.05,Math.max(0,dt/1000));
-    const margin=2.2;
+    const margin=2.8;
 
     for(const o of observers){
       if(!o.phaseUntil){
@@ -458,8 +665,7 @@
         }else{
           o.phase="stop";
           o.phaseUntil=now+(OBS_MOVE_MS+OBS_STOP_MS-offset);
-          o.vx=0;
-          o.vy=0;
+          o.vx=0; o.vy=0;
         }
         o.cycleOffset=0;
       }
@@ -468,17 +674,12 @@
         if(o.phase==="move"){
           o.phase="stop";
           o.phaseUntil=now+OBS_STOP_MS;
-          o.vx=0;
-          o.vy=0;
+          o.vx=0; o.vy=0;
         }else{
-          // New random heading after every 1 second stop.
-          // Keep the magnitude high enough that the 10-second leg is clearly visible.
-          const angle=Math.random()*Math.PI*2;
-          o.speed=(9.72*OBS_SPEED_RATIO)*(0.94+Math.random()*0.12);
-          o.vx=Math.cos(angle)*o.speed;
-          o.vy=Math.sin(angle)*o.speed;
           o.phase="move";
           o.phaseUntil=now+OBS_MOVE_MS;
+          o.speed=(9.72*OBS_SPEED_RATIO)*(0.98+Math.random()*0.04);
+          pickObserverLeg(o);
         }
       }
 
@@ -486,41 +687,66 @@
         o.x+=o.vx*sec;
         o.y+=o.vy*sec;
 
-        // Full-map free movement. Bounce only at the outer map border.
-        if(o.x<margin){
-          o.x=margin; o.vx=Math.abs(o.vx);
-        }else if(o.x>MAP_W-margin){
-          o.x=MAP_W-margin; o.vx=-Math.abs(o.vx);
-        }
-        if(o.y<margin){
-          o.y=margin; o.vy=Math.abs(o.vy);
-        }else if(o.y>MAP_H-margin){
-          o.y=MAP_H-margin; o.vy=-Math.abs(o.vy);
-        }
+        // Safety only: keep the observer inside the map. The selected leg normally
+        // avoids these borders, so direction changes occur after the 1-second stop.
+        if(o.x<margin){ o.x=margin; o.vx=Math.abs(o.vx); }
+        else if(o.x>MAP_W-margin){ o.x=MAP_W-margin; o.vx=-Math.abs(o.vx); }
+        if(o.y<margin){ o.y=margin; o.vy=Math.abs(o.vy); }
+        else if(o.y>MAP_H-margin){ o.y=MAP_H-margin; o.vy=-Math.abs(o.vy); }
       }
     }
   }
 
+  let cameraLeaderId=-1;
+  let cameraLeaderHoldUntil=0;
+
   function updateCamera(dt){
-    const active=players.filter(p=>!p.done).sort((a,b)=>currentProgress(b)-currentProgress(a));
-    if(!active.length) return;
-    const leader=active[0];
-    let tx=leader.x,ty=leader.y;
-    if(active[1] && currentProgress(leader)-currentProgress(active[1])<2.5){
-      tx=leader.x*.82+active[1].x*.18;
-      ty=leader.y*.82+active[1].y*.18;
+    const active=[];
+    for(const p of players){
+      if(!p.done) active.push({p,prog:currentProgress(p)});
     }
-    const a=Math.min(1,dt*0.006);
+    active.sort((a,b)=>b.prog-a.prog);
+    if(!active.length) return;
+
+    const now=performance.now();
+    const top=active[0].p;
+    let leader=top;
+    const heldEntry=active.find(e=>e.p.index===cameraLeaderId);
+    const held=heldEntry?heldEntry.p:null;
+
+    if(held && now<cameraLeaderHoldUntil){
+      const topProg=active[0].prog;
+      const gap=topProg-heldEntry.prog;
+      if(gap<8.0) leader=held;
+    }
+    if(!held || leader===top && top.index!==cameraLeaderId){
+      cameraLeaderId=leader.index;
+      cameraLeaderHoldUntil=now+1100;
+    }
+
+    let tx=leader.x,ty=leader.y;
+    const secondEntry=active.find(e=>e.p!==leader);
+    const second=secondEntry?secondEntry.p:null;
+    if(second){
+      const leaderEntry=active.find(e=>e.p===leader);
+      const leaderProg=leaderEntry?leaderEntry.prog:currentProgress(leader);
+      if(Math.abs(leaderProg-secondEntry.prog)<1.6){
+      tx=leader.x*.94+second.x*.06;
+        ty=leader.y*.94+second.y*.06;
+      }
+    }
+    const a=Math.min(0.085,dt*0.0028);
     camX+=(tx-camX)*a; camY+=(ty-camY)*a;
   }
 
   function loop(ts){
     if(!running) return;
     // Clamp dt so background-tab stalls never make the simulation explode.
-    const dt=Math.min(32,Math.max(0,ts-lastTs));
+    const dt=Math.min(18,Math.max(0,ts-lastTs));
     lastTs=ts;
 
     updateObservers(ts,dt);
+    rebuildObserverGrid();
     for(const p of players) updatePlayer(p,ts,dt);
     updateCamera(dt);
     render(ts);
@@ -552,12 +778,12 @@
   function drawObserver(o,view){
     const [x,y]=worldToScreen(o.x,o.y,view);
     if(x<-12||y<-12||x>canvas.width+12||y>canvas.height+12) return;
-    const r=Math.max(2.1,view.scale*0.72*OBS_VISUAL_SCALE);
+    const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
     ctx.save();
     ctx.translate(x,y);
     ctx.fillStyle="#d6e8ff";
     ctx.strokeStyle="#5f89ad";
-    ctx.lineWidth=Math.max(0.7,view.scale*.11*OBS_VISUAL_SCALE);
+    ctx.lineWidth=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
     ctx.beginPath();ctx.ellipse(0,0,r*1.20,r*.72,0,0,Math.PI*2);ctx.fill();ctx.stroke();
     ctx.fillStyle="#83bcdf";
     ctx.beginPath();ctx.arc(r*.20,0,r*.30,0,Math.PI*2);ctx.fill();
@@ -567,7 +793,7 @@
   function drawPlayer(p,view,rank){
     const [x,y]=worldToScreen(p.x,p.y,view);
     if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
-    const r=Math.max(5,view.scale*1.15*PLAYER_VISUAL_SCALE);
+    const r=Math.max(8.6846,view.scale*1.48*PLAYER_VISUAL_SCALE);
 
     ctx.save();
     ctx.translate(x,y);
@@ -605,18 +831,6 @@
     ctx.fillStyle="#fff";ctx.textBaseline="bottom";
     ctx.fillText(label,0,ly-2);
 
-    if(p.controlMode!=="normal"){
-      const label2={zigzag:"지그재그",backcon:"빽컨",stopcon:"스탑컨",wide:"외곽"}[p.controlMode];
-      ctx.font=`800 ${Math.max(10,r*.54)}px system-ui`;
-      ctx.fillStyle="#ffe28a";ctx.textBaseline="top";
-      ctx.fillText(label2,0,ly+2);
-    }
-    if(performance.now()<p.stunUntil){
-      ctx.font=`900 ${Math.max(12,r*.62)}px system-ui`;
-      ctx.fillStyle="#ff626b";ctx.textBaseline="middle";
-      ctx.fillText("STOP",0,-r*2.35);
-    }
-
     ctx.restore();
   }
 
@@ -637,7 +851,12 @@
 
     const elapsed=raceStart ? Math.max(0,(ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
-    cameraLabel.textContent="300% · 선두 선수 추적";
+    let visibleObs=0;
+    for(const o of observers){
+      const [ox,oy]=worldToScreen(o.x,o.y,view);
+      if(ox>=0 && oy>=0 && ox<=canvas.width && oy<=canvas.height) visibleObs++;
+    }
+    cameraLabel.textContent=`${BUILD_ID} · OBS ${observers.length} · 화면 ${visibleObs} · 300%`;
   }
 
   function renderRanking(){
