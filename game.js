@@ -11,8 +11,8 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 257, MAP_H = 178;
-  const OBSERVER_COUNT = 300;
-  const HIT_CHANCE = 0.04;
+  const OBSERVER_COUNT = 600;
+  const HIT_CHANCE = 1.00;
   const STUN_MS = 1500;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.0;
@@ -21,10 +21,13 @@
   const PLAYER_HIT_RADIUS = 1.40;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.50;   // requested: 50% smaller icon
   const OBS_VISUAL_SCALE = 0.50;      // requested: 50% smaller observer
-  const OBS_SPEED_RATIO = 0.70;         // observer speed ≈ 70% of player speed
+  const OBS_SPEED_RATIO = 0.74;         // observer speed ≈ 70% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
+  const AVOID_SCAN_RADIUS = 10.5;        // look ahead for nearby observers
+  const AVOID_CRITICAL_RADIUS = 4.2;     // emergency reaction zone
+  const AVOID_PREDICT_SEC = 0.95;        // predict observer positions ahead
   const ROAD_MARGIN = 0.90;           // keep units inside the drivable corridor
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
@@ -32,7 +35,7 @@
   const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e"];
 
   // Hidden FM-style driving profiles.
-  // These do not change the 4% collision rule; they only change line precision,
+  // These shape line precision, pace and evasive-control behavior,
   // raw pace and how often/skillfully each player uses special controls.
   const profiles = [
     { pace:96, line:95, control:91, aggression:82 }, // Angel
@@ -123,7 +126,7 @@
 
     for(let i=0;i<OBSERVER_COUNT;i++){
       const angle=Math.random()*Math.PI*2;
-      const speed=baseSpeed*(0.88+Math.random()*0.24);
+      const speed=baseSpeed*(0.94+Math.random()*0.12);
 
       arr.push({
         x:3+Math.random()*(MAP_W-6),
@@ -259,6 +262,66 @@
     p.lastAdvanceAt=now;
   }
 
+  function observerVelocity(o){
+    return o.phase==="move" ? [o.vx||0,o.vy||0] : [0,0];
+  }
+
+  function chooseAvoidance(p,s,now){
+    if(safeAt(p.x,p.y)) return null;
+
+    let nearest=null;
+    let nearestScore=Infinity;
+    let immediate=false;
+
+    // Predict observer positions and react before actual contact.
+    for(const o of observers){
+      const dx=o.x-p.x, dy=o.y-p.y;
+      const dist=Math.hypot(dx,dy);
+      if(dist>AVOID_SCAN_RADIUS) continue;
+
+      const [ovx,ovy]=observerVelocity(o);
+      const fx=o.x+ovx*AVOID_PREDICT_SEC;
+      const fy=o.y+ovy*AVOID_PREDICT_SEC;
+
+      // Compare the future observer position to a point ahead of the player.
+      const px=p.x+s.ux*p.speed*AVOID_PREDICT_SEC;
+      const py=p.y+s.uy*p.speed*AVOID_PREDICT_SEC;
+      const futureDist=Math.hypot(fx-px,fy-py);
+
+      // Lower score = more dangerous.
+      const score=Math.min(dist*0.72+futureDist*0.95, futureDist*1.35);
+      if(score<nearestScore){
+        nearestScore=score;
+        nearest=o;
+        immediate=dist<AVOID_CRITICAL_RADIUS || futureDist<AVOID_CRITICAL_RADIUS;
+      }
+    }
+
+    if(!nearest || nearestScore>9.6) return null;
+
+    // Find which side of the racing line has more free space.
+    const rx=nearest.x-p.x, ry=nearest.y-p.y;
+    const side=rx*s.nx+ry*s.ny;
+    const awaySide = side>=0 ? -1 : 1;
+
+    // Almost always dodge. A tiny hesitation chance keeps players from looking robotic.
+    const skill=(p.profile.control-85)/15;
+    const dodgeChance=Math.min(0.995,0.955+skill*0.04);
+    if(Math.random()>dodgeChance && !immediate) return null;
+
+    const r=Math.random();
+    if(immediate){
+      if(r<0.24) return {mode:"stop", side:awaySide, strength:1.0};
+      if(r<0.61) return {mode:"diagonal", side:awaySide, strength:1.0};
+      return {mode:"zigzag", side:awaySide, strength:1.0};
+    }
+
+    if(r<0.18) return {mode:"stop", side:awaySide, strength:0.88};
+    if(r<0.58) return {mode:"diagonal", side:awaySide, strength:0.95};
+    if(r<0.83) return {mode:"zigzag", side:awaySide, strength:0.92};
+    return {mode:"wide", side:awaySide, strength:0.86};
+  }
+
   function updatePlayer(p, now, dt){
     if(p.done) return;
 
@@ -282,17 +345,36 @@
 
     let speedMul=1;
     const controlSkill=(p.profile.control-85)/15;
-    if(p.controlMode==="zigzag"){
+
+    // Reactive AI: scan moving observers and use an evasive move before contact.
+    const avoid=chooseAvoidance(p,s,now);
+    if(avoid){
+      const evadeHalf=Math.max(2.0,widths[si]*0.82);
+      if(avoid.mode==="stop"){
+        speedMul=0;
+      }else if(avoid.mode==="diagonal"){
+        targetOff += avoid.side*evadeHalf*0.92*avoid.strength;
+        speedMul=0.99;
+      }else if(avoid.mode==="zigzag"){
+        targetOff += avoid.side*evadeHalf*0.72 +
+          Math.sin(now*0.031+p.index)*evadeHalf*0.32;
+        speedMul=0.95;
+      }else if(avoid.mode==="wide"){
+        targetOff += avoid.side*evadeHalf*0.88;
+        speedMul=0.92;
+      }
+    }
+    if(!avoid && p.controlMode==="zigzag"){
       targetOff += Math.sin(now*0.020+p.index)*half*(0.50+controlSkill*0.10);
       speedMul=0.925+controlSkill*0.055;
-    } else if(p.controlMode==="backcon"){
+    } else if(!avoid && p.controlMode==="backcon"){
       const elapsed=now-p.modeStart;
       targetOff += Math.sin(now*0.024+p.index)*half*(0.39+controlSkill*0.08);
       const reverseMs=300-controlSkill*90;
       speedMul = elapsed<reverseMs ? (-0.32+controlSkill*0.06) : (1.11+controlSkill*0.08);
-    } else if(p.controlMode==="stopcon"){
+    } else if(!avoid && p.controlMode==="stopcon"){
       speedMul=0;
-    } else if(p.controlMode==="wide"){
+    } else if(!avoid && p.controlMode==="wide"){
       targetOff += (p.index%2?1:-1)*half*(0.56+controlSkill*0.08);
       speedMul=0.875+controlSkill*0.065;
     }
@@ -349,17 +431,14 @@
 
     rescueIfStuck(p,now);
 
-    // Collision check. 4% is per encounter, not every animation frame.
+    // Collision check: actual contact = guaranteed stop outside invincible safe zones.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
       for(const o of observers){
-        if(Math.abs(o.seg-p.seg)>1) continue;
+        if(Math.abs(o.x-p.x)>PLAYER_HIT_RADIUS || Math.abs(o.y-p.y)>PLAYER_HIT_RADIUS) continue;
         if(Math.hypot(p.x-o.x,p.y-o.y)<PLAYER_HIT_RADIUS){
-          p.collisionLockUntil=now+280; // debounce one overlap
-          if(Math.random()<HIT_CHANCE){
-            p.hits++;
-            p.stunUntil=now+STUN_MS;
-            p.collisionLockUntil=now+STUN_MS+INV_MS;
-          }
+          p.hits++;
+          p.stunUntil=now+STUN_MS;
+          p.collisionLockUntil=now+STUN_MS+INV_MS;
           break;
         }
       }
@@ -368,7 +447,7 @@
 
   function updateObservers(now,dt=16){
     const sec=Math.min(0.05,Math.max(0,dt/1000));
-    const margin=3.0;
+    const margin=2.2;
 
     for(const o of observers){
       if(!o.phaseUntil){
@@ -387,15 +466,15 @@
 
       if(now>=o.phaseUntil){
         if(o.phase==="move"){
-          // 10 seconds moving -> 1 second stopped.
           o.phase="stop";
           o.phaseUntil=now+OBS_STOP_MS;
           o.vx=0;
           o.vy=0;
         }else{
-          // After stopping, choose a completely new random direction.
+          // New random heading after every 1 second stop.
+          // Keep the magnitude high enough that the 10-second leg is clearly visible.
           const angle=Math.random()*Math.PI*2;
-          o.speed=(9.72*OBS_SPEED_RATIO)*(0.88+Math.random()*0.24);
+          o.speed=(9.72*OBS_SPEED_RATIO)*(0.94+Math.random()*0.12);
           o.vx=Math.cos(angle)*o.speed;
           o.vy=Math.sin(angle)*o.speed;
           o.phase="move";
@@ -407,22 +486,16 @@
         o.x+=o.vx*sec;
         o.y+=o.vy*sec;
 
-        // Free random roaming over the whole map, independent of the race route.
-        // Edge contact reflects the direction so observers stay inside the map.
+        // Full-map free movement. Bounce only at the outer map border.
         if(o.x<margin){
-          o.x=margin;
-          o.vx=Math.abs(o.vx);
+          o.x=margin; o.vx=Math.abs(o.vx);
         }else if(o.x>MAP_W-margin){
-          o.x=MAP_W-margin;
-          o.vx=-Math.abs(o.vx);
+          o.x=MAP_W-margin; o.vx=-Math.abs(o.vx);
         }
-
         if(o.y<margin){
-          o.y=margin;
-          o.vy=Math.abs(o.vy);
+          o.y=margin; o.vy=Math.abs(o.vy);
         }else if(o.y>MAP_H-margin){
-          o.y=MAP_H-margin;
-          o.vy=-Math.abs(o.vy);
+          o.y=MAP_H-margin; o.vy=-Math.abs(o.vy);
         }
       }
     }
