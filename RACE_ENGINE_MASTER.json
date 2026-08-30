@@ -1,0 +1,19 @@
+{
+  "build": "v2.30",
+  "schema": "observer-fm-race-result@1",
+  "event": "observerfm:matchcomplete",
+  "global_api": "window.ObserverFMRaceEngine",
+  "result_global": "window.__OBSERVER_FM_LAST_RESULT__",
+  "invariants": {
+    "observers": 600,
+    "players": 8,
+    "stun_ms": 2000,
+    "inv_ms": 1000,
+    "player_hit_radius": 0.36,
+    "camera_zoom": 3.0,
+    "sim_hz": 50,
+    "player_player_collision": false,
+    "safe_zone_invulnerability": true,
+    "base_speed_multiplier": 1.464395625
+  }
+}
