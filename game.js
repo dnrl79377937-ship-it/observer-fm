@@ -23,7 +23,7 @@
   const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.43";
+  const BUILD_ID = "v3.44";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -368,7 +368,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
-        motionWatchX:20.5, motionWatchY:154.8 + (i-5.5)*0.40, motionWatchAt:0, noMotionSince:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -978,36 +977,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return Math.max(lo,Math.min(hi,lateral));
   }
 
-  const FAST_SHORTCUTS=[
-    {fromSeg:15,toSeg:21,half:6.6,pts:[[64,108],[50,107],[38,103],[29,96],[23,87],[20,76]]}
-  ];
-  function nearestOnPolyline(x,y,pts){
-    let best=null;
-    for(let i=0;i<pts.length-1;i++){
-      const a=pts[i],b=pts[i+1],vx=b[0]-a[0],vy=b[1]-a[1],vv=vx*vx+vy*vy||1;
-      const t=Math.max(0,Math.min(1,((x-a[0])*vx+(y-a[1])*vy)/vv));
-      const px=a[0]+vx*t,py=a[1]+vy*t,dx=x-px,dy=y-py,d2=dx*dx+dy*dy;
-      if(!best||d2<best.d2)best={x:px,y:py,d2,i,t};
-    }
-    return best;
-  }
-  function applyFastShortcutCorridor(p){
-    for(const sc of FAST_SHORTCUTS){
-      if(p.seg<sc.fromSeg||p.seg>sc.toSeg)continue;
-      const q=nearestOnPolyline(p.x,p.y,sc.pts);if(!q)continue;
-      const dist=Math.sqrt(q.d2);
-      if(dist<=sc.half+1.6){
-        if(dist>sc.half){const k=sc.half/dist;p.x=q.x+(p.x-q.x)*k;p.y=q.y+(p.y-q.y)*k;}
-        // v3.43: shortcut geometry must never advance route state.
-        // Normal checkpoint/segment progression is the only source of truth.
-        return true;
-      }
-    }
-    return false;
-  }
-
   function clampToRoad(p){
-    if(applyFastShortcutCorridor(p)) return;
     const si=Math.min(p.seg,segs.length-1);
     const s=segs[si];
 
@@ -2693,23 +2663,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p.resumeEaseUntil=now+(470-recovery*150);
     }
 
-    // v3.43: rescue only unexplained geometry/path stalls; real collision stun is untouched.
-    if(!p.motionWatchAt){p.motionWatchAt=now;p.motionWatchX=p.x;p.motionWatchY=p.y;}
-    if(now-p.motionWatchAt>=420){
-      const moved=Math.hypot(p.x-p.motionWatchX,p.y-p.motionWatchY);
-      if(moved<.16){
-        p.noMotionSince=p.noMotionSince||now;
-        if(now-p.noMotionSince>520){
-          const rs=segs[Math.min(p.seg,segs.length-1)];
-          p.x+=rs.ux*.38;p.y+=rs.uy*.38;
-          p.desiredOffset*=.78;
-          p.avoidPlanUntil=0;
-          p.noMotionSince=0;
-        }
-      }else p.noMotionSince=0;
-      p.motionWatchX=p.x;p.motionWatchY=p.y;p.motionWatchAt=now;
-    }
-
     chooseControl(p,now,dt);
 
     // v2.60 collision-free confidence: grows over ~12s, resets only on actual observer hit.
@@ -2907,41 +2860,42 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
     const yellowSteerBoost=(now<(p.yellowPriorityUntil||0) && specialInsideSide(si)!==0)?1.38:1;
-    const steerEase=Math.min(.125,dt*(.00265+steerControl*.00058+steerTurn*.00062)*yellowSteerBoost);
+    const steerEase=Math.min(.120,dt*(.00258+steerControl*.00057+steerTurn*.00058)*yellowSteerBoost);
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
     const next=segs[Math.min(segs.length-1,si+1)];
     const next2=segs[Math.min(segs.length-1,si+2)];
+    const next3=segs[Math.min(segs.length-1,si+3)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
-    let optTarget=optimizedLookAheadTarget(p,si,now);
-    if(si>=15 && si<=21){
-      const sc=FAST_SHORTCUTS[0],q=nearestOnPolyline(p.x,p.y,sc.pts);
-      if(q){
-        const aim=sc.pts[Math.min(sc.pts.length-1,q.i+2)];
-        optTarget={x:aim[0],y:aim[1],off:optTarget.off};
-      }
-    }
+    const optTarget=optimizedLookAheadTarget(p,si,now);
     const cornerLook=cornerIntensity(si);
-    const optBlend = (si>=15&&si<=21) ? .88 : (si<=8 ? .80 : Math.min(.80,.64+cornerLook*.32));
+    const optBlend = si<=8 ? .80 : Math.min(.82,.66+cornerLook*.30);
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
     // v3.2 smooth racing arc: aim through the next two segment exits.
     // This cuts the corner diagonally instead of moving to a joint and turning 90 degrees.
     if(next && si<segs.length-1){
-      const look=Math.min(.42,.25+cornerLook*.22);
+      const look=Math.min(.44,.27+cornerLook*.21);
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
       ty=ty*(1-look)+ny*look;
       if(next2 && si<segs.length-2){
-        const look2=Math.min(.25,.12+cornerLook*.13);
+        const look2=Math.min(.27,.13+cornerLook*.14);
         const n2x=next2.b[0]+next2.nx*p.desiredOffset;
         const n2y=next2.b[1]+next2.ny*p.desiredOffset;
         tx=tx*(1-look2)+n2x*look2;
         ty=ty*(1-look2)+n2y*look2;
+        if(next3 && si<segs.length-3 && cornerLook>.045){
+          const look3=Math.min(.16,.07+cornerLook*.10);
+          const n3x=next3.b[0]+next3.nx*p.desiredOffset;
+          const n3y=next3.b[1]+next3.ny*p.desiredOffset;
+          tx=tx*(1-look3)+n3x*look3;
+          ty=ty*(1-look3)+n3y*look3;
+        }
       }
     }
 
@@ -5381,7 +5335,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v343SelfAudit(){
+  function v344SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==400)issues.push("옵저버400");
@@ -5395,7 +5349,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v343SelfAudit,
+    version:BUILD_ID,selfAudit:v344SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),

@@ -1,5 +1,5 @@
 {
-  "build": "v3.43",
+  "build": "v3.44",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Fixed sudden unexplained racer stops introduced by v3.42 shortcut. Shortcut corridor no longer mutates route segment state; normal progression remains authoritative. Added non-collision motion watchdog for geometry stalls without bypassing real 1.8s collision stun. v3.42 diagonal inside routing retained."
+  "notes": "Rolled movement engine back to stable v3.41 to eliminate v3.42+ 9-o'clock deadlock. No custom shortcut corridor, no route-segment mutation, no motion watchdog. Diagonal optimization is now steering-target-only via farther lookahead/next3 blending, leaving original clamp and segment advancement intact. Stun remains 1.8s."
 }
