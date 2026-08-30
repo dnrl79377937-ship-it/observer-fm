@@ -20,10 +20,10 @@
   const MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 400;
   const HIT_CHANCE = 1.00;
-  const STUN_MS = 2000;
+  const STUN_MS = 1800;
   const INV_MS = 1000;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.4";
+  const BUILD_ID = "v3.42";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const unitSprites={
@@ -39,7 +39,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";   unitSprites[4].D.src="mutalisk_d.png";
   unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";   unitSprites[5].D.src="queen_d.png";
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.38;     // unchanged collision feel
+  const PLAYER_HIT_RADIUS = 0.40;     // unchanged collision feel
   const PLAYER_VISUAL_SCALE = 0.69;   // v14 visual size
   const OBS_VISUAL_SCALE = 0.612;      // v14 visual size
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
@@ -321,13 +321,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const paceNorm=(pf.pace-90)/10;
       const consistency=(stats.consistency-72)/27;
       const luck=(stats.luck-72)/27;
-      const formSpread=.030-consistency*.012;
+      const formSpread=.016-consistency*.007;
       const formRoll=(Math.random()+Math.random()+Math.random()-1.5)/1.5;
-      const raceForm=Math.max(.978,Math.min(1.022,1+formRoll*formSpread+(luck-.5)*.004));
+      const raceForm=Math.max(.990,Math.min(1.010,1+formRoll*formSpread+(luck-.5)*.002));
       // v2.55: survival-minded racers trade distance for safety.
       const survivalNorm=Math.max(0,Math.min(1,
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
-      const wideDetourRace=Math.random()<.07;
+      const wideDetourRace=Math.random()<.04;
       const wideDetourSide=Math.random()<.5?-1:1;
       return {
         index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
@@ -358,12 +358,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // Pace creates small but meaningful differences, not runaway gaps.
         speed: (
           9.43
-          + paceNorm*0.31
-          + ((stats.acceleration-85)/14)*0.075
-          + ((stats.consistency-85)/14)*0.045
-          + ((stats.endurance-85)/14)*0.030
-          + ((stats.luck-85)/14)*0.012
-          + Math.random()*0.035
+          + paceNorm*0.13
+          + ((stats.acceleration-85)/14)*0.034
+          + ((stats.consistency-85)/14)*0.020
+          + ((stats.endurance-85)/14)*0.014
+          + ((stats.luck-85)/14)*0.005
+          + Math.random()*0.012
         ) * 1.464395625,
         desiredOffset:(i-5.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
@@ -673,12 +673,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v2.7 explicit start reaction: 0.045–0.220 s.
         const reactionNoise=(Math.random()-.5)*(46-consistency*14);
         p.startReactionMs=Math.max(45,Math.min(220,
-          186-reaction*42-focus*28-start*30-pressure*16+reactionNoise-(p.raceForm-1)*110));
+          174-reaction*25-focus*16-start*18-pressure*10+reactionNoise*.55-(p.raceForm-1)*70));
         p.startExecution=Math.max(.965,Math.min(1.035,
-          .985+skill*.043+(p.raceForm-1)*.18+(Math.random()-.5)*(.014-consistency*.004)));
+          .992+skill*.022+(p.raceForm-1)*.10+(Math.random()-.5)*(.007-consistency*.002)));
 
         const jitter=(Math.random()-.5)*(.016-consistency*.005);
-        p.startLaunchMul=Math.max(.965,Math.min(1.045,.984+skill*.050+jitter+(p.raceForm-1)*.16));
+        p.startLaunchMul=Math.max(.965,Math.min(1.045,.992+skill*.025+jitter*.55+(p.raceForm-1)*.09));
         p.startLaunchUntil=now+1750+Math.random()*350;
       }
     }
@@ -977,7 +977,37 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return Math.max(lo,Math.min(hi,lateral));
   }
 
+  const FAST_SHORTCUTS=[
+    {fromSeg:15,toSeg:21,half:6.6,pts:[[64,108],[50,107],[38,103],[29,96],[23,87],[20,76]]}
+  ];
+  function nearestOnPolyline(x,y,pts){
+    let best=null;
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i],b=pts[i+1],vx=b[0]-a[0],vy=b[1]-a[1],vv=vx*vx+vy*vy||1;
+      const t=Math.max(0,Math.min(1,((x-a[0])*vx+(y-a[1])*vy)/vv));
+      const px=a[0]+vx*t,py=a[1]+vy*t,dx=x-px,dy=y-py,d2=dx*dx+dy*dy;
+      if(!best||d2<best.d2)best={x:px,y:py,d2,i,t};
+    }
+    return best;
+  }
+  function applyFastShortcutCorridor(p){
+    for(const sc of FAST_SHORTCUTS){
+      if(p.seg<sc.fromSeg||p.seg>sc.toSeg)continue;
+      const q=nearestOnPolyline(p.x,p.y,sc.pts);if(!q)continue;
+      const dist=Math.sqrt(q.d2);
+      if(dist<=sc.half+2.4){
+        if(dist>sc.half){const k=sc.half/dist;p.x=q.x+(p.x-q.x)*k;p.y=q.y+(p.y-q.y)*k;}
+        const progress=(q.i+q.t)/(sc.pts.length-1);
+        const shortcutSeg=Math.round(sc.fromSeg+progress*(sc.toSeg-sc.fromSeg));
+        if(shortcutSeg>p.seg)p.seg=Math.min(sc.toSeg,shortcutSeg);
+        return true;
+      }
+    }
+    return false;
+  }
+
   function clampToRoad(p){
+    if(applyFastShortcutCorridor(p)) return;
     const si=Math.min(p.seg,segs.length-1);
     const s=segs[si];
 
@@ -2430,12 +2460,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function optimizedLookAheadTarget(p,si,now){
     const routeRead=(p.stats.routeReading-72)/27;
-    const maxAhead=Math.min(segs.length-1,si+4+Math.round(routeRead*2));
+    const maxAhead=Math.min(segs.length-1,si+6+Math.round(routeRead*2));
     const plannedOff=plannedRacingOffset(p,si,now);
 
     // Aim farther ahead than one centerline point. This is what lets the racer
     // cut a smooth diagonal instead of following the polyline point-by-point.
-    let ahead=Math.min(segs.length-1,si+2);
+    let ahead=Math.min(segs.length-1,si+3);
     let strongest=0;
     for(let j=si+1;j<=maxAhead;j++){
       const a=segs[Math.max(0,j-1)];
@@ -2860,7 +2890,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
     const yellowSteerBoost=(now<(p.yellowPriorityUntil||0) && specialInsideSide(si)!==0)?1.38:1;
-    const steerEase=Math.min(.105,dt*(.00245+steerControl*.00055+steerTurn*.00045)*yellowSteerBoost);
+    const steerEase=Math.min(.125,dt*(.00265+steerControl*.00058+steerTurn*.00062)*yellowSteerBoost);
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
@@ -2868,22 +2898,29 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const next2=segs[Math.min(segs.length-1,si+2)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
-    const optTarget=optimizedLookAheadTarget(p,si,now);
+    let optTarget=optimizedLookAheadTarget(p,si,now);
+    if(si>=15 && si<=21){
+      const sc=FAST_SHORTCUTS[0],q=nearestOnPolyline(p.x,p.y,sc.pts);
+      if(q){
+        const aim=sc.pts[Math.min(sc.pts.length-1,q.i+2)];
+        optTarget={x:aim[0],y:aim[1],off:optTarget.off};
+      }
+    }
     const cornerLook=cornerIntensity(si);
-    const optBlend = si<=8 ? 0.78 : Math.min(.72,.58+cornerLook*.28);
+    const optBlend = (si>=15&&si<=21) ? .88 : (si<=8 ? .80 : Math.min(.80,.64+cornerLook*.32));
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
     // v3.2 smooth racing arc: aim through the next two segment exits.
     // This cuts the corner diagonally instead of moving to a joint and turning 90 degrees.
     if(next && si<segs.length-1){
-      const look=Math.min(.34,.20+cornerLook*.18);
+      const look=Math.min(.42,.25+cornerLook*.22);
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
       ty=ty*(1-look)+ny*look;
       if(next2 && si<segs.length-2){
-        const look2=Math.min(.18,.08+cornerLook*.10);
+        const look2=Math.min(.25,.12+cornerLook*.13);
         const n2x=next2.b[0]+next2.nx*p.desiredOffset;
         const n2y=next2.b[1]+next2.ny*p.desiredOffset;
         tx=tx*(1-look2)+n2x*look2;
@@ -2900,7 +2937,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     const steerLen=Math.hypot(p.steerX,p.steerY)||1;
 
     // v2.54 CONTINUOUS-RUN ACCELERATION:
-    // uninterrupted forward running ramps to +7% effective pace over 2.6 s.
+    // uninterrupted forward running ramps to +10% effective pace over 2.6 s.
     // Any stop/reverse/backcon resets the build-up. Zigzag/normal moving dodges can
     // preserve momentum, rewarding the racer who keeps moving on the same line.
     const uninterruptedForward =
@@ -2914,7 +2951,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
       p.continuousRunMs=0;
     }
     const runFactor=Math.max(0,Math.min(1,(p.continuousRunMs||0)/2600));
-    p.continuousRunMul=1+runFactor*.05;
+    p.continuousRunMul=1+runFactor*.10;
     if(speedMul>0) speedMul*=p.continuousRunMul;
 
     // v3.3 오른쪽 3시 구간(seg 5~11): 실제 옵저버 위협/컨트롤이 없으면
@@ -3773,7 +3810,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
 
     if(now<p.hitFxUntil){
       const pulse=1-(p.hitFxUntil-now)/240;
-      ctx.strokeStyle="rgba(255,235,130,.95)";
+      ctx.strokeStyle="rgba(255,55,55,.98)";
       ctx.lineWidth=Math.max(2,5*(1-pulse));
       ctx.beginPath();ctx.arc(0,0,r*(1.15+pulse*.9),0,Math.PI*2);ctx.stroke();
     }
@@ -5327,13 +5364,13 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
-  function v34SelfAudit(){
+  function v342SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==400)issues.push("옵저버400");
-    if(Math.abs(PLAYER_HIT_RADIUS-.38)>.0001)issues.push("HIT");
+    if(Math.abs(PLAYER_HIT_RADIUS-.40)>.0001)issues.push("HIT");
     if(Math.abs(PLAYER_VISUAL_SCALE-.69)>.0001||Math.abs(OBS_VISUAL_SCALE-.612)>.0001)issues.push("크기");
-    if(STUN_MS!==2000)issues.push("정지2초");
+    if(STUN_MS!==1800)issues.push("정지1.8초");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
     if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
@@ -5341,7 +5378,7 @@ targetOff=clampSpecialRoadOffset(si,targetOff,p);
   }
 
   window.ObserverFMRaceEngine={
-    version:BUILD_ID,selfAudit:v34SelfAudit,
+    version:BUILD_ID,selfAudit:v342SelfAudit,
     getPerformance:()=>({fps:diagFps,frameMs:diagFrameMs,maxFrameMs:diagMaxFrameMs,fpsProtectLevel}),
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),

@@ -1,5 +1,5 @@
 {
-  "build": "v3.4",
+  "build": "v3.42",
   "schema": "observer-fm-race-result@1",
   "event": "observerfm:matchcomplete",
   "global_api": "window.ObserverFMRaceEngine",
@@ -16,5 +16,5 @@
     "safe_zone_invulnerability": true,
     "base_speed_multiplier": 1.464395625
   },
-  "notes": "Classic Observer tile map restored from v3.3 pre-sky-blue map. All gray unit images, gray state fields, gray rendering/filter/fallback, and gray verification removed. Collision now only stops the racer for 2.0 seconds while normal team-color sprite remains visible. v3.35 avoidance and FPS protection retained."
+  "notes": "Safe-zone rectangular waypoint path replaced by smooth inside diagonal shortcut corridor based on user's red guide. General lookahead increased from ~2-4 to ~3-8 segments and corner target blending/steering strengthened for optimized diagonal apexing elsewhere. Observer avoidance remains final authority. Stun 1.8s."
 }
