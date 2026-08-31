@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.06";
+  const BUILD_ID = "v4.08";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,8 +36,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.45;     // v4.06: smaller racer sprite, collision tuned down accordingly
-  const PLAYER_VISUAL_SCALE = 0.693036;  // v4.06: additional -10% from v4.04
+  const PLAYER_HIT_RADIUS = 0.45;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_VISUAL_SCALE = 0.693036;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
@@ -53,7 +53,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
-  const DEATH_EDGE_EXTRA = 2.10;      // v4.06: two adjacent outer rows survive; third row is lethal
+  const DEATH_EDGE_EXTRA = 4.25;      // v4.08: generous off-course buffer; racers must travel clearly farther outside before death
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -926,7 +926,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function clampRoadOffset(si,lateral,p=null){
-    // v4.06: AI target limiter only; still no physical wall.
+    // v4.07: AI target limiter only; still no physical wall.
     // Racers know two extra outer rows are survivable, while the third row is lethal.
     // Normal routing stays on the course; extreme inside specialists may deliberately exploit the outer rows.
     const legalHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
@@ -948,8 +948,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function lethalOutsideRoad(p){
     // No wall: crossing the painted edge never pushes or slows the air unit.
-    // Two adjacent outer rows are survivable; entering the third row is instant death.
-    const f=nearestRouteFrame(p.x,p.y,p.seg);
+    // v4.08: the outer course edge is intentionally generous. The first outer rows
+    // are still usable for extreme inside lines; death only happens once the racer is
+    // clearly several tiles beyond the drivable ribbon. Corners use a wider segment
+    // search so a valid bend cannot be mistaken for off-course space.
+    let f=null;
+    const lo=Math.max(0,p.seg-3), hi=Math.min(segs.length-1,p.seg+3);
+    for(let i=lo;i<=hi;i++){
+      const s=segs[i], rx=p.x-s.a[0], ry=p.y-s.a[1];
+      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+      const qx=s.a[0]+s.ux*along, qy=s.a[1]+s.uy*along;
+      const dx=p.x-qx,dy=p.y-qy,d2=dx*dx+dy*dy;
+      if(!f||d2<f.d2) f={si:i,d2};
+    }
     if(!f) return false;
     const deathHalf=Math.max(2.0,widths[f.si]*ROAD_MARGIN)+DEATH_EDGE_EXTRA;
     return Math.sqrt(f.d2)>=deathHalf;
@@ -2576,17 +2587,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const maxAhead=Math.min(segs.length-1,si+6+Math.round(routeRead*2));
     const plannedOff=plannedRacingOffset(p,si,now);
 
-    // Aim farther ahead than one centerline point. This is what lets the racer
-    // cut a smooth diagonal instead of following the polyline point-by-point.
-    let ahead=Math.min(segs.length-1,si+3);
+    // v4.07 ROUTE-FOLLOWING: lookahead may smooth a bend, but it must never
+    // turn the course into a straight chord across off-road space. Around the
+    // 5-o'clock rise especially, advance only to the next route joint first.
+    const routeLocked = si<=10;
+    let ahead=Math.min(segs.length-1,si+(routeLocked?1:3));
     let strongest=0;
-    for(let j=si+1;j<=maxAhead;j++){
+    const scanEnd=routeLocked?Math.min(maxAhead,si+2):maxAhead;
+    for(let j=si+1;j<=scanEnd;j++){
       const a=segs[Math.max(0,j-1)];
       const b=segs[j];
       const turn=a.ux*b.uy-a.uy*b.ux;
       if(Math.abs(turn)>Math.abs(strongest)){
         strongest=turn;
-        ahead=j;
+        if(!routeLocked) ahead=j;
       }
     }
 
@@ -2607,13 +2621,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let x=targetSeg.b[0]+targetSeg.nx*targetOff;
     let y=targetSeg.b[1]+targetSeg.ny*targetOff;
 
-    // Explicit opening racing line. The route immediately after 5 o'clock turns
-    // upward, so this keeps the approach on the upper boundary instead of dropping.
-    if(si<=8){
-      const progress=Math.max(0,Math.min(1,(p.x-20.5)/(148-20.5)));
-      const upperY=152.0 - 4.2*Math.pow(progress,0.78);
-      y=Math.min(y,upperY);
-    }
+    // v4.07: no artificial 5-o'clock vertical shortcut. Racers must reach the
+    // actual bend through the painted route before beginning the upward section.
 
     return {x,y,off:plannedOff};
   }
@@ -3021,25 +3030,27 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let ty=s.b[1]+s.ny*p.desiredOffset;
     const optTarget=optimizedLookAheadTarget(p,si,now);
     const cornerLook=cornerIntensity(si);
-    const optBlend = si<=8 ? Math.min(.68,.54+cornerLook*.18) : Math.min(.82,.66+cornerLook*.30);
+    // v4.07: opening/5-o'clock section is route-locked. A small lookahead keeps
+    // steering smooth without allowing a direct vertical chord through lethal rows.
+    const optBlend = si<=10 ? Math.min(.30,.18+cornerLook*.10) : Math.min(.82,.66+cornerLook*.30);
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
     // v3.2 smooth racing arc: aim through the next two segment exits.
     // This cuts the corner diagonally instead of moving to a joint and turning 90 degrees.
     if(next && si<segs.length-1){
-      const look=Math.min(.44,.27+cornerLook*.21);
+      const look=si<=10?Math.min(.18,.10+cornerLook*.08):Math.min(.44,.27+cornerLook*.21);
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
       ty=ty*(1-look)+ny*look;
       if(next2 && si<segs.length-2){
-        const look2=Math.min(.27,.13+cornerLook*.14);
+        const look2=si<=10?Math.min(.06,.025+cornerLook*.025):Math.min(.27,.13+cornerLook*.14);
         const n2x=next2.b[0]+next2.nx*p.desiredOffset;
         const n2y=next2.b[1]+next2.ny*p.desiredOffset;
         tx=tx*(1-look2)+n2x*look2;
         ty=ty*(1-look2)+n2y*look2;
-        if(next3 && si<segs.length-3 && cornerLook>.045){
+        if(next3 && si<segs.length-3 && cornerLook>.045 && si>10){
           const look3=Math.min(.16,.07+cornerLook*.10);
           const n3x=next3.b[0]+next3.nx*p.desiredOffset;
           const n3y=next3.b[1]+next3.ny*p.desiredOffset;
@@ -3100,8 +3111,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // v4.06 AIR UNIT: still no wall, snap, bounce, or off-road slowdown.
-    // Two rows outside the usual outer line survive; the third row is instant death.
+    // v4.08 AIR UNIT: still no wall, snap, bounce, or off-road slowdown.
+    // Off-course death is deliberately farther outside than before, including bends.
     if(lethalOutsideRoad(p)){
       p.dead=true;
       p.match.collisions++;
@@ -3622,7 +3633,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
     if(Math.abs(ROAD_MARGIN-1.10)>.0001) issues.push(`ROAD ${ROAD_MARGIN}`);
-    if(Math.abs(DEATH_EDGE_EXTRA-2.10)>.0001) issues.push(`EDGE ${DEATH_EDGE_EXTRA}`);
+    if(Math.abs(DEATH_EDGE_EXTRA-4.25)>.0001) issues.push(`EDGE ${DEATH_EDGE_EXTRA}`);
     return issues.length?`QA CHECK ${issues.join("·")}`:"정상";
   }
 
@@ -5643,7 +5654,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==100)issues.push("옵저버100");
     if(Math.abs(PLAYER_HIT_RADIUS-.45)>.0001)issues.push("HIT");
-    // v4.06: two extra outer rows survive; no physical wall exists.
+    // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.693036)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
