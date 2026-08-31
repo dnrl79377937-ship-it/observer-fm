@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.08";
+  const BUILD_ID = "v4.09";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -53,7 +53,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
-  const DEATH_EDGE_EXTRA = 4.25;      // v4.08: generous off-course buffer; racers must travel clearly farther outside before death
+  const DEATH_EDGE_EXTRA = 4.50;      // v4.09: lethal zone begins well beyond the real route ribbon
+  const ROUTE_PLAN_EXTRA = 1.35;      // planning may use the outer racing rows, but not cut across gaps
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -946,24 +947,55 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return best;
   }
 
-  function lethalOutsideRoad(p){
-    // No wall: crossing the painted edge never pushes or slows the air unit.
-    // v4.08: the outer course edge is intentionally generous. The first outer rows
-    // are still usable for extreme inside lines; death only happens once the racer is
-    // clearly several tiles beyond the drivable ribbon. Corners use a wider segment
-    // search so a valid bend cannot be mistaken for off-course space.
-    let f=null;
-    const lo=Math.max(0,p.seg-3), hi=Math.min(segs.length-1,p.seg+3);
-    for(let i=lo;i<=hi;i++){
-      const s=segs[i], rx=p.x-s.a[0], ry=p.y-s.a[1];
+  // v4.09 COURSE MODEL:
+  // The route itself is the source of truth. We do NOT encode the user's red markup
+  // as coordinate rectangles. Every route segment is treated as a rounded corridor
+  // (capsule), so bends join naturally, all normal/inside lines are drivable, and the
+  // large gaps between unrelated roads remain lethal. Yellow zones use safeAt().
+  function courseContainsPoint(x,y,extra=0){
+    if(safeAt(x,y)) return true;
+    for(let i=0;i<segs.length;i++){
+      const s=segs[i], rx=x-s.a[0], ry=y-s.a[1];
       const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
       const qx=s.a[0]+s.ux*along, qy=s.a[1]+s.uy*along;
-      const dx=p.x-qx,dy=p.y-qy,d2=dx*dx+dy*dy;
-      if(!f||d2<f.d2) f={si:i,d2};
+      const r=Math.max(2.0,widths[i]*ROAD_MARGIN)+extra;
+      const dx=x-qx,dy=y-qy;
+      if(dx*dx+dy*dy<=r*r) return true;
     }
-    if(!f) return false;
-    const deathHalf=Math.max(2.0,widths[f.si]*ROAD_MARGIN)+DEATH_EDGE_EXTRA;
-    return Math.sqrt(f.d2)>=deathHalf;
+    return false;
+  }
+
+  function lineStaysOnCourse(x1,y1,x2,y2,extra=ROUTE_PLAN_EXTRA){
+    const dist=Math.hypot(x2-x1,y2-y1);
+    const n=Math.max(2,Math.ceil(dist/.70));
+    for(let k=1;k<=n;k++){
+      const t=k/n;
+      if(!courseContainsPoint(x1+(x2-x1)*t,y1+(y2-y1)*t,extra)) return false;
+    }
+    return true;
+  }
+
+  function courseAwareTarget(p,si,tx,ty){
+    // Keep the optimized target if the entire chord is legal. If a long look-ahead
+    // would cut across a forbidden gap, progressively pull the target back toward the
+    // immediate route exit. This preserves smooth apexes without bizarre shortcuts.
+    if(lineStaysOnCourse(p.x,p.y,tx,ty)) return {x:tx,y:ty};
+    const s=segs[si];
+    const baseX=s.b[0]+s.nx*p.desiredOffset;
+    const baseY=s.b[1]+s.ny*p.desiredOffset;
+    for(const keep of [.72,.52,.34,.18,0]){
+      const cx=baseX+(tx-baseX)*keep;
+      const cy=baseY+(ty-baseY)*keep;
+      if(lineStaysOnCourse(p.x,p.y,cx,cy)) return {x:cx,y:cy};
+    }
+    return {x:baseX,y:baseY};
+  }
+
+  function lethalOutsideRoad(p){
+    // No wall, push, bounce, or slowdown. A racer dies only after leaving the
+    // route-derived corridor by a generous margin. Because every segment is checked,
+    // a legitimate bend/adjacent route can never be misclassified by a stale p.seg.
+    return !courseContainsPoint(p.x,p.y,DEATH_EDGE_EXTRA);
   }
 
 
@@ -3060,6 +3092,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
       }
     }
 
+    // v4.09: validate the complete steering chord against the actual route corridor.
+    // This is what prevents 5-o'clock and other sections from cutting straight through
+    // the user's red/death gaps while still allowing true inside apexes.
+    {
+      const legalTarget=courseAwareTarget(p,si,tx,ty);
+      tx=legalTarget.x; ty=legalTarget.y;
+    }
+
     let dx=tx-p.x, dy=ty-p.y;
     const d=Math.hypot(dx,dy) || 1;
     const ndx=dx/d, ndy=dy/d;
@@ -3111,8 +3151,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // v4.08 AIR UNIT: still no wall, snap, bounce, or off-road slowdown.
-    // Off-course death is deliberately farther outside than before, including bends.
+    // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
+    // Death uses the route-derived capsule union, not hand-written red coordinates.
     if(lethalOutsideRoad(p)){
       p.dead=true;
       p.match.collisions++;
@@ -3633,7 +3673,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
     if(Math.abs(ROAD_MARGIN-1.10)>.0001) issues.push(`ROAD ${ROAD_MARGIN}`);
-    if(Math.abs(DEATH_EDGE_EXTRA-4.25)>.0001) issues.push(`EDGE ${DEATH_EDGE_EXTRA}`);
+    if(Math.abs(DEATH_EDGE_EXTRA-4.50)>.0001) issues.push(`EDGE ${DEATH_EDGE_EXTRA}`);
     return issues.length?`QA CHECK ${issues.join("·")}`:"정상";
   }
 
