@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.10";
+  const BUILD_ID = "v4.11";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -49,7 +49,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
   const AVOID_SAFE_BUFFER = 7.1;
   const AVOID_LANE_LOOKAHEAD = 2.60;
-  const AVOID_HORIZONS = [0.40,0.95,1.70,2.75];   // compare future lane safety
+  const AVOID_HORIZONS = [0.28,0.60,1.05,1.60,2.25,3.00];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
@@ -854,12 +854,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const leaderControlCalm=liveRaceSituation(p).rank===1?.55:1;
         // v3.51: only when an observer is immediately ahead, increase both
         // zigzag and backcon selection weights by 20% relative to v3.50.
-        const marseilleWeight=(.045+((p.stats.control-72)/27)*.030+((p.stats.aggression-72)/27)*.012)*1.20*packControlCalm*leaderControlCalm;
-        const stopWeight=.00025*1.20*leaderControlCalm;
-        const backBase=sideEscapeOpen?.045:.095;
-        const backWeight=backBase*1.20*1.10*1.20*packControlCalm*leaderControlCalm;
+        const marseilleWeight=(.075+((p.stats.control-72)/27)*.050+((p.stats.aggression-72)/27)*.020)*1.35*packControlCalm*leaderControlCalm;
+        const stopWeight=.012*1.35*leaderControlCalm;
+        const backBase=sideEscapeOpen?.095:.165;
+        const backWeight=backBase*1.42*packControlCalm*leaderControlCalm;
         const zigBase=Math.max(.001,1-marseilleWeight-stopWeight-backBase);
-        const zigWeight=zigBase*1.20*1.20*leaderControlCalm;
+        const zigWeight=zigBase*1.34*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         if(r<marseilleWeight){
@@ -870,29 +870,29 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           p.controlUntil=now+470+Math.random()*150;
           p.marseilleUntil=p.controlUntil;
           p.marseilleSide=(leftBlock<=rightBlock?-1:1);
-          p.reactiveControlCooldown=1900+Math.random()*1600;
+          p.reactiveControlCooldown=1050+Math.random()*950;
           p.match.controlAttempts++;
           p.match.controlSuccesses++;
           addAutoHighlight("MARSEILLE",`${p.name} · 마르세유턴 회피`,now,p.index,2);
         }else if(r<marseilleWeight+stopWeight){
           beginControl(p,"stopcon",now,80+Math.random()*70,true,immediate.id);
-          p.reactiveControlCooldown=3200+Math.random()*2700;
+          p.reactiveControlCooldown=1600+Math.random()*1500;
         }else if(r<marseilleWeight+stopWeight+backWeight){
           const styleHint=immediateAlong<2.75 || (leftBlock>0&&rightBlock>0) ? "long" : "tap";
           beginControl(p,"backcon",now,220+Math.random()*120,true,immediate.id,styleHint);
-          p.reactiveControlCooldown=1700+Math.random()*1800;
+          p.reactiveControlCooldown=900+Math.random()*1000;
         }else{
           beginControl(p,"zigzag",now,300+Math.random()*260,true,immediate.id);
-          p.reactiveControlCooldown=1450+Math.random()*1650;
+          p.reactiveControlCooldown=760+Math.random()*900;
         }
         return;
       }
 
       if(nearAhead){
         const nearLeaderCalm=liveRaceSituation(p).rank===1?.55:1;
-        const zigChance=Math.min(.98,(.62+reaction*.10+prediction*.10+pressure*.05)*1.20*nearLeaderCalm);
+        const zigChance=Math.min(.995,(.78+reaction*.08+prediction*.08+pressure*.05)*1.24*nearLeaderCalm);
         if(Math.random()<zigChance){
-          const nearMode=Math.random()<.945?"zigzag":"backcon";
+          const nearMode=Math.random()<.80?"zigzag":"backcon";
           beginControl(p,nearMode,now,(nearMode==="backcon"?220+Math.random()*120:290+Math.random()*190),true,nearAhead.id,
             nearMode==="backcon"?"tap":null);
           p.reactiveControlCooldown=1500+Math.random()*1900;return;
@@ -1465,9 +1465,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       front+=w;
       if(lat<-.3) leftRisk+=w; else if(lat>.3) rightRisk+=w; else centerRisk+=w*1.35;
     }
-    if(front<.30) return null;
+    if(front<.52) return null;
     const skill=Math.max(0,Math.min(1,((p.stats.avoidance+p.stats.reaction+p.stats.prediction+p.stats.control)/4-72)/27));
-    const trigger=Math.min(.99,.84+skill*.13+Math.min(.04,front*.015));
+    const trigger=Math.min(.92,.62+skill*.20+Math.min(.06,front*.012));
     if(Math.random()>trigger && nearest>10.8) return null;
     const side=leftRisk<rightRisk?-1:rightRisk<leftRisk?1:(p.avoidLastSide|| (Math.random()<.5?-1:1));
     const pressure=Math.min(1,front*.40+centerRisk*.26+(nearest<8.5?.28:0));
@@ -1518,6 +1518,48 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
     }
     return merged;
+  }
+
+  function rolloutActionRisk(p,s,targetOff,speedMul,nearby){
+    // v4.11 MICRO-ROLLOUT AI: instead of rating only fixed future snapshots,
+    // actually simulate a short candidate action sequence. Better prediction/control
+    // evaluates farther and more densely, so elite racers can survive OBS100 without
+    // shrinking the real hit radius.
+    const predN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
+    const avoidN=Math.max(0,Math.min(1,(p.stats.avoidance-72)/27));
+    const reactN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const skill=(predN+avoidN+reactN+controlN)/4;
+    const horizon=1.55+predN*.95+avoidN*.45;
+    const steps=7+Math.round(predN*5+controlN*2);
+    const dt=horizon/steps;
+    let x=p.x,y=p.y;
+    let lateral=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
+    let vx=s.ux*p.speed*speedMul, vy=s.uy*p.speed*speedMul;
+    let danger=0,minClear=99;
+    const hit=PLAYER_HIT_RADIUS;
+    for(let k=1;k<=steps;k++){
+      const t=k*dt;
+      // steering cannot teleport laterally: approach the selected lane progressively.
+      const steerRate=(.36+controlN*.34+reactN*.20);
+      lateral += (targetOff-lateral)*Math.min(1,steerRate*dt*2.2);
+      x += vx*dt + s.nx*(targetOff-lateral)*dt*.38;
+      y += vy*dt + s.ny*(targetOff-lateral)*dt*.38;
+      for(const o of nearby){
+        const ox=predictedObserverX(o,t), oy=predictedObserverY(o,t);
+        const d=Math.hypot(x-ox,y-oy);
+        if(d<minClear) minClear=d;
+        const clearance=d-hit;
+        if(clearance<0) danger += 18000+(Math.abs(clearance)+.05)*9000;
+        else if(clearance<.55) danger += (0.55-clearance)*1400;
+        else if(clearance<1.35) danger += (1.35-clearance)*170;
+        else if(clearance<2.8) danger += (2.8-clearance)*16;
+      }
+    }
+    // reward forward pace; elite racers accept narrower safe windows but never ignore a collision.
+    const paceReward=speedMul*(5.2+skill*2.2);
+    const steerCost=Math.abs(targetOff-p.desiredOffset)*(.10+(1-controlN)*.08);
+    return {score:danger+steerCost-paceReward,minClear};
   }
 
   function chooseAvoidance(p,s,now){
@@ -1806,15 +1848,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Candidate lanes + speed choices. The planner chooses the safest path that
     // costs the least race time. Stop is evaluated only as an emergency option.
     const laneFracs=clusterPlan.density>.38
-      ? [-0.98,-0.78,-0.54,-0.28,0,0.28,0.54,0.78,0.98]
-      : [-0.94,-0.62,-0.30,0,0.30,0.62,0.94];
-    const movingSpeeds=clusterPlan.emergency ? [1.00,.94,.86,.76] : [1.00,.96,.88];
+      ? [-1.02,-.88,-.72,-.56,-.40,-.24,0,.24,.40,.56,.72,.88,1.02]
+      : [-1.00,-.82,-.64,-.46,-.28,0,.28,.46,.64,.82,1.00];
+    const movingSpeeds=clusterPlan.emergency ? [1.02,.98,.93,.86,.78] : [1.02,.99,.95,.89];
     let best=null;
 
     for(const frac of laneFracs){
       const targetOff=frac*half;
       for(const sm of movingSpeeds){
         const r=candidateAvoidanceRisk(p,s,targetOff,sm,nearby);
+        const rollout=rolloutActionRisk(p,s,targetOff,sm,nearby);
         const side=Math.sign(targetOff);
         const corridorBonus=(side!==0 && Math.sign(corridorBias)===side) ? corridorCommit*7.2 : 0;
         const clusterDistance=Math.abs(targetOff-clusterPlan.preferredOffset)/Math.max(1,half);
@@ -1825,8 +1868,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           mode:"planned",
           targetOff,
           speedMul:sm,
-          score:r.score-corridorBonus-clusterBonus+centerPenalty,
-          minClear:r.minClear
+          score:r.score*.34+rollout.score*.66-corridorBonus-clusterBonus+centerPenalty,
+          minClear:Math.min(r.minClear,rollout.minClear)
         };
         if(!best || candidate.score<best.score) best=candidate;
       }
@@ -2399,7 +2442,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const lp=p.linePersonality||0;
       const skill=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/3;
       const skillN=(skill-72)/27;
-      const apexCommit=Math.max(.94,Math.min(.9998,.982+lp*.025+skillN*.018+(p.cleanConfidence||0)*.010));
+      const insideN=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+      const apexCommit=Math.max(.965,Math.min(1.035,.995+lp*.026+skillN*.020+insideN*.022+(p.cleanConfidence||0)*.012));
       const apex=cornerSide*half*apexCommit;
       const phaseBlend=Math.max(.38,Math.min(.88,phasePlan.weight+.20));
       p.linePlanOffset=apex*(1-phaseBlend)+phasePlan.target*phaseBlend;
@@ -2437,7 +2481,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         let futureOff=off*(0.56-routeRead*.09);
         if(Math.abs(turn)>0.025){
           const inside=(turn>0 ? 1 : -1);
-          const apexCommit=0.86+routeRead*.10+((p.stats.insideLine-72)/27)*.055;
+          const apexCommit=0.91+routeRead*.085+((p.stats.insideLine-72)/27)*.105;
           const nextApex=inside*h*Math.min(.997,apexCommit);
           const prep=0.66+routeRead*.24;
           futureOff=futureOff*(1-prep)+nextApex*prep;
@@ -2497,7 +2541,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const insideTalent=(p.stats.insideLine-72)/27;
         const cornerTalent=(p.stats.cornering-72)/27;
         const cornerBlend=Math.max(.18,Math.min(.72,.28+insideTalent*.20+cornerTalent*.14+readTrust*.10));
-        personalTarget=personalTarget*(1-cornerBlend)+cornerSide*(.48+insideTalent*.28)*cornerBlend;
+        personalTarget=personalTarget*(1-cornerBlend)+cornerSide*(.68+insideTalent*.34)*cornerBlend;
       }else{
         // Gentle long-wave variation on straights gives each racer a recognisable
         // path without twitching or random lane changes.
@@ -2555,16 +2599,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const aggression=Math.max(0,Math.min(1,(p.stats.aggression-72)/27));
       const styleAttack=Math.max(-.25,Math.min(.25,(p.drivingStyle.attack-p.drivingStyle.safety)));
       // Everyone has a small chance; elite inside-line racers try it much more often.
-      const attemptChance=.022 + inside*.105 + Math.max(0,styleAttack)*.055 + aggression*.018;
+      const attemptChance=.055 + inside*.185 + Math.max(0,styleAttack)*.075 + aggression*.030;
       if(Math.random()<attemptChance){
-        const successChance=Math.max(.48,Math.min(.93,.56+inside*.13+corner*.10+control*.08+read*.07-aggression*.035));
+        const successChance=Math.max(.42,Math.min(.94,.50+inside*.16+corner*.11+control*.10+read*.08-aggression*.045));
         p.extremeInsideActive=true;
         p.extremeInsideFail=Math.random()>=successChance;
         p.extremeInsideSide=side;
         p.extremeInsideUntil=now+720+Math.random()*520;
-        p.extremeInsideCooldown=now+2600+Math.random()*2600;
+        p.extremeInsideCooldown=now+1500+Math.random()*1800;
       }else{
-        p.extremeInsideCooldown=now+700+Math.random()*1000;
+        p.extremeInsideCooldown=now+420+Math.random()*650;
       }
     }
     if(!p.extremeInsideActive || !p.extremeInsideSide) return baseOff;
@@ -2926,7 +2970,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(insideSide!==0 && turnPower>0.055){
         const halfRoad=Math.max(1.8,widths[si]*1.08);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
-        const apexBlend=Math.min(0.992,0.80+turnPower*1.45);
+        const apexBlend=Math.min(0.998,0.88+turnPower*1.55);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
       }
 
@@ -2936,7 +2980,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(Math.abs(futureInside)>0.10){
         const halfRoad2=Math.max(1.8,widths[si]*1.10);
         const futureApex=futureInside*halfRoad2*0.998;
-        targetOff=targetOff*0.12+futureApex*0.88;
+        targetOff=targetOff*0.06+futureApex*0.94;
       }
 
     // Lower line skill adds slightly more steering error, while everyone still
