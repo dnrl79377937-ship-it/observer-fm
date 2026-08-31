@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 200;
+  const OBSERVER_COUNT = 150;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.13";
+  const BUILD_ID = "v4.14";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -938,7 +938,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return p.desiredOffset*(0.30-lineSkill*0.12);
     }
     // Better line skill clips the apex more precisely.
-    const apex=0.68 + lineSkill*0.16;
+    const apex=0.82 + lineSkill*0.15;
     return (turn>0 ? 1 : -1)*half*apex;
   }
 
@@ -2310,27 +2310,30 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const precision=Math.max(0,Math.min(1,(insideSkill+cornerSkill+routeRead)/3));
     const confidence=Math.max(0,Math.min(1,p.cleanConfidence||0));
 
-    // v2.60 full racing line: outside entry -> apex -> controlled exit.
+    // v4.14 shortest-line racing: do NOT use the classic outside-entry -> apex pattern.
+    // Racers progressively attach to the inside before the bend, skim the inside
+    // through it, then release smoothly. This is derived only from route curvature;
+    // there are no hand-coded corner coordinates.
     if(seq.currentSide===0 && seq.nextSide!==0){
-      const approach=-seq.nextSide*half*(.50+.17*precision);
-      return {target:approach,weight:.30+.18*routeRead,seq};
+      const approach=seq.nextSide*half*(.72+.22*precision);
+      return {target:approach,weight:.54+.24*routeRead,seq};
     }
 
     if(seq.currentSide!==0){
-      if(phase<.28){
-        const outside=-seq.currentSide*half*(.46+.16*precision);
-        return {target:outside,weight:.34+.18*cornerSkill,seq};
+      if(phase<.24){
+        const earlyInside=seq.currentSide*half*(.76+.20*precision);
+        return {target:earlyInside,weight:.58+.22*cornerSkill,seq};
       }
-      if(phase<.70){
-        const apex=seq.currentSide*half*(.92+.075*precision+.025*confidence);
-        return {target:apex,weight:.52+.24*precision,seq};
+      if(phase<.76){
+        const apex=seq.currentSide*half*Math.min(.998,.955+.038*precision+.012*confidence);
+        return {target:apex,weight:.72+.22*precision,seq};
       }
       if(seq.nextSide!==0){
-        const exitPrep=-seq.nextSide*half*(.38+.18*routeRead);
-        return {target:exitPrep,weight:.32+.18*routeRead,seq};
+        const release=seq.nextSide*half*(.68+.24*routeRead);
+        return {target:release,weight:.50+.24*routeRead,seq};
       }
-      const exit=-seq.currentSide*half*(.28+.12*precision);
-      return {target:exit,weight:.24+.12*precision,seq};
+      const exit=seq.currentSide*half*(.58+.22*precision);
+      return {target:exit,weight:.42+.18*precision,seq};
     }
     return {target:0,weight:0,seq};
   }
@@ -2349,9 +2352,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const read=(p.stats.routeReading-72)/27;
     const corner=(p.stats.cornering-72)/27;
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.56);
-    // Prepare on the outside before the corner, then naturally hand over to apex logic.
-    const setup=-nextSide*half*(.42+.22*read);
-    const weight=Math.max(.12,Math.min(.54,(6-distanceSeg)*.075+.13*read+.08*corner));
+    // v4.14: shortest-path preparation. Move toward the UPCOMING INSIDE early
+    // instead of swinging to the outside and making a large right-angle arc.
+    const inside=(p.stats.insideLine-72)/27;
+    const setup=nextSide*half*(.66+.24*read+.08*inside);
+    const weight=Math.max(.22,Math.min(.76,(6-distanceSeg)*.095+.17*read+.10*corner+.08*inside));
     if(now<p.preCornerUntil) return baseOff*.42+p.preCornerOffset*.58;
     p.preCornerOffset=setup;
     p.preCornerUntil=now+380+read*180;
@@ -2375,7 +2380,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return baseOff*(1-w)+linked*w;
     }
     if(phase>.54){
-      const prep=-seq.nextSide*half*(.48+.26*skill);
+      const prep=seq.nextSide*half*(.62+.30*skill);
       const w=Math.min(.62,.24+(phase-.54)*.72+.18*skill);
       return baseOff*(1-w)+prep*w;
     }
@@ -3181,26 +3186,26 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const cornerLook=cornerIntensity(si);
     // v4.07: opening/5-o'clock section is route-locked. A small lookahead keeps
     // steering smooth without allowing a direct vertical chord through lethal rows.
-    const optBlend = si<=10 ? Math.min(.30,.18+cornerLook*.10) : Math.min(.82,.66+cornerLook*.30);
+    const optBlend = si<=10 ? Math.min(.72,.50+cornerLook*.28) : Math.min(.84,.68+cornerLook*.28);
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
     // v3.2 smooth racing arc: aim through the next two segment exits.
     // This cuts the corner diagonally instead of moving to a joint and turning 90 degrees.
     if(next && si<segs.length-1){
-      const look=si<=10?Math.min(.18,.10+cornerLook*.08):Math.min(.44,.27+cornerLook*.21);
+      const look=si<=10?Math.min(.40,.24+cornerLook*.18):Math.min(.46,.28+cornerLook*.21);
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
       tx=tx*(1-look)+nx*look;
       ty=ty*(1-look)+ny*look;
       if(next2 && si<segs.length-2){
-        const look2=si<=10?Math.min(.06,.025+cornerLook*.025):Math.min(.27,.13+cornerLook*.14);
+        const look2=si<=10?Math.min(.20,.09+cornerLook*.10):Math.min(.28,.14+cornerLook*.14);
         const n2x=next2.b[0]+next2.nx*p.desiredOffset;
         const n2y=next2.b[1]+next2.ny*p.desiredOffset;
         tx=tx*(1-look2)+n2x*look2;
         ty=ty*(1-look2)+n2y*look2;
-        if(next3 && si<segs.length-3 && cornerLook>.045 && si>10){
-          const look3=Math.min(.16,.07+cornerLook*.10);
+        if(next3 && si<segs.length-3 && cornerLook>.045){
+          const look3=si<=10?Math.min(.10,.04+cornerLook*.06):Math.min(.17,.07+cornerLook*.10);
           const n3x=next3.b[0]+next3.nx*p.desiredOffset;
           const n3y=next3.b[1]+next3.ny*p.desiredOffset;
           tx=tx*(1-look3)+n3x*look3;
