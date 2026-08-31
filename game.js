@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.14";
+  const BUILD_ID = "v4.15";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1279,9 +1279,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const v2x=c[0]-b[0], v2y=c[1]-b[1];
     const cross=v1x*v2y-v1y*v2x;
     if(Math.abs(cross)<0.20) return 0;
-    // Route normal convention: +off is right side, -off is left side.
-    // Left turn => inside is left (-1); right turn => inside is right (+1).
-    return cross>0 ? -1 : 1;
+    // Screen coordinates use +Y downward. That flips the handedness of the
+    // ordinary Cartesian cross-product test. +off is still the racer's right
+    // side (segment normal nx=-uy, ny=ux), so a screen-space negative cross is
+    // a visual LEFT turn and its inside is -off; positive cross is a RIGHT
+    // turn and its inside is +off. This generic rule fixes every corner without
+    // hard-coded map coordinates.
+    return cross<0 ? -1 : 1;
   }
 
   function cornerIntensity(si){
@@ -1297,14 +1301,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   function openingInsideBias(si){
-    // Positive screen Y is downward. For the opening 7→5 run we explicitly
-    // target the upper wall before the vertical climb, because that is shorter.
-    if(si>=0 && si<=2) return -0.78;
-    if(si>=3 && si<=4) return -0.92;
-    if(si>=5 && si<=6) return -0.98;
-    if(si>=7 && si<=8) return -0.84;
-    if(si>=9 && si<=10) return -0.55;
-    return 0;
+    // Generic early-corner preparation, not a map-coordinate shortcut. Search
+    // forward for the next meaningful turn and hug that turn's inside edge
+    // progressively while still on the preceding straight. This makes long
+    // approaches naturally form a smooth diagonal/arc instead of centre -> 90°.
+    let foundSide=0, foundPower=0, distance=99;
+    for(let k=0;k<7;k++){
+      const idx=Math.min(route.length-2,si+k);
+      const side=cornerInsideSide(idx);
+      const power=cornerIntensity(idx);
+      if(side!==0 && power>.035){ foundSide=side; foundPower=power; distance=k; break; }
+    }
+    if(!foundSide) return 0;
+    const proximity=Math.max(0,1-distance/7);
+    return foundSide*Math.min(.995,.58+proximity*.31+Math.min(.10,foundPower*.34));
   }
 
   function futureInsideBias(si){
@@ -2716,7 +2726,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // on the same optimized line even when no observer forces a deviation.
     const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*.10;
     const identityBias=(p.routeIdentityBias||0)*half*.24;
-    off=off*.79 + identityBias + identityWave;
+    const approachInside=openingInsideBias(si);
+    const identityKeep=Math.abs(approachInside)>.08 ? .92 : .79;
+    const identityScale=Math.abs(approachInside)>.08 ? .34 : 1;
+    off=off*identityKeep + (identityBias + identityWave)*identityScale;
     off=creativeRouteAdjustment(p,si,now,off);
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
@@ -2998,6 +3011,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const halfRoad2=Math.max(1.8,widths[si]*1.15);
         const futureApex=futureInside*halfRoad2*1.035;
         targetOff=targetOff*0.025+futureApex*0.975;
+      }
+
+      // v4.15: hold the inside side across the whole approach straight. The
+      // target is derived only from upcoming route curvature, so it works on
+      // every similar section and does not encode screenshot coordinates.
+      const earlyInside=openingInsideBias(si);
+      if(Math.abs(earlyInside)>.08){
+        const halfRoad3=Math.max(1.8,widths[si]*1.13);
+        const insideSkill=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+        const earlyTarget=earlyInside*halfRoad3;
+        const earlyBlend=.72+insideSkill*.20;
+        targetOff=targetOff*(1-earlyBlend)+earlyTarget*earlyBlend;
       }
 
     // Lower line skill adds slightly more steering error, while everyone still
