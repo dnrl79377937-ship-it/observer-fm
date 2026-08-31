@@ -18,30 +18,27 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 330;
+  const OBSERVER_COUNT = 50;
   const HIT_CHANCE = 1.00;
-  const STUN_MS = 1800;
-  const INV_MS = 1000;
+  const STUN_MS = 0;
+  const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v3.7";
+  const BUILD_ID = "v4.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
-  const unitSprites={
-    1:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    2:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    3:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    4:{A:new Image(),B:new Image(),C:new Image(),D:new Image()},
-    5:{A:new Image(),B:new Image(),C:new Image(),D:new Image()}
-  };
-  unitSprites[1].A.src="scourge_a.png";   unitSprites[1].B.src="scourge_b.png";   unitSprites[1].C.src="scourge_c.png";   unitSprites[1].D.src="scourge_d.png";
-  unitSprites[2].A.src="scout_a.png";     unitSprites[2].B.src="scout_b.png";     unitSprites[2].C.src="scout_c.png";   unitSprites[2].D.src="scout_d.png";
-  unitSprites[3].A.src="wraith_a.png";    unitSprites[3].B.src="wraith_b.png";    unitSprites[3].C.src="wraith_c.png";   unitSprites[3].D.src="wraith_d.png";
-  unitSprites[4].A.src="mutalisk_a.png";  unitSprites[4].B.src="mutalisk_b.png";  unitSprites[4].C.src="mutalisk_c.png";   unitSprites[4].D.src="mutalisk_d.png";
-  unitSprites[5].A.src="queen_a.png";     unitSprites[5].B.src="queen_b.png";     unitSprites[5].C.src="queen_c.png";   unitSprites[5].D.src="queen_d.png";
+  const RACER_KEYS=["A","B","C","D","E","F","G","H"];
+  const unitSprites={};
+  const unitFiles={1:"scourge",2:"scout",3:"wraith",4:"mutalisk",5:"queen"};
+  for(let r=1;r<=5;r++){
+    unitSprites[r]={};
+    RACER_KEYS.forEach((key,i)=>{
+      const img=new Image(); img.src=`${unitFiles[r]}_${String.fromCharCode(97+i)}.png`; unitSprites[r][key]=img;
+    });
+  }
   // Engine safeguards. Visual sprite size is independent of collision radius.
   const PLAYER_HIT_RADIUS = 0.41;     // unchanged collision feel
-  const PLAYER_VISUAL_SCALE = 0.69;   // v14 visual size
-  const OBS_VISUAL_SCALE = 0.612;      // v14 visual size
+  const PLAYER_VISUAL_SCALE = 0.828;   // v14 visual size
+  const OBS_VISUAL_SCALE = 0.6732;      // v14 visual size
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
@@ -163,6 +160,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const ROUND_POINTS=[10,7,5,3,2,1,0,-1,-2,-3,-4,-5];
   let currentRound=1;
   let teamAssignments={};
+  let activeSourceIndexes=[];
+  const INDIVIDUAL_COLORS=["#ff4d4d","#4d8dff","#ffd84d","#39d46a","#66e3ff","#b06cff","#9aa0a6","#ff9f43"];
   let teamTotals={A:0,B:0,C:0,D:0};
   let playerTournament={};
   let roundHistory=[];
@@ -173,7 +172,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function clonePlain(v){ return JSON.parse(JSON.stringify(v)); }
 
   function engineCoreRules(){
-    return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:12,
+    return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:8,
       playerHitRadius:PLAYER_HIT_RADIUS,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
@@ -238,29 +237,26 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function createTeams(){
+    activeSourceIndexes=shuffledIndexes().slice(0,8);
     teamAssignments={};
-    const order=shuffledIndexes();
-    order.forEach((idx,pos)=>teamAssignments[idx]=pos<3?"A":pos<6?"B":pos<9?"C":"D");
+    activeSourceIndexes.forEach((src,pos)=>teamAssignments[pos]=RACER_KEYS[pos]);
   }
 
   function initTournament(){
     currentRound=1;
     teamTotals={A:0,B:0,C:0,D:0};
-    roundHistory=[];
-    tournamentHighlights=[];
-    lastMasterResult=null;
-    window.__OBSERVER_FM_LAST_RESULT__=null;
-    playerTournament={};
-    names.forEach((name,i)=>{
-      playerTournament[i]={name,team:teamAssignments[i],total:0,rounds:[]};
+    roundHistory=[]; tournamentHighlights=[]; lastMasterResult=null;
+    window.__OBSERVER_FM_LAST_RESULT__=null; playerTournament={};
+    activeSourceIndexes.forEach((src,i)=>{
+      playerTournament[i]={name:names[src],team:RACER_KEYS[i],total:0,rounds:[],sourceIndex:src};
     });
   }
 
   function teamLabel(team){ return team==="A" ? "빨강팀" : team==="B" ? "파랑팀" : team==="C" ? "노랑팀" : "초록팀"; }
 
-  const TEAM_COLORS={A:"#ff4d4d",B:"#4d8dff",C:"#ffd84d",D:"#39d46a"};
+  const TEAM_COLORS={A:"#ff4d4d",B:"#4d8dff",C:"#ffd84d",D:"#39d46a",E:"#66e3ff",F:"#b06cff",G:"#9aa0a6",H:"#ff9f43"};
   function teamColor(team){return TEAM_COLORS[team]||"#ffffff";}
-  function teamDotClass(team){return team==="A"?"red":team==="B"?"blue":team==="C"?"yellow":"green";}
+  function teamDotClass(team){return `racer-${String(team).toLowerCase()}`;}
   function teamStandings(){
     return ["A","B","C","D"].map(team=>({team,score:Number(teamTotals[team]||0)}))
       .sort((a,b)=>b.score-a.score||a.team.localeCompare(b.team));
@@ -305,10 +301,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function makePlayers(){
-    return names.map((name,i)=>{
-      const pf=profiles[i];
-      const stats=playerStats[i];
-      const drivingStyle=drivingStyles[i];
+    return activeSourceIndexes.map((src,i)=>{
+      const name=names[src];
+      const pf=profiles[src];
+      const stats=playerStats[src];
+      const drivingStyle=drivingStyles[src];
       const paceNorm=(pf.pace-90)/10;
       const consistency=(stats.consistency-72)/27;
       const luck=(stats.luck-72)/27;
@@ -321,7 +318,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const wideDetourRace=Math.random()<.02;
       const wideDetourSide=Math.random()<.5?-1:1;
       return {
-        index:i,name,color:colors[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||"A",
+        index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
         visionRadius:Math.max(26,Math.min(37,
           27+((stats.prediction-72)/27)*5.2+((stats.reaction-72)/27)*2.3+((stats.focus-72)/27)*1.7)),
@@ -343,7 +340,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         routeIdentityPhase:Math.random()*Math.PI*2,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:20.5, y:154.8 + (i-5.5)*0.40,
+        x:20.5, y:154.8 + (i-3.5)*0.40,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -356,13 +353,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           + ((stats.luck-85)/14)*0.002
           + Math.random()*0.006
         ) * 1.464395625,
-        desiredOffset:(i-5.5)*0.40,
+        desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-5.5)*0.40,
+        hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-3.5)*0.40,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
-        hits:0, done:false, finishTime:null,
+        hits:0, dead:false, done:false, finishTime:null,
         controlMode:"normal", controlUntil:0,
         backconStyle:"none",
         controlCooldown: 2400 + Math.random()*3600,
@@ -376,7 +373,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         lastProgress:0,
         lastAdvanceAt:0,
         lastX:20.5,
-        lastY:154.8 + (i-5.5)*0.40,
+        lastY:154.8 + (i-3.5)*0.40,
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
@@ -2785,7 +2782,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function updatePlayer(p, now, dt){
-    if(p.done) return;
+    if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
 
     // v2.29 start reaction: milliseconds matter without changing base pace.
@@ -3172,8 +3169,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         if(playerObserverHit(p,o)){
           p.hits++;
           p.hitFxUntil=now+240;
-          p.stunUntil=now+STUN_MS;
-          p.collisionLockUntil=now+STUN_MS+INV_MS;
+          p.dead=true;
           p.match.collisions++;
           p.match.deathPoints.push({
             round:currentRound,
@@ -3385,7 +3381,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     for(let i=0;i<players.length;i++){
       const p=players[i];
-      if(p.done) continue;
+      if(p.done || p.dead) continue;
       const prog=currentProgress(p);
       if(prog>leaderProg){
         second=leader; secondProg=leaderProg;
@@ -3431,6 +3427,32 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const a=Math.min(0.068,dt*0.00220);
     camX+=(tx-camX)*a;
     camY+=(ty-camY)*a;
+  }
+
+  function finalizeIndividualClear(finishers,now){
+    if(roundTransitioning) return; roundTransitioning=true;
+    const bestMs=Math.round(finishers[0].finishTime);
+    const tied=finishers.filter(p=>Math.round(p.finishTime)===bestMs);
+    tied.forEach(p=>{
+      const row=playerTournament[p.index]; if(row){row.total+=1;row.rounds.push({round:currentRound,rank:1,points:1,time:p.finishTime,rating:0});}
+    });
+    renderPersonalScore();
+    const winners=tied.map(p=>p.name).join(" · ");
+    commentaryLine(`clear-${currentRound}-${bestMs}`,`${ROUND_UNIT_NAMES[currentRound]} 클리어! ${winners} +1점`,now,true);
+    const champion=tied.find(p=>(playerTournament[p.index]?.total||0)>=5) || players.find(p=>(playerTournament[p.index]?.total||0)>=5);
+    if(champion){
+      running=false; startBtn.textContent=`우승 · ${champion.name}`;
+      setBroadcastStory("champion","WINNER",`${champion.name} 개인전 우승`,`5클리어 달성`,now,999999);
+      return;
+    }
+    setTimeout(()=>{currentRound=currentRound%5+1;resetRound();start();},900);
+  }
+
+  function restartSameIndividualRound(){
+    if(roundTransitioning) return; roundTransitioning=true;
+    const r=currentRound;
+    setBroadcastStory(`all-dead-${r}`,"ALL OUT",`${ROUND_UNIT_NAMES[r]} 전원 사망`,`같은 라운드 재시작`,gameNow(),900);
+    setTimeout(()=>{currentRound=r;resetRound();start();},900);
   }
 
   function finalizeRound(){
@@ -3546,40 +3568,26 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   function renderTeamScore(){
-    const el=document.getElementById("teamScoreBoard");
-    if(!el) return;
-    if(roundHistory.length) rebuildTournamentStandings();
-    el.innerHTML=`<div class="team-score team-a"><b>빨강팀</b><span>${teamTotals.A}점</span></div>
-      <div class="team-score team-b"><b>파랑팀</b><span>${teamTotals.B}점</span></div>
-      <div class="round-badge">${currentRound} / 5 ROUND</div>
-      <div class="team-score team-c"><b>노랑팀</b><span>${teamTotals.C}점</span></div>
-      <div class="team-score team-d"><b>초록팀</b><span>${teamTotals.D}점</span></div>`;
+    const el=document.getElementById("teamScoreBoard"); if(el) el.style.display="none";
     renderPersonalScore();
   }
 
   function renderPersonalScore(){
-    const el=document.getElementById("personalScoreBoard");
-    if(!el) return;
-    const rows=Object.values(playerTournament)
-      .sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
-    el.innerHTML=`<div class="personal-score-title">개인 누적 점수</div>`+
-      rows.map((pt,i)=>`<div class="personal-score-row">
-        <span class="personal-rank">${i+1}</span>
-        <span class="score-dot ${teamDotClass(pt.team)}"></span>
-        <span class="personal-name">${pt.name}</span>
-        <b>${pt.total>0?"+":pt.total<0?"-":""}${Math.abs(pt.total)}</b>
-      </div>`).join("");
+    const el=document.getElementById("personalScoreBoard"); if(!el) return;
+    const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
+    el.innerHTML=`<div class="personal-score-title">개인 클리어 점수 · 5점 선승</div>`+
+      rows.map((pt,i)=>`<div class="personal-score-row"><span class="personal-rank">${i+1}</span><span class="score-dot" style="background:${teamColor(pt.team)}"></span><span class="personal-name">${pt.name}</span><b>${pt.total}</b></div>`).join("");
   }
 
   function qaRuntimeStatus(){
     const issues=[];
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
-    if(players.length!==12) issues.push(`선수 ${players.length}/12`);
+    if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
     if(Math.abs(PLAYER_HIT_RADIUS-.41)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
-    if(STUN_MS!==1800) issues.push(`STUN ${STUN_MS}`);
-    if(INV_MS!==1000) issues.push(`INV ${INV_MS}`);
+    if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
+    if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
     if(Math.abs(ROAD_MARGIN-1.10)>.0001) issues.push(`ROAD ${ROAD_MARGIN}`);
     return issues.length?`QA CHECK ${issues.join("·")}`:"정상";
   }
@@ -3590,7 +3598,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let collisions=0,finishes=0,totalTime=0;
     for(const p of players){collisions+=p.match.collisions||0;if(p.done&&p.finishTime!=null){finishes++;totalTime+=p.finishTime;}}
     const avg=finishes?formatTime(totalTime/finishes):"--";
-    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms · 자동보호 ${fpsProtectLevel}<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>완주 ${finishes}/12 · 평균 ${avg}`;
+    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms · 자동보호 ${fpsProtectLevel}<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>완주 ${finishes}/8 · 평균 ${avg}`;
   }
 
   const SIM_STEP_MS = 1000/50;
@@ -3828,7 +3836,19 @@ targetOff=clampRoadOffset(si,targetOff,p);
       lastRankingRender=ts;
     }
 
-    if(players.every(p=>p.done)){
+    const roundFinishers=players.filter(p=>p.done&&p.finishTime!=null).sort((a,b)=>a.finishTime-b.finishTime);
+    if(roundFinishers.length){
+      running=false;
+      finalizeIndividualClear(roundFinishers,ts);
+      return;
+    }
+    if(players.every(p=>p.dead)){
+      running=false;
+      restartSameIndividualRound();
+      return;
+    }
+
+    if(false && players.every(p=>p.done)){
       const fin=[...players].sort((a,b)=>a.finishTime-b.finishTime);
       if(fin[0])commentaryLine(`round-finish-${currentRound}`,`${currentRound}라운드 종료! ${fin[0].name}이 1위로 결승선을 통과했습니다.`,ts,true);
       running=false;
@@ -3967,7 +3987,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       ctx.rotate(p.visualAngle+marseilleVisualSpin);
       ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" :
         p.team==="B" ? "rgba(77,141,255,.45)" :
-        p.team==="C" ? "rgba(255,216,77,.45)" : "rgba(57,212,106,.45)";
+        p.team==="C" ? "rgba(255,216,77,.45)" : p.team==="D" ? "rgba(57,212,106,.45)" : "rgba(255,255,255,.35)";
       ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
       ctx.restore();
@@ -4021,6 +4041,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
     for(let i=0;i<players.length;i++){
       const p=players[i];
+      if(p.dead) continue;
       const x=(p.x-MINI_CROP.x)*sx,y=(p.y-MINI_CROP.y)*sy;
       if(x<0||y<0||x>W||y>H) continue;
       mx.beginPath();mx.arc(x,y,2.45,0,Math.PI*2);
@@ -4046,7 +4067,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     renderOrder.length=0;
     for(let i=0;i<players.length;i++) renderOrder.push(players[i]);
     renderOrder.sort((a,b)=>currentProgress(b)-currentProgress(a));
-    for(let i=0;i<renderOrder.length;i++) drawPlayer(renderOrder[i],view,i+1);
+    for(let i=0;i<renderOrder.length;i++) if(!renderOrder[i].dead) drawPlayer(renderOrder[i],view,i+1);
 
     const elapsed=raceStart ? Math.max(0,(simClock||ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
@@ -4392,6 +4413,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const ordered=[...players].sort((a,b)=>{
       if(a.done && b.done) return a.finishTime-b.finishTime;
       if(a.done) return -1;if(b.done) return 1;
+      if(a.dead!==b.dead) return a.dead?1:-1;
       const diff=currentProgress(b)-currentProgress(a);
       if(Math.abs(diff)<0.20) return a.index-b.index;
       return diff;
@@ -4403,7 +4425,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     for(let i=0;i<ordered.length;i++){
       const p=ordered[i], c=rankRowFor(p.index);
       let gapText;
-      if(p.done) gapText=formatTime(p.finishTime)+(p.newMapRecord?" · 맵최고":p.newPB?" · 개인최고":"");
+      if(p.done) gapText=formatTime(p.finishTime);
+      else if(p.dead) gapText="사망";
       else if(i===0) gapText="선두";
       else{
         const distGap=Math.max(0,leaderProg-currentProgress(p));

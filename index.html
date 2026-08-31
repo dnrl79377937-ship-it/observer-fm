@@ -6,14 +6,14 @@
   <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observer Avoid FM v3.7 — Live</title>
+  <title>Observer Avoid FM v4.0 — Live</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Observer Avoid FM</h1>
-      <p>v3.7 · OBS 330 · HIT 0.41</p>
+      <p>v4.0 · OBS 330 · HIT 0.41</p>
     </div>
     
     <div class="controls">
@@ -28,7 +28,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v3.7 · OBS 330 · HIT 0.41</span>
+        <span id="cameraLabel">v4.0 · OBS 330 · HIT 0.41</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
         <span id="clock">00:00.0</span>
@@ -67,7 +67,7 @@
   <div id="resultPanel" class="overlay hidden">
     <div class="modalCard resultCard">
       <button id="resultClose" class="closeBtn">×</button>
-      <h2>4팀 3vs3vs3vs3 · 5라운드 팀전 결과</h2>
+      <h2>8인 개인전 · 5클리어 선승 결과</h2>
       <div id="teamResultSummary"></div>
 
       <section class="visual-dashboard">
@@ -94,7 +94,7 @@
           </article>
 
           <article class="visual-card route-visual-card">
-            <div class="visual-card-head"><b>실제 이동 경로 비교</b><span>라운드별 12명 동시 표시</span></div>
+            <div class="visual-card-head"><b>실제 이동 경로 비교</b><span>라운드별 8명 동시 표시</span></div>
             <div id="routeRoundPicks" class="route-round-picks"></div>
             <canvas id="allRouteCanvas" width="771" height="534"></canvas>
             <div id="routeLegend" class="visual-legend"></div>
@@ -102,7 +102,7 @@
         </div>
       </section>
 
-      <div class="qa-final-strip">v3.7 · OBS 330 · HIT 0.41</div>
+      <div class="qa-final-strip">v4.0 · OBS 330 · HIT 0.41</div>
       <div class="highlight-title">선수 경기 평점</div>
       <div id="matchRatings" class="match-ratings"></div>
       <div class="highlight-title">경기 분석 리포트</div>
@@ -140,7 +140,7 @@
   <div id="balancePanel" class="overlay hidden">
     <div class="modalCard balanceCard">
       <button id="balanceClose" class="closeBtn">×</button>
-      <h2>v3.7 · 자동 밸런스 테스트</h2>
+      <h2>v4.0 · 자동 밸런스 테스트</h2>
       <p class="balance-note"><b>실전 누적</b>은 실제 레이스 엔진에서 끝난 라운드를 저장합니다. 아래 빠른 반복 테스트는 밸런스 방향을 빠르게 확인하는 근사 시뮬레이션입니다.</p>
       <div class="balance-section-head"><b>실전 경기 누적 대시보드</b><button id="liveBalanceReset">실전 기록 초기화</button></div>
       <div id="liveBalanceSummary" class="balance-summary"></div>
@@ -172,7 +172,7 @@
   <div id="replayPanel" class="overlay hidden">
     <div class="modalCard replayCard">
       <button id="replayClose" class="closeBtn">×</button>
-      <h2>v3.57 · 경기 리플레이</h2>
+      <h2>v4.0 · 경기 리플레이</h2>
       <div id="replayRounds" class="replay-rounds"></div>
       <canvas id="replayCanvas" width="771" height="534"></canvas>
       <div class="highlight-title">자동 하이라이트</div>
@@ -188,6 +188,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=37001"></script>
+  <script src="game.js?v=40001"></script>
 </body>
 </html>
