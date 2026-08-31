@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.09";
+  const BUILD_ID = "v4.10";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -358,6 +358,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           return Math.max(-.72,Math.min(.72,identity+inside*.16+style*.22-safety*.10));
         })(),
         routeBandPhase:Math.random()*Math.PI*2,
+        // v4.10: rare/high-skill extreme-inside attempts. Success can create a huge
+        // shortest-line gain; a misjudged attempt deliberately crosses the lethal edge.
+        extremeInsideActive:false, extremeInsideFail:false, extremeInsideUntil:0,
+        extremeInsideCooldown:900+Math.random()*1200, extremeInsideSide:0,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
         x:20.5, y:154.8 + startLane*7.6,
@@ -927,10 +931,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function clampRoadOffset(si,lateral,p=null){
-    // v4.07: AI target limiter only; still no physical wall.
-    // Racers know two extra outer rows are survivable, while the third row is lethal.
-    // Normal routing stays on the course; extreme inside specialists may deliberately exploit the outer rows.
-    const legalHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
+    // v4.10: normal AI stays on the route ribbon. During an explicit extreme-inside
+    // attempt, air units may use the full survivable margin; failed attempts are allowed
+    // to target just beyond it and are then killed by lethalOutsideRoad().
+    let legalHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
+    if(p && p.extremeInsideActive){
+      legalHalf += DEATH_EDGE_EXTRA + (p.extremeInsideFail?1.25:-0.42);
+    }
     return Math.max(-legalHalf*.998,Math.min(legalHalf*.998,lateral));
   }
 
@@ -976,17 +983,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function courseAwareTarget(p,si,tx,ty){
-    // Keep the optimized target if the entire chord is legal. If a long look-ahead
-    // would cut across a forbidden gap, progressively pull the target back toward the
-    // immediate route exit. This preserves smooth apexes without bizarre shortcuts.
-    if(lineStaysOnCourse(p.x,p.y,tx,ty)) return {x:tx,y:ty};
+    // Keep the optimized target if the entire chord is legal. Extreme-inside attempts
+    // get the same route-derived margin used by death logic, but still cannot chord
+    // across unrelated roads / red gaps.
+    const planExtra=(p&&p.extremeInsideActive)
+      ? DEATH_EDGE_EXTRA+(p.extremeInsideFail?1.15:-0.48)
+      : ROUTE_PLAN_EXTRA;
+    if(lineStaysOnCourse(p.x,p.y,tx,ty,planExtra)) return {x:tx,y:ty};
     const s=segs[si];
     const baseX=s.b[0]+s.nx*p.desiredOffset;
     const baseY=s.b[1]+s.ny*p.desiredOffset;
     for(const keep of [.72,.52,.34,.18,0]){
       const cx=baseX+(tx-baseX)*keep;
       const cy=baseY+(ty-baseY)*keep;
-      if(lineStaysOnCourse(p.x,p.y,cx,cy)) return {x:cx,y:cy};
+      if(lineStaysOnCourse(p.x,p.y,cx,cy,planExtra)) return {x:cx,y:cy};
     }
     return {x:baseX,y:baseY};
   }
@@ -2530,6 +2540,42 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return bestOff;
   }
 
+  function extremeInsideAdjustment(p,si,now,baseOff){
+    const side=cornerInsideSide(si);
+    const power=cornerIntensity(si);
+    if(now>=p.extremeInsideUntil){
+      p.extremeInsideActive=false;
+      p.extremeInsideFail=false;
+    }
+    if(side!==0 && power>.055 && !p.extremeInsideActive && now>=p.extremeInsideCooldown){
+      const inside=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+      const corner=Math.max(0,Math.min(1,(p.stats.cornering-72)/27));
+      const control=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+      const read=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+      const aggression=Math.max(0,Math.min(1,(p.stats.aggression-72)/27));
+      const styleAttack=Math.max(-.25,Math.min(.25,(p.drivingStyle.attack-p.drivingStyle.safety)));
+      // Everyone has a small chance; elite inside-line racers try it much more often.
+      const attemptChance=.022 + inside*.105 + Math.max(0,styleAttack)*.055 + aggression*.018;
+      if(Math.random()<attemptChance){
+        const successChance=Math.max(.48,Math.min(.93,.56+inside*.13+corner*.10+control*.08+read*.07-aggression*.035));
+        p.extremeInsideActive=true;
+        p.extremeInsideFail=Math.random()>=successChance;
+        p.extremeInsideSide=side;
+        p.extremeInsideUntil=now+720+Math.random()*520;
+        p.extremeInsideCooldown=now+2600+Math.random()*2600;
+      }else{
+        p.extremeInsideCooldown=now+700+Math.random()*1000;
+      }
+    }
+    if(!p.extremeInsideActive || !p.extremeInsideSide) return baseOff;
+    const routeHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
+    // Successful attempt skims just inside the lethal boundary. Failed attempt goes
+    // one step too deep; there is no fake random death — the ordinary course death
+    // detector kills the racer only if the driven position actually crosses the edge.
+    const depth=routeHalf+DEATH_EDGE_EXTRA+(p.extremeInsideFail?.78:-.62);
+    return p.extremeInsideSide*depth;
+  }
+
   function stabilizeDrivingLine(p,si,targetOff){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
     const density=playerNearbyObservers(p,15).length;
@@ -2580,11 +2626,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(p.wideDetourRace){
       // v2.60: 8% detour is intentionally sub-optimal, but no longer an extreme wall-hugging lap.
       const outer=inside!==0?-inside:(p.wideDetourSide||1);
-      off=off*.48 + outer*half*.58;
+      off=off*.62 + outer*half*.40;
     }else if(survival>.12){
       const outer=inside!==0?-inside:(p.wideDetourSide||1);
       const safetyWide=Math.max(0,(survival-.12)/.88);
-      off=off*(1-safetyWide*.16) + outer*half*(safetyWide*.22);
+      off=off*(1-safetyWide*.09) + outer*half*(safetyWide*.12);
     }
 
     if(p.humanMode===1){
@@ -2868,10 +2914,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const plannedOff=plannedRacingOffset(p,si,now);
     const packOff=packContextOffset(p,si,now);
     // Players are non-solid. Pack logic only adds subtle tactical route variety.
-    const packWeight=Math.min(0.25,0.08+(p.drivingStyle.pack-0.90)*0.40);
-    const identityWeight=.13;
+    const packWeight=Math.min(0.16,0.055+(p.drivingStyle.pack-0.90)*0.28);
+    const identityWeight=.095;
     const identityOff=(p.routeIdentityBias||0)*Math.max(1.8,widths[si]*.54);
-    targetOff=targetOff*.12+plannedOff*(.75-packWeight-identityWeight)+packOff*packWeight+identityOff*identityWeight;
+    // v4.10: globally trust the shortest optimized line more, while keeping enough
+    // personality/pack weight for racers to remain recognisably different.
+    targetOff=targetOff*.065+plannedOff*(.84-packWeight-identityWeight)+packOff*packWeight+identityOff*identityWeight;
       // Kart-style cornering: aggressively approach the inside/apex on turns.
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
@@ -2977,6 +3025,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const from=p.avoidRecoverOffset;
       targetOff=from*(1-blend)+rejoin*blend;
     }
+    // v4.10 EXTREME INSIDE: a deliberate high-risk shortest-line gamble.
+    // It is applied after ordinary avoidance planning so committed racers do not
+    // instantly cancel the gamble and become uniformly safe. Observer avoidance still
+    // contributes through steering/control, but the racing-line commitment dominates.
+    const extremeOff=extremeInsideAdjustment(p,si,now,targetOff);
+    if(p.extremeInsideActive){
+      const commit=p.extremeInsideFail?.94:.88;
+      targetOff=targetOff*(1-commit)+extremeOff*commit;
+      // Successful extreme line gets a tiny momentum reward from shorter geometry,
+      // never a rubber-band speed boost. Failed attempts get no artificial slowdown.
+      if(!p.extremeInsideFail) speedMul*=1.004;
+    }
+
     const controlCanOverride = p.reactiveControl || !avoid;
     const cq=Math.max(.55,Math.min(1,p.controlQuality||1));
     const failedControl=!p.controlSuccess;
