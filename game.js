@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.17";
+  const BUILD_ID = "v4.19";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1644,7 +1644,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(pd<2.8) danger+=(2.8-pd)*1.35;
     }
     p.liveEvadeDanger=danger;
-    const trigger=nearest<5.8 || front>.18 || danger>.42;
+    const trigger=nearest<4.6 || front>.32 || danger>.62;
     if(!trigger && now>=p.liveEvadeUntil) return null;
 
     if(now>=p.liveEvadeNextThink){
@@ -1661,7 +1661,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         {off:current,spd:1.015,side:0,kind:'forward'},
         {off:current+half*.48,spd:1.00,side:1,kind:'soft'},
         {off:current+half*.88,spd:.985,side:1,kind:'hard'},
-        {off:current+(left<=right?-1:1)*half*.30,spd:-.34,side:(left<=right?-1:1),kind:'back'}
+        {off:current+(left<=right?-1:1)*half*.22,spd:-.16,side:(left<=right?-1:1),kind:'back'}
       ];
       let best=null;
       for(const c of candidates){
@@ -1670,9 +1670,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // bonus prevents meaningless frame jitter while still allowing rapid reversals.
         let score=r.score;
         if(c.side && c.side===p.liveEvadeSide) score-=.30+ctrl*.30;
-        if(c.kind==='hard' && danger>1.0) score-=.45;
+        if(c.kind==='hard' && danger>1.0) score-=.12;
+        if(c.kind==='soft' && nearest<4.4) score-=.58;
         if(c.kind==='forward' && danger>.75) score+=1.4;
-        if(c.kind==='back') score += (front>1.15 ? -1.0-avoid*.65 : 2.8);
+        if(c.kind==='back'){
+          // v4.19: reverse is an emergency tap only when the threat is almost on top of us.
+          // If a diagonal/side escape has room, reversing is heavily discouraged.
+          const emergencyBack = nearest<2.35 && front>1.05 && danger>1.15;
+          score += emergencyBack ? (-.35-avoid*.30) : 18.0;
+        }
         // imperfect human judgement: lower prediction/control adds bounded error
         score += (Math.random()-.5)*(1-skill)*2.0;
         if(!best || score<best.score) best={...c,score,minClear:r.minClear};
@@ -1690,7 +1696,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         p.liveEvadeSide=best.side||p.liveEvadeSide||1;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
-        p.liveEvadeUntil=now+(best.kind==='back'?150+Math.random()*90:125+Math.random()*120);
+        p.liveEvadeUntil=now+(best.kind==='back'?70+Math.random()*45:95+Math.random()*90);
         p.match.avoids++;
       }
     }
@@ -1721,7 +1727,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const packVisionBoost=pack.mates>=2 ? 1.18+pack.density*.12 : 1;
     const ownVision=Math.min(AVOID_SCAN_RADIUS,(p.visionRadius||AVOID_SCAN_RADIUS)*packVisionBoost);
     const nearbyRaw=playerNearbyObservers(p,ownVision);
-    const sharedRaw=sharedPackDanger(p,s,nearbyRaw,pack);
+    // v4.19 CLOSE-REACTION GATE: do not pre-dodge observers far down the road.
+    // A human-like racer keeps the optimized line until an observer is genuinely close.
+    const imminentRaw=nearbyRaw.filter(o=>{
+      const dx=o.x-p.x,dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy, lat=Math.abs(dx*s.nx+dy*s.ny);
+      const d=Math.hypot(dx,dy);
+      return d<4.9 || (along>-1.4 && along<6.6 && lat<4.9);
+    });
+    if(!imminentRaw.length){ p.avoidPlanUntil=0; return null; }
+    const sharedRaw=sharedPackDanger(p,s,imminentRaw,pack).filter(o=>{
+      const dx=o.x-p.x,dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy, lat=Math.abs(dx*s.nx+dy*s.ny);
+      return Math.hypot(dx,dy)<5.2 || (along>-1.5 && along<6.9 && lat<5.1);
+    });
     if(!sharedRaw.length) return null;
 
     // v3.63: a pack tracks a broader slice of the obstacle field. Solo behavior
@@ -1739,7 +1758,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;
       const lat=dx*s.nx+dy*s.ny;
-      if(along>1.2 && along<15.0 && Math.abs(lat)<Math.min(4.8,simpleRoadHalf*.72)){
+      if(along>.65 && along<6.4 && Math.abs(lat)<Math.min(4.8,simpleRoadHalf*.72)){
         simpleFront.push({o,along,lat});
       }
     }
@@ -1753,7 +1772,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const dx=o.x-p.x,dy=o.y-p.y;
         const along=dx*s.ux+dy*s.uy;
         const lat=Math.abs(dx*s.nx+dy*s.ny);
-        if(along>-1.0 && along<13.0 && lat<simpleRoadHalf*.98) interfering++;
+        if(along>-.8 && along<6.8 && lat<simpleRoadHalf*.98) interfering++;
       }
       if(interfering===0){
         const skill=Math.max(0,Math.min(1,
