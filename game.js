@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.04";
+  const BUILD_ID = "v4.06";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,8 +36,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.47;     // v4.03: resized sprites matched with slightly larger observer-contact radius
-  const PLAYER_VISUAL_SCALE = 0.77004;  // v4.03: -7%
+  const PLAYER_HIT_RADIUS = 0.45;     // v4.06: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_VISUAL_SCALE = 0.693036;  // v4.06: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
@@ -53,7 +53,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
-  const DEATH_EDGE_EXTRA = 1.05;      // v4.04: one more logical tile beyond the legal edge = instant death
+  const DEATH_EDGE_EXTRA = 2.10;      // v4.06: two adjacent outer rows survive; third row is lethal
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -926,9 +926,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function clampRoadOffset(si,lateral,p=null){
-    // v4.04: this is an AI target limiter, NOT a wall/collision clamp.
-    // The outer one-line strip is fully legal. Racers may fly there, but they understand
-    // that the next row beyond it is lethal and therefore do not deliberately target it.
+    // v4.06: AI target limiter only; still no physical wall.
+    // Racers know two extra outer rows are survivable, while the third row is lethal.
+    // Normal routing stays on the course; extreme inside specialists may deliberately exploit the outer rows.
     const legalHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
     return Math.max(-legalHalf*.998,Math.min(legalHalf*.998,lateral));
   }
@@ -948,7 +948,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function lethalOutsideRoad(p){
     // No wall: crossing the painted edge never pushes or slows the air unit.
-    // One adjacent edge row remains legal; only the following row is an instant-death zone.
+    // Two adjacent outer rows are survivable; entering the third row is instant death.
     const f=nearestRouteFrame(p.x,p.y,p.seg);
     if(!f) return false;
     const deathHalf=Math.max(2.0,widths[f.si]*ROAD_MARGIN)+DEATH_EDGE_EXTRA;
@@ -2454,9 +2454,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const personalDist=Math.abs(c-personalTarget);
       score += personalDist*routeVar*(1.18+Math.max(0,1-readTrust)*.46);
 
-      // v4.04 DEATH-EDGE AWARENESS: there is no wall, but racers know the row beyond
-      // the legal outer strip is lethal. Extreme inside specialists may use the full legal
-      // strip; everyone strongly avoids planning beyond it.
+      // v4.06 DEATH-EDGE AWARENESS: no wall exists. Two outer rows are survivable,
+      // but racers understand the third row is lethal. Extreme inside specialists can
+      // exploit the survivable margin while normal lines keep a safer buffer.
       const legalRatio=Math.abs(off)/Math.max(1,half);
       const edgeRisk=Math.max(0,legalRatio-.91);
       const insideN=(p.stats.insideLine-72)/27;
@@ -3100,8 +3100,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // v4.04 AIR UNIT: still no wall, snap, bounce, or off-road slowdown.
-    // However, flying one full row beyond the legal outer edge is an instant-death zone.
+    // v4.06 AIR UNIT: still no wall, snap, bounce, or off-road slowdown.
+    // Two rows outside the usual outer line survive; the third row is instant death.
     if(lethalOutsideRoad(p)){
       p.dead=true;
       p.match.collisions++;
@@ -3622,6 +3622,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
     if(Math.abs(ROAD_MARGIN-1.10)>.0001) issues.push(`ROAD ${ROAD_MARGIN}`);
+    if(Math.abs(DEATH_EDGE_EXTRA-2.10)>.0001) issues.push(`EDGE ${DEATH_EDGE_EXTRA}`);
     return issues.length?`QA CHECK ${issues.join("·")}`:"정상";
   }
 
@@ -5641,10 +5642,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==100)issues.push("옵저버100");
-    if(Math.abs(PLAYER_HIT_RADIUS-.47)>.0001)issues.push("HIT");
-    // v4.04: ROAD_MARGIN defines the legal outer edge strip; no physical wall exists.
+    if(Math.abs(PLAYER_HIT_RADIUS-.45)>.0001)issues.push("HIT");
+    // v4.06: two extra outer rows survive; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
-    if(Math.abs(PLAYER_VISUAL_SCALE-.77004)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
+    if(Math.abs(PLAYER_VISUAL_SCALE-.693036)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
