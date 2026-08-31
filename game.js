@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 100;
+  const OBSERVER_COUNT = 200;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.12";
+  const BUILD_ID = "v4.13";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -39,18 +39,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const PLAYER_HIT_RADIUS = 0.47;     // v4.07: smaller racer sprite, collision tuned down accordingly
   const PLAYER_VISUAL_SCALE = 0.693036;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
-  const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
+  const OBS_SPEED_RATIO = 0.604314;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
   const OBS_STOP_MS = 1000;             // then stop for 1 second
-  const AVOID_SCAN_RADIUS = 34.0;        // look ahead for nearby observers
+  const AVOID_SCAN_RADIUS = 39.0;        // look ahead for nearby observers
   const AVOID_CRITICAL_RADIUS = 10.8;     // emergency reaction zone
-  const AVOID_PREDICT_SEC = 3.20;        // predict observer positions ahead
+  const AVOID_PREDICT_SEC = 4.10;        // predict observer positions ahead
   const AVOID_REACTION_CHANCE = 0.9995;  // much stronger reaction rate
-  const AVOID_SAFE_BUFFER = 7.1;
-  const AVOID_LANE_LOOKAHEAD = 2.60;
-  const AVOID_HORIZONS = [0.28,0.60,1.05,1.60,2.25,3.00];   // compare future lane safety
-  const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
+  const AVOID_SAFE_BUFFER = 7.6;
+  const AVOID_LANE_LOOKAHEAD = 3.05;
+  const AVOID_HORIZONS = [0.22,0.48,0.82,1.20,1.72,2.35,3.10,3.85];   // compare future lane safety
+  const INSIDE_CORNER_STRENGTH = 1.035; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
   const DEATH_EDGE_EXTRA = 4.50;      // v4.09: lethal zone begins well beyond the real route ribbon
@@ -178,7 +178,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       playerHitRadius:PLAYER_HIT_RADIUS,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
-      baseSpeedMultiplier:1.464395625};
+      baseSpeedMultiplier:1.566903319};
   }
 
   function buildMasterMatchResult(){
@@ -388,7 +388,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           + ((stats.endurance-85)/14)*0.008
           + ((stats.luck-85)/14)*0.002
           + Math.random()*0.006
-        ) * 1.464395625,
+        ) * 1.566903319,
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hitFxUntil:0, visualAngle:0, prevX:20.5, prevY:154.8 + startLane*7.6, simPrevX:20.5, simPrevY:154.8 + startLane*7.6,
@@ -1542,8 +1542,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const reactN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
     const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
     const skill=(predN+avoidN+reactN+controlN)/4;
-    const horizon=1.85+predN*1.20+avoidN*.58;
-    const steps=9+Math.round(predN*7+controlN*3+reactN*2);
+    const horizon=2.20+predN*1.42+avoidN*.72;
+    const steps=12+Math.round(predN*9+controlN*4+reactN*3);
     const dt=horizon/steps;
     let x=p.x,y=p.y;
     let lateral=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
@@ -1600,7 +1600,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     // v3.63: a pack tracks a broader slice of the obstacle field. Solo behavior
     // stays essentially unchanged; dense packs keep up to nine meaningful threats.
-    const threatLimit=pack.mates>=3?13:pack.mates>=2?11:9;
+    const threatLimit=pack.mates>=3?20:pack.mates>=2?17:14;
     const nearby=nearestThreats(sharedRaw,p,threatLimit);
 
     // v3.6 SIMPLE READ DODGE:
@@ -1860,9 +1860,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Candidate lanes + speed choices. The planner chooses the safest path that
     // costs the least race time. Stop is evaluated only as an emergency option.
     const laneFracs=clusterPlan.density>.38
-      ? [-1.04,-.94,-.84,-.72,-.60,-.48,-.36,-.24,-.12,0,.12,.24,.36,.48,.60,.72,.84,.94,1.04]
-      : [-1.02,-.90,-.78,-.66,-.54,-.42,-.30,-.18,0,.18,.30,.42,.54,.66,.78,.90,1.02];
-    const movingSpeeds=clusterPlan.emergency ? [1.02,.98,.93,.86,.78] : [1.02,.99,.95,.89];
+      ? [-1.10,-1.02,-.94,-.86,-.76,-.66,-.56,-.46,-.36,-.26,-.16,-.08,0,.08,.16,.26,.36,.46,.56,.66,.76,.86,.94,1.02,1.10]
+      : [-1.08,-.98,-.88,-.78,-.68,-.58,-.48,-.38,-.28,-.18,-.09,0,.09,.18,.28,.38,.48,.58,.68,.78,.88,.98,1.08];
+    const movingSpeeds=clusterPlan.emergency ? [1.045,1.01,.97,.91,.84] : [1.045,1.015,.98,.93];
     let best=null;
 
     for(const frac of laneFracs){
@@ -2093,14 +2093,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const pressure=(p.stats.pressure-72)/27;
 
     // Very low probability tactical gamble: attack an extreme apex for a pass.
-    const chance=.013 + aggression*.010 + insideSkill*.008 + pressure*.005;
+    const chance=.030 + aggression*.018 + insideSkill*.022 + pressure*.010;
     if(Math.random()<chance){
       p.variantMode=1;
       p.variantSide=inside;
       const identity=identityOf(p);
       p.variantStrength=Math.min(.995,(.88+insideSkill*.07+control*.025)*(identity.apex||1));
       p.variantUntil=now+520+Math.random()*620;
-      p.variantCooldown=now+8500+Math.random()*8500;
+      p.variantCooldown=now+5200+Math.random()*6200;
       return baseOff*(1-p.variantStrength)+inside*half*p.variantStrength;
     }
 
@@ -2980,9 +2980,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
       if(insideSide!==0 && turnPower>0.055){
-        const halfRoad=Math.max(1.8,widths[si]*1.08);
+        const halfRoad=Math.max(1.8,widths[si]*1.13);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
-        const apexBlend=Math.min(0.998,0.88+turnPower*1.55);
+        const apexBlend=Math.min(0.999,0.93+turnPower*1.62);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
       }
 
@@ -2990,9 +2990,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // the corner actually begins instead of waiting until the midpoint.
       const futureInside=futureInsideBias(si);
       if(Math.abs(futureInside)>0.10){
-        const halfRoad2=Math.max(1.8,widths[si]*1.10);
-        const futureApex=futureInside*halfRoad2*0.998;
-        targetOff=targetOff*0.06+futureApex*0.94;
+        const halfRoad2=Math.max(1.8,widths[si]*1.15);
+        const futureApex=futureInside*halfRoad2*1.035;
+        targetOff=targetOff*0.025+futureApex*0.975;
       }
 
     // Lower line skill adds slightly more steering error, while everyone still
