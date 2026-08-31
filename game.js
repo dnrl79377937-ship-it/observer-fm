@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 150;
+  const OBSERVER_COUNT = 120;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.15";
+  const BUILD_ID = "v4.16";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -319,24 +319,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
       const wideDetourRace=Math.random()<.02;
       const wideDetourSide=Math.random()<.5?-1:1;
-      // v4.03: opening route diversity. Some racers launch on the upper edge,
-      // some on the lower edge, with stats/style deciding how extreme the choice is.
-      const startRead=(stats.routeReading-72)/27;
-      const startInside=(stats.insideLine-72)/27;
-      const startStyle=(drivingStyle.attack-drivingStyle.safety);
-      // v4.12 opening distribution: most racers deliberately attach to the upper
-      // fast lane (screen-up = negative lateral/Y), while a minority still launch
-      // through the middle or lower band so starts do not become identical.
-      const startRoll=Math.random();
-      let startLane;
-      if(startRoll<0.68){
-        startLane=-(.42+Math.random()*.44) - startInside*.05 - Math.max(0,startStyle)*.04;
-      }else if(startRoll<0.88){
-        startLane=(Math.random()*2-1)*.24 + (1-startRead)*.04;
-      }else{
-        startLane=.30+Math.random()*.48 + Math.max(0,-startStyle)*.04;
-      }
-      startLane=Math.max(-.98,Math.min(.92,startLane));
+      // v4.16: all eight racers start from the exact same physical point.
+      // Player-player collision is disabled, so overlapping starts are intentional.
+      // Route separation must come from AI decisions after the gun, not spawn offsets.
+      const startLane=0;
       return {
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
@@ -1315,6 +1301,36 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!foundSide) return 0;
     const proximity=Math.max(0,1-distance/7);
     return foundSide*Math.min(.995,.58+proximity*.31+Math.min(.10,foundPower*.34));
+  }
+
+  function openingFastLineTarget(p,si){
+    // v4.16 GENERIC START-STRAIGHT OPTIMIZER:
+    // During the opening portion of the race, read the first meaningful upcoming
+    // corner and move toward its inside edge immediately. This is based on route
+    // topology/progress only — no map screenshot coordinates or hand-authored points.
+    // It makes a long opening straight become a smooth diagonal toward the fastest
+    // wall-side line instead of staying in the middle until the bend.
+    const ratio=Math.max(0,Math.min(1,currentProgress(p)/Math.max(1,routeLength)));
+    if(ratio>.22) return null;
+    let side=0, power=0, cornerSeg=-1;
+    for(let k=0;k<10;k++){
+      const idx=Math.min(route.length-2,si+k);
+      const cs=cornerInsideSide(idx);
+      const cp=cornerIntensity(idx);
+      if(cs!==0 && cp>.032){ side=cs; power=cp; cornerSeg=idx; break; }
+    }
+    if(!side) return null;
+
+    // Only force the line while we are still on the approach to that first turn.
+    // As the turn gets closer, commitment grows smoothly toward the legal edge.
+    const segGap=Math.max(0,cornerSeg-si);
+    const proximity=Math.max(0,1-Math.min(1,segGap/9));
+    const insideSkill=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+    const readSkill=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const controlSkill=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*1.08);
+    const commit=Math.min(.995,.91+insideSkill*.045+readSkill*.018+controlSkill*.012+proximity*.018+power*.025);
+    return side*half*commit;
   }
 
   function futureInsideBias(si){
@@ -2727,9 +2743,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*.10;
     const identityBias=(p.routeIdentityBias||0)*half*.24;
     const approachInside=openingInsideBias(si);
-    const identityKeep=Math.abs(approachInside)>.08 ? .92 : .79;
-    const identityScale=Math.abs(approachInside)>.08 ? .34 : 1;
+    const openingFast=openingFastLineTarget(p,si);
+    const identityKeep=openingFast!=null ? .985 : (Math.abs(approachInside)>.08 ? .92 : .79);
+    const identityScale=openingFast!=null ? .06 : (Math.abs(approachInside)>.08 ? .34 : 1);
     off=off*identityKeep + (identityBias + identityWave)*identityScale;
+    if(openingFast!=null) off=off*.08+openingFast*.92;
     off=creativeRouteAdjustment(p,si,now,off);
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
@@ -2743,9 +2761,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // turn the course into a straight chord across off-road space. Around the
     // 5-o'clock rise especially, advance only to the next route joint first.
     const routeLocked = si<=10;
-    let ahead=Math.min(segs.length-1,si+(routeLocked?1:3));
+    const openingFast=openingFastLineTarget(p,si);
+    // v4.16: the opening straight is allowed a longer same-corridor lookahead so
+    // steering visibly forms a diagonal toward the inside wall. Course validation
+    // below still rejects any chord that would cross a non-drivable gap.
+    let ahead=Math.min(segs.length-1,si+(openingFast!=null?3:(routeLocked?1:3)));
     let strongest=0;
-    const scanEnd=routeLocked?Math.min(maxAhead,si+2):maxAhead;
+    const scanEnd=openingFast!=null?Math.min(maxAhead,si+5):(routeLocked?Math.min(maxAhead,si+2):maxAhead);
     for(let j=si+1;j<=scanEnd;j++){
       const a=segs[Math.max(0,j-1)];
       const b=segs[j];
@@ -2762,6 +2784,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const half=Math.max(1.7,widths[ahead]*0.64);
       const skill=((p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3-72)/27;
       targetOff=(strongest>0 ? 1 : -1)*half*Math.min(.997,.94+skill*.057);
+    }
+    if(openingFast!=null){
+      const targetHalf=Math.max(1.8,widths[ahead]*1.06);
+      const sign=Math.sign(openingFast)||Math.sign(targetOff)||1;
+      targetOff=sign*targetHalf*.965;
     }
 
     const phase=cornerPhaseTarget(p,si,Math.max(1.8,widths[si]*.56));
@@ -3023,6 +3050,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const earlyTarget=earlyInside*halfRoad3;
         const earlyBlend=.72+insideSkill*.20;
         targetOff=targetOff*(1-earlyBlend)+earlyTarget*earlyBlend;
+      }
+
+      // v4.16: on the opening long straight, shortest-path geometry gets final
+      // authority over route personality. All racers begin overlapped, then fan
+      // naturally only when observer avoidance or player traits justify it.
+      const openingFast=openingFastLineTarget(p,si);
+      if(openingFast!=null){
+        const read=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+        const blend=.94+read*.045;
+        targetOff=targetOff*(1-blend)+openingFast*blend;
       }
 
     // Lower line skill adds slightly more steering error, while everyone still
@@ -3815,7 +3852,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
     if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.45)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
+    if(Math.abs(PLAYER_HIT_RADIUS-.47)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
@@ -5839,8 +5876,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==100)issues.push("옵저버100");
-    if(Math.abs(PLAYER_HIT_RADIUS-.45)>.0001)issues.push("HIT");
+    if(OBSERVER_COUNT!==120)issues.push("옵저버120");
+    if(Math.abs(PLAYER_HIT_RADIUS-.47)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.693036)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
