@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.02";
+  const BUILD_ID = "v4.03";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,9 +36,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.45;     // unchanged collision feel
-  const PLAYER_VISUAL_SCALE = 0.828;   // v14 visual size
-  const OBS_VISUAL_SCALE = 0.74052;      // v14 visual size
+  const PLAYER_HIT_RADIUS = 0.47;     // v4.03: resized sprites matched with slightly larger observer-contact radius
+  const PLAYER_VISUAL_SCALE = 0.77004;  // v4.03: -7%
+  const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
   const OBS_MOVE_MS = 10000;            // move for 10 seconds
@@ -317,6 +317,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
       const wideDetourRace=Math.random()<.02;
       const wideDetourSide=Math.random()<.5?-1:1;
+      // v4.03: opening route diversity. Some racers launch on the upper edge,
+      // some on the lower edge, with stats/style deciding how extreme the choice is.
+      const startRead=(stats.routeReading-72)/27;
+      const startInside=(stats.insideLine-72)/27;
+      const startStyle=(drivingStyle.attack-drivingStyle.safety);
+      const startLane=Math.max(-1,Math.min(1,(Math.random()*2-1)*(.72-startRead*.18)+startInside*.16+startStyle*.18));
       return {
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
@@ -352,7 +358,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         routeBandPhase:Math.random()*Math.PI*2,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:20.5, y:154.8 + (i-3.5)*0.40,
+        x:20.5, y:154.8 + startLane*7.6,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -367,7 +373,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.464395625,
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:route[0][0], prevY:route[0][1], simPrevX:20.5, simPrevY:154.8 + (i-3.5)*0.40,
+        hitFxUntil:0, visualAngle:0, prevX:20.5, prevY:154.8 + startLane*7.6, simPrevX:20.5, simPrevY:154.8 + startLane*7.6,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -837,14 +843,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v3.63: dense packs favor early corridor selection over abrupt last-second
         // tricks. These controls remain available, just less likely while overlapping.
         const packControlCalm=controlPack.mates>=3?.52:controlPack.mates>=2?.72:1;
+        // v4.03: all reactive trick-control tendencies +20% around observers,
+        // but the live leader protects position and uses them much less often.
+        const leaderControlCalm=liveRaceSituation(p).rank===1?.55:1;
         // v3.51: only when an observer is immediately ahead, increase both
         // zigzag and backcon selection weights by 20% relative to v3.50.
-        const marseilleWeight=(.045+((p.stats.control-72)/27)*.030+((p.stats.aggression-72)/27)*.012)*packControlCalm;
-        const stopWeight=.00025;
+        const marseilleWeight=(.045+((p.stats.control-72)/27)*.030+((p.stats.aggression-72)/27)*.012)*1.20*packControlCalm*leaderControlCalm;
+        const stopWeight=.00025*1.20*leaderControlCalm;
         const backBase=sideEscapeOpen?.045:.095;
-        const backWeight=backBase*1.20*1.10*packControlCalm;
+        const backWeight=backBase*1.20*1.10*1.20*packControlCalm*leaderControlCalm;
         const zigBase=Math.max(.001,1-marseilleWeight-stopWeight-backBase);
-        const zigWeight=zigBase*1.20;
+        const zigWeight=zigBase*1.20*1.20*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         if(r<marseilleWeight){
@@ -874,7 +883,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
 
       if(nearAhead){
-        const zigChance=Math.min(.92,.62+reaction*.10+prediction*.10+pressure*.05);
+        const nearLeaderCalm=liveRaceSituation(p).rank===1?.55:1;
+        const zigChance=Math.min(.98,(.62+reaction*.10+prediction*.10+pressure*.05)*1.20*nearLeaderCalm);
         if(Math.random()<zigChance){
           const nearMode=Math.random()<.945?"zigzag":"backcon";
           beginControl(p,nearMode,now,(nearMode==="backcon"?220+Math.random()*120:290+Math.random()*190),true,nearAhead.id,
@@ -915,86 +925,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function clampRoadOffset(si,lateral,p=null){
-    // v3.57 NO-YELLOW: only the real route corridor is legal.
-    // Both one-line edge strips remain ordinary drivable road.
-    const detourBoost=p&&p.wideDetourRace?1.025:1;
-    const roadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*detourBoost);
-    return Math.max(-roadHalf,Math.min(roadHalf,lateral));
+    // v4.03 AIR UNIT: no road-wall collision/clamp. The route is a racing guide,
+    // not a physical barrier; air units may cut across either edge freely.
+    const guideHalf=Math.max(2.0,widths[si]*1.75);
+    return Math.max(-guideHalf,Math.min(guideHalf,lateral));
   }
 
 
   function clampToRoad(p){
-    // v3.57 GENERAL ROAD OWNERSHIP:
-    // A racer may be physically on the previous/next road segment at a joint,
-    // but must never keep a DIFFERENT logical segment. That mismatch was the
-    // cause of the all-player stall on the left one-line road (seg 21).
-    //
-    // Rule:
-    // 1) If the current position belongs to the current corridor, keep it exactly.
-    // 2) Otherwise, if it belongs to the immediately previous/next corridor,
-    //    repair p.seg only -- NEVER move x/y.
-    // 3) Only when the position is outside all three corridors do a tiny bounded
-    //    correction toward the CURRENT corridor. No nearby parallel/wide road can
-    //    steal ownership and no cross-road teleport is possible.
-    const base=Math.min(p.seg,segs.length-1);
-
-    function corridorInfo(si){
-      if(si<0||si>=segs.length) return null;
-      const s=segs[si];
-      const rx=p.x-s.a[0], ry=p.y-s.a[1];
-      const along=rx*s.ux+ry*s.uy;
-      const lateral=rx*s.nx+ry*s.ny;
-      const roadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*(p&&p.wideDetourRace?1.025:1));
-      const legal=
-        along>=-1.8 && along<=s.L+2.8 &&
-        Math.abs(lateral)<=roadHalf+.0001;
-      return {si,s,along,lateral,roadHalf,legal};
-    }
-
-    const cur=corridorInfo(base);
-    if(cur&&cur.legal) return;
-
-    const prev=corridorInfo(base-1);
-    const next=corridorInfo(base+1);
-
-    if(prev&&prev.legal){
-      p.seg=prev.si;
-      return;
-    }
-    if(next&&next.legal){
-      p.seg=next.si;
-      return;
-    }
-
-    if(!cur) return;
-    const along=Math.max(-1.8,Math.min(cur.s.L+2.8,cur.along));
-    const lateral=Math.max(-cur.roadHalf,Math.min(cur.roadHalf,cur.lateral));
-    const tx=cur.s.a[0]+cur.s.ux*along+cur.s.nx*lateral;
-    const ty=cur.s.a[1]+cur.s.uy*along+cur.s.ny*lateral;
-    const dx=tx-p.x, dy=ty-p.y, dist=Math.hypot(dx,dy);
-    const maxFix=.24;
-    if(dist<=maxFix){p.x=tx;p.y=ty;}
-    else if(dist>0){p.x+=dx/dist*maxFix;p.y+=dy/dist*maxFix;}
+    // v4.03 AIR UNIT: intentionally no physical road boundary.
+    // Never push, snap, slow, or teleport a racer for leaving the painted road.
+    return;
   }
 
 
   function rescueIfStuck(p,now){
     const prog=currentProgress(p);
 
-    // v3.62 edge-line anti-stall: deep inside driving must never create a stationary
-    // wall fight. This changes only steering/control state, never p.seg or x/y.
-    if(now>=p.stunUntil && p.lastAdvanceAt && now-p.lastAdvanceAt>1250){
-      const si=Math.min(p.seg,segs.length-1),s=segs[si];
-      const lat=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-      const roadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*(p.wideDetourRace?1.025:1));
-      if(Math.abs(lat)>roadHalf*.86){
-        p.linePlanOffset=Math.sign(lat)*roadHalf*.62;
-        p.linePlanUntil=now+420;
-        p._stableOff=p.linePlanOffset;
-        p.controlMode="normal";p.controlUntil=0;
-        p.avoidPlanUntil=0;p.marseilleUntil=0;
-      }
-    }
+    // v4.03: no edge-wall anti-stall correction; air units have no wall to fight.
     if(prog > p.lastProgress + 0.18){
       p.lastProgress=prog;
       p.lastAdvanceAt=now;
@@ -2471,7 +2419,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const readTrust=(p.stats.routeReading-72)/27;
       const controlTrust=((p.stats.control+p.stats.consistency)/2-72)/27;
       const safetyBias=((p.stats.riskControl+p.stats.stability)/2-72)/27;
-      const routeVar=Math.max(.08,Math.min(.42,.36-readTrust*.18-controlTrust*.06+safetyBias*.04));
+      const routeVar=Math.max(.14,Math.min(.62,.50-readTrust*.20-controlTrust*.05+safetyBias*.06));
       let personalTarget=(p.routeBand||0);
       if(cornerSide!==0 && cornerPower>.035){
         const insideTalent=(p.stats.insideLine-72)/27;
@@ -2481,16 +2429,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }else{
         // Gentle long-wave variation on straights gives each racer a recognisable
         // path without twitching or random lane changes.
-        personalTarget+=Math.sin((si*.42)+(p.routeBandPhase||0))*(.08+routeVar*.10);
+        personalTarget+=Math.sin((si*.42)+(p.routeBandPhase||0))*(.16+routeVar*.18);
       }
-      personalTarget=Math.max(-.88,Math.min(.88,personalTarget));
+      personalTarget=Math.max(-1.12,Math.min(1.12,personalTarget));
       const personalDist=Math.abs(c-personalTarget);
-      score += personalDist*routeVar*(.82+Math.max(0,1-readTrust)*.34);
+      score += personalDist*routeVar*(1.18+Math.max(0,1-readTrust)*.46);
 
       // Avoid wall scraping while still allowing near-apex lines.
       // Skilled racers pay a smaller penalty and can exploit millimetre-like edge gains.
       const edgeSkill=((p.stats.cornering+p.stats.insideLine+p.stats.control)/3-72)/27;
-      score += Math.pow(Math.abs(c),5)*(.24-edgeSkill*.10);
+      score += Math.pow(Math.abs(c),5)*.015; // v4.03: no wall-scrape penalty for air units
 
       // v29: cornering/inside-line/route-reading and personality determine
       // how aggressively the racer trusts the shortest apex.
@@ -3116,7 +3064,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // 패스·코너 준비 AI 때문에 체감 감속이 생기지 않도록 정상 주행 속도를 보장.
     if(si>=5 && si<=11 && now>=p.stunUntil && p.controlMode==="normal"){
       const eastThreats=playerNearbyObservers(p,7.5);
-      if(!eastThreats.length) speedMul=Math.max(speedMul,.988);
+      if(!eastThreats.length) speedMul=Math.max(speedMul,1.0);
     }
 
     const step=p.speed*speedMul*dt/1000;
@@ -3124,8 +3072,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // Keep AI off true black/non-drivable terrain; the one-line road-edge strip is legal road.
-    clampToRoad(p);
+    // v4.03 AIR UNIT: no painted-road wall collision or off-road slowdown.
+    // Route waypoints still guide race progress, but geometry never blocks movement.
     p.match.distance += Math.hypot(p.x-p.match.lastX,p.y-p.match.lastY);
     p.match.lastX=p.x;
     p.match.lastY=p.y;
@@ -3218,7 +3166,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         if(xFar||yFar) continue;
         if(playerObserverHit(p,o)){
           p.hits++;
-          p.hitFxUntil=now+420;
+          p.hitFxUntil=0;
           p.dead=true;
           p.match.collisions++;
           p.match.deathPoints.push({
@@ -3996,12 +3944,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
     ctx.save();
     ctx.translate(x,y);
 
-    if(now<p.hitFxUntil){
-      const pulse=1-(p.hitFxUntil-now)/420;
-      ctx.strokeStyle="rgba(255,55,55,.98)";
-      ctx.lineWidth=Math.max(2,5*(1-pulse));
-      ctx.beginPath();ctx.arc(0,0,r*(1.15+pulse*.9),0,Math.PI*2);ctx.stroke();
-    }
 
     if(now<p.invUntil){
       ctx.globalAlpha=.48+.35*Math.abs(Math.sin(gameNow()*.018));
@@ -5664,10 +5606,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==100)issues.push("옵저버100");
-    if(Math.abs(PLAYER_HIT_RADIUS-.45)>.0001)issues.push("HIT");
-    if(Math.abs(ROAD_MARGIN-1.10)>.0001)issues.push("가장자리도로");
+    if(Math.abs(PLAYER_HIT_RADIUS-.47)>.0001)issues.push("HIT");
+    // v4.03: ROAD_MARGIN is legacy planner metadata only; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
-    if(Math.abs(PLAYER_VISUAL_SCALE-.828)>.0001||Math.abs(OBS_VISUAL_SCALE-.74052)>.0001)issues.push("크기");
+    if(Math.abs(PLAYER_VISUAL_SCALE-.77004)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
