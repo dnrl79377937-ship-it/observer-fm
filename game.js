@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.03";
+  const BUILD_ID = "v4.04";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -52,7 +52,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_HORIZONS = [0.40,0.95,1.70,2.75];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 0.998; // Kart-style inside apex bias
         // extra body-size safety margin
-  const ROAD_MARGIN = 1.10;           // v3.52: edge-line strip is legal drivable road, not a wall
+  const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
+  const DEATH_EDGE_EXTRA = 1.05;      // v4.04: one more logical tile beyond the legal edge = instant death
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -925,10 +926,33 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function clampRoadOffset(si,lateral,p=null){
-    // v4.03 AIR UNIT: no road-wall collision/clamp. The route is a racing guide,
-    // not a physical barrier; air units may cut across either edge freely.
-    const guideHalf=Math.max(2.0,widths[si]*1.75);
-    return Math.max(-guideHalf,Math.min(guideHalf,lateral));
+    // v4.04: this is an AI target limiter, NOT a wall/collision clamp.
+    // The outer one-line strip is fully legal. Racers may fly there, but they understand
+    // that the next row beyond it is lethal and therefore do not deliberately target it.
+    const legalHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
+    return Math.max(-legalHalf*.998,Math.min(legalHalf*.998,lateral));
+  }
+
+  function nearestRouteFrame(x,y,aroundSeg=0){
+    let best=null;
+    const lo=Math.max(0,aroundSeg-2), hi=Math.min(segs.length-1,aroundSeg+2);
+    for(let i=lo;i<=hi;i++){
+      const s=segs[i], rx=x-s.a[0], ry=y-s.a[1];
+      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+      const qx=s.a[0]+s.ux*along, qy=s.a[1]+s.uy*along;
+      const dx=x-qx,dy=y-qy,d2=dx*dx+dy*dy;
+      if(!best||d2<best.d2) best={si:i,d2,lateral:rx*s.nx+ry*s.ny,along};
+    }
+    return best;
+  }
+
+  function lethalOutsideRoad(p){
+    // No wall: crossing the painted edge never pushes or slows the air unit.
+    // One adjacent edge row remains legal; only the following row is an instant-death zone.
+    const f=nearestRouteFrame(p.x,p.y,p.seg);
+    if(!f) return false;
+    const deathHalf=Math.max(2.0,widths[f.si]*ROAD_MARGIN)+DEATH_EDGE_EXTRA;
+    return Math.sqrt(f.d2)>=deathHalf;
   }
 
 
@@ -2384,13 +2408,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         px=wx; py=wy;
       }
 
-      // Strong opening shortcut: 7→5 should ride the upper wall because the
-      // following road turns upward. In screen coordinates, upper = smaller y.
-      if(si<=8){
-        const projectedY=s.b[1]+s.ny*off;
-        score += Math.max(0,projectedY-151.2)*2.8;
-        score -= Math.max(0,154.5-projectedY)*0.65;
-      }
+      // v4.04: no forced opening wall route. Start lanes remain genuinely diverse;
+      // stats/personality decide whether to use upper, middle, or lower legal bands.
 
       // v2.27 corner phase: reward a realistic outside-entry -> apex -> exit setup.
       if(phasePlan.weight>0){
@@ -2434,6 +2453,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       personalTarget=Math.max(-1.12,Math.min(1.12,personalTarget));
       const personalDist=Math.abs(c-personalTarget);
       score += personalDist*routeVar*(1.18+Math.max(0,1-readTrust)*.46);
+
+      // v4.04 DEATH-EDGE AWARENESS: there is no wall, but racers know the row beyond
+      // the legal outer strip is lethal. Extreme inside specialists may use the full legal
+      // strip; everyone strongly avoids planning beyond it.
+      const legalRatio=Math.abs(off)/Math.max(1,half);
+      const edgeRisk=Math.max(0,legalRatio-.91);
+      const insideN=(p.stats.insideLine-72)/27;
+      const controlN=(p.stats.control-72)/27;
+      score += edgeRisk*edgeRisk*(.42-insideN*.16-controlN*.10);
 
       // Avoid wall scraping while still allowing near-apex lines.
       // Skilled racers pay a smaller penalty and can exploit millimetre-like edge gains.
@@ -2993,7 +3021,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let ty=s.b[1]+s.ny*p.desiredOffset;
     const optTarget=optimizedLookAheadTarget(p,si,now);
     const cornerLook=cornerIntensity(si);
-    const optBlend = si<=8 ? .80 : Math.min(.82,.66+cornerLook*.30);
+    const optBlend = si<=8 ? Math.min(.68,.54+cornerLook*.18) : Math.min(.82,.66+cornerLook*.30);
     tx=tx*(1-optBlend)+optTarget.x*optBlend;
     ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
@@ -3072,8 +3100,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // v4.03 AIR UNIT: no painted-road wall collision or off-road slowdown.
-    // Route waypoints still guide race progress, but geometry never blocks movement.
+    // v4.04 AIR UNIT: still no wall, snap, bounce, or off-road slowdown.
+    // However, flying one full row beyond the legal outer edge is an instant-death zone.
+    if(lethalOutsideRoad(p)){
+      p.dead=true;
+      p.match.collisions++;
+      p.match.deathPoints.push({round:currentRound,t:Math.max(0,now-raceStart),progressPct:+(100*Math.max(0,Math.min(1,currentProgress(p)/routeLength))).toFixed(1),x:+p.x.toFixed(2),y:+p.y.toFixed(2),cause:"OUTSIDE"});
+      p.cleanConfidenceMs=0; p.cleanConfidence=0;
+      return;
+    }
     p.match.distance += Math.hypot(p.x-p.match.lastX,p.y-p.match.lastY);
     p.match.lastX=p.x;
     p.match.lastY=p.y;
@@ -5607,7 +5642,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==100)issues.push("옵저버100");
     if(Math.abs(PLAYER_HIT_RADIUS-.47)>.0001)issues.push("HIT");
-    // v4.03: ROAD_MARGIN is legacy planner metadata only; no physical wall exists.
+    // v4.04: ROAD_MARGIN defines the legal outer edge strip; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.77004)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
