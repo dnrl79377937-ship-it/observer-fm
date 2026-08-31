@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.11";
+  const BUILD_ID = "v4.12";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,7 +36,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.45;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_HIT_RADIUS = 0.47;     // v4.07: smaller racer sprite, collision tuned down accordingly
   const PLAYER_VISUAL_SCALE = 0.693036;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.63612;         // observer speed ≈ 90% of player speed
@@ -324,7 +324,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const startRead=(stats.routeReading-72)/27;
       const startInside=(stats.insideLine-72)/27;
       const startStyle=(drivingStyle.attack-drivingStyle.safety);
-      const startLane=Math.max(-1,Math.min(1,(Math.random()*2-1)*(.72-startRead*.18)+startInside*.16+startStyle*.18));
+      // v4.12 opening distribution: most racers deliberately attach to the upper
+      // fast lane (screen-up = negative lateral/Y), while a minority still launch
+      // through the middle or lower band so starts do not become identical.
+      const startRoll=Math.random();
+      let startLane;
+      if(startRoll<0.68){
+        startLane=-(.42+Math.random()*.44) - startInside*.05 - Math.max(0,startStyle)*.04;
+      }else if(startRoll<0.88){
+        startLane=(Math.random()*2-1)*.24 + (1-startRead)*.04;
+      }else{
+        startLane=.30+Math.random()*.48 + Math.max(0,-startStyle)*.04;
+      }
+      startLane=Math.max(-.98,Math.min(.92,startLane));
       return {
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
@@ -1530,8 +1542,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const reactN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
     const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
     const skill=(predN+avoidN+reactN+controlN)/4;
-    const horizon=1.55+predN*.95+avoidN*.45;
-    const steps=7+Math.round(predN*5+controlN*2);
+    const horizon=1.85+predN*1.20+avoidN*.58;
+    const steps=9+Math.round(predN*7+controlN*3+reactN*2);
     const dt=horizon/steps;
     let x=p.x,y=p.y;
     let lateral=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
@@ -1541,7 +1553,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     for(let k=1;k<=steps;k++){
       const t=k*dt;
       // steering cannot teleport laterally: approach the selected lane progressively.
-      const steerRate=(.36+controlN*.34+reactN*.20);
+      const steerRate=(.41+controlN*.38+reactN*.24);
       lateral += (targetOff-lateral)*Math.min(1,steerRate*dt*2.2);
       x += vx*dt + s.nx*(targetOff-lateral)*dt*.38;
       y += vy*dt + s.ny*(targetOff-lateral)*dt*.38;
@@ -1550,14 +1562,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const d=Math.hypot(x-ox,y-oy);
         if(d<minClear) minClear=d;
         const clearance=d-hit;
-        if(clearance<0) danger += 18000+(Math.abs(clearance)+.05)*9000;
-        else if(clearance<.55) danger += (0.55-clearance)*1400;
-        else if(clearance<1.35) danger += (1.35-clearance)*170;
+        if(clearance<0) danger += 26000+(Math.abs(clearance)+.05)*12000;
+        else if(clearance<.62) danger += (0.62-clearance)*1900;
+        else if(clearance<1.45) danger += (1.45-clearance)*220;
         else if(clearance<2.8) danger += (2.8-clearance)*16;
       }
     }
     // reward forward pace; elite racers accept narrower safe windows but never ignore a collision.
-    const paceReward=speedMul*(5.2+skill*2.2);
+    const paceReward=speedMul*(5.8+skill*2.7);
     const steerCost=Math.abs(targetOff-p.desiredOffset)*(.10+(1-controlN)*.08);
     return {score:danger+steerCost-paceReward,minClear};
   }
@@ -1588,7 +1600,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     // v3.63: a pack tracks a broader slice of the obstacle field. Solo behavior
     // stays essentially unchanged; dense packs keep up to nine meaningful threats.
-    const threatLimit=pack.mates>=3?9:pack.mates>=2?7:5;
+    const threatLimit=pack.mates>=3?13:pack.mates>=2?11:9;
     const nearby=nearestThreats(sharedRaw,p,threatLimit);
 
     // v3.6 SIMPLE READ DODGE:
@@ -1848,8 +1860,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Candidate lanes + speed choices. The planner chooses the safest path that
     // costs the least race time. Stop is evaluated only as an emergency option.
     const laneFracs=clusterPlan.density>.38
-      ? [-1.02,-.88,-.72,-.56,-.40,-.24,0,.24,.40,.56,.72,.88,1.02]
-      : [-1.00,-.82,-.64,-.46,-.28,0,.28,.46,.64,.82,1.00];
+      ? [-1.04,-.94,-.84,-.72,-.60,-.48,-.36,-.24,-.12,0,.12,.24,.36,.48,.60,.72,.84,.94,1.04]
+      : [-1.02,-.90,-.78,-.66,-.54,-.42,-.30,-.18,0,.18,.30,.42,.54,.66,.78,.90,1.02];
     const movingSpeeds=clusterPlan.emergency ? [1.02,.98,.93,.86,.78] : [1.02,.99,.95,.89];
     let best=null;
 
@@ -1868,7 +1880,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           mode:"planned",
           targetOff,
           speedMul:sm,
-          score:r.score*.34+rollout.score*.66-corridorBonus-clusterBonus+centerPenalty,
+          score:r.score*.22+rollout.score*.78-corridorBonus-clusterBonus+centerPenalty,
           minClear:Math.min(r.minClear,rollout.minClear)
         };
         if(!best || candidate.score<best.score) best=candidate;
