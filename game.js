@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.24";
+  const BUILD_ID = "v4.25";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -887,7 +887,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // like a collision pass-through. Natural diagonal escape is the main tool;
         // stop-control is more common, while reverse is a very rare last resort.
         const marseilleWeight=0;
-        const stopWeight=.22*leaderControlCalm;
+        const stopWeight=.075*leaderControlCalm;
         const spinWeight=.012*packControlCalm*leaderControlCalm;
         const diagonalWeight=1.02*packControlCalm;
         const backWeight=((!sideEscapeOpen && immediateAlong<1.38) ? .004 : .00025)*leaderControlCalm;
@@ -933,7 +933,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
         if(Math.random()<zigChance){
           const rr=Math.random();
-          const nearMode=rr<.76?"diagonal":rr<.94?"stopcon":rr<.985?"zigzag":"spin360";
+          const nearMode=rr<.86?"diagonal":rr<.91?"stopcon":rr<.975?"zigzag":"spin360";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -947,7 +947,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
       // v4.191: nearby-but-not-urgent threats stay forward-moving. No backcon here.
       const rr=Math.random();
-      const mode=rr<.68?"diagonal":rr<.90?"stopcon":rr<.975?"zigzag":"spin360";
+      const mode=rr<.82?"diagonal":rr<.87?"stopcon":rr<.965?"zigzag":"spin360";
       let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -1736,14 +1736,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {score:danger+steerCost-paceReward,minClear};
   }
 
-  function humanLiveEvadeController(p,s,now){
+  function humanLiveEvadeController(p,s,now,raceOff){
     // v4.195 PREDICTIVE FLOW EVADE
     // Read an observer's current travel vector and begin a single broad, committed arc
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
     const vision=Math.min(30,p.visionRadius||30);
     const raw=playerPerceivedObservers(p,vision);
-    if(!raw.length){ p.liveEvadeDanger=0; return null; }
+    if(!raw.length){
+      p.liveEvadeDanger=0;
+      if(now>=p.liveEvadeUntil){ p.liveEvadeAction='none'; p.liveEvadeSpeed=1; }
+      return null;
+    }
     const nearby=nearestThreats(raw,p,22);
     const react=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
     const pred=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
@@ -1807,7 +1811,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Commit for a visibly smooth interval. Replanning is slower than v4.194 so the
       // unit draws one natural diagonal curve instead of several tiny left/right taps.
       p.liveEvadeNextThink=now+(390-react*55-ctrl*35+Math.random()*85);
-      const current=p.desiredOffset;
+      const current=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
       const openSide=leftRisk<=rightRisk?-1:1;
       const preferred=p.liveEvadeSide||openSide;
       // v4.24 HUMAN DODGE: choose one coherent human action, then commit to it.
@@ -1821,7 +1825,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         {off:current-openSide*half*.34,spd:1.00,side:-openSide,kind:'alt'},
         {off:current+openSide*half*.30,spd:.96,side:openSide,kind:'zig'},
         {off:current+openSide*half*.22,spd:.91,side:openSide,kind:'spin'},
-        {off:current,spd:.02,side:0,kind:'stop'}
+        {off:current+openSide*half*.08,spd:.10,side:openSide,kind:'stop'}
       ];
       if(emergency && bestT<.34 && bothSidesBusy){
         candidates.push({off:current+openSide*half*.16,spd:-.075,side:openSide,kind:'back'});
@@ -1833,12 +1837,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         let score=r.score;
         // v4.24 action priors: natural diagonal > stop when a crossing lane will clear
         // > wide arc > occasional feint. Back is punished heavily unless truly boxed in.
-        if(c.kind==='diag') score-=1.55+avoid*.42;
+        if(c.kind==='diag') score-=1.82+avoid*.48;
+        // v4.25: corner line and observer escape are one decision. Prefer candidates
+        // that preserve useful progress toward the current racing/apex line.
+        const raceDeviation=Math.abs(off-current)/Math.max(1,half);
+        score += raceDeviation*(bestT>1.15?.48:.20);
         if(c.kind==='wide' && bestT<1.65) score-=1.02;
         if(c.kind==='zig') score+=.48;
         if(c.kind==='spin') score+=1.05;
         if(c.side===preferred) score-=.42;
-        if(c.kind==='stop') score += (bestT<1.05 && danger>.72) ? -1.45 : 2.55;
+        if(c.kind==='stop') score += (bestT<.62 && danger>1.12 && bothSidesBusy) ? -.35 : 6.40;
         if(c.kind==='back') score += (bestT<.30 && bothSidesBusy) ? 1.15 : 12.0;
         score+=(Math.random()-.5)*(1-skill)*.90;
         if(!best||score<best.score) best={...c,off,score};
@@ -1850,7 +1858,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
         p.liveEvadeAction=best.kind;
-        const hold=best.kind==='stop' ? 180+Math.random()*105
+        const hold=best.kind==='stop' ? 75+Math.random()*55
           : best.kind==='back' ? 80+Math.random()*35
           : best.kind==='zig' ? 330+Math.random()*150
           : best.kind==='spin' ? 300+Math.random()*120
@@ -1862,6 +1870,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(now<p.liveEvadeUntil){
       return {off:p.liveEvadeOffset,speedMul:p.liveEvadeSpeed,danger:p.liveEvadeDanger,side:p.liveEvadeSide};
     }
+    p.liveEvadeAction='none';
+    p.liveEvadeSpeed=1;
     return null;
   }
 
@@ -3531,13 +3541,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       speedMul=(0.895+controlSkill*0.055)*(failedControl?.91:1);
     }
 
-    // v4.17 final steering authority: when a visible observer is genuinely dangerous,
+    // v4.25 integrated corner + observer authority: the current racing/apex target is
+    // passed into the human controller, so avoidance bends that line instead of fighting it.
+    // When a visible observer is genuinely dangerous,
     // the racer temporarily abandons the ideal racing line and behaves like a human
     // making rapid mouse inputs. Once clear, v4.16 optimized/inside-line driving returns.
-    const liveEvade=humanLiveEvadeController(p,s,now);
+    const liveEvade=humanLiveEvadeController(p,s,now,targetOff);
     if(liveEvade){
       const emergency=Math.max(0,Math.min(1,(liveEvade.danger-.25)/1.55));
-      const authority=.78+emergency*.22;
+      const authority=.66+emergency*.28;
       targetOff=targetOff*(1-authority)+liveEvade.off*authority;
       speedMul=liveEvade.speedMul<0 ? liveEvade.speedMul : speedMul*(1-authority*.35)+liveEvade.speedMul*(authority*.35);
       // Human controller is allowed to reverse briefly even though ordinary anti-freeze
