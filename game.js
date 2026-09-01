@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.35";
+  const BUILD_ID = "v4.39";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -451,6 +451,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         liveEvadeUntil:0, liveEvadeNextThink:0, liveEvadeOffset:0, liveEvadeSpeed:1,
         liveEvadeSide:0, liveEvadePhase:0, liveEvadeDanger:0, liveEvadeThreat:-1,
         liveEvadeAction:"none",
+        evadeRevisionThreat:-1, evadeRevisionVx:0, evadeRevisionVy:0, evadeRevisionAt:0, evadeRevisionCooldown:0,
         // v4.28 survival balance: hold a safe escape lane briefly after a threat clears
         // instead of snapping straight back into the racing line / next observer.
         survivalRecoverUntil:0, survivalRecoverStart:0, survivalRecoverOffset:0,
@@ -473,6 +474,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         mouseRejoinBias:({apexHunter:1.10,safeReader:.82,attacker:1.08,lineMaster:1.13,balanced:1.00,controller:.94,patient:.84,opportunist:1.05}[drivingStyle.style]||1),
         // v4.21 perception: only personally seen observers may drive AI decisions.
         perceivedObservers:new Map(), perceptionLastUpdate:0, perceptionFocusId:-1,
+        // v4.37 humanized perception. Stable personal bias + repeat-sighting confidence
+        // create believable late/rough reads without frame-randomized fake deaths.
+        perceptionBiasX:(Math.random()-.5)*0.34, perceptionBiasY:(Math.random()-.5)*0.34,
+        perceptionTrackSeed:Math.random()*1000,
         // v4.23 human reaction pipeline: detection -> recognition -> decision -> click.
         reactionThreatId:-1, reactionDangerActive:false, mouseReactionReadyAt:0,
         lastReactionDelayMs:0, lastRecognitionDelayMs:0,
@@ -1232,17 +1237,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const reactionN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
     const focusN=Math.max(0,Math.min(1,(p.stats.focus-72)/27));
     const predictionN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
-    const visionScale=.76+focusN*.20+reactionN*.08;
+    const consistencyN=Math.max(0,Math.min(1,(p.stats.consistency-72)/27));
+    const perceptionSkill=focusN*.42+reactionN*.25+predictionN*.25+consistencyN*.08;
+    const visionScale=.75+focusN*.20+reactionN*.08;
     const maxR=Math.min(r,(p.visionRadius||r)*visionScale);
     const raw=playerNearbyObservers(p,maxR);
     let hx=p.steerX||0, hy=p.steerY||0;
     let hl=Math.hypot(hx,hy);
     if(hl<.15){ const seg=segs[Math.min(p.seg,segs.length-1)]; hx=seg.ux; hy=seg.uy; hl=1; }
     hx/=hl; hy/=hl;
-    const halfFov=(64+focusN*13)*Math.PI/180;
+    const halfFov=(63+focusN*14)*Math.PI/180;
     const cosFov=Math.cos(halfFov);
-    const peripheral=2.5+reactionN*.65;
-    const memoryMs=420+predictionN*310+focusN*150;
+    const peripheral=2.45+reactionN*.70;
+    const memoryMs=400+predictionN*330+focusN*165;
     for(const o of raw){
       const dx=o.x-p.x,dy=o.y-p.y,d=Math.hypot(dx,dy);
       if(d<.001) continue;
@@ -1250,37 +1257,56 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const visible=d<=peripheral || dot>=cosFov;
       if(visible){
         const prev=p.perceivedObservers.get(o.id);
+        // v4.37: marginal/far sightings may need a second visual sample for lower-focus
+        // racers. Close peripheral threats are never randomly hidden.
+        const edgeN=Math.max(0,Math.min(1,(dot-cosFov)/Math.max(.001,1-cosFov)));
+        const farN=Math.max(0,Math.min(1,d/Math.max(1,maxR)));
+        const weakSight=d>peripheral+1.5 && (farN>.56 || edgeN<.24);
+        const confirmNeed=weakSight ? (1+(perceptionSkill<.52?2:perceptionSkill<.76?1:0)) : 1;
+        const seenCount=(prev?.seenCount||0)+1;
+        // Never drop an already-confirmed track; uncertainty is in acquisition/estimate.
+        if(!prev?.confirmed && seenCount<confirmNeed){
+          p.perceivedObservers.set(o.id,{id:o.id,lastSeen:now,x:o.x,y:o.y,vx:0,vy:0,visible:true,
+            awareAt:now+humanRecognitionDelayMs(p,0),seenCount,confirmed:false,errX:0,errY:0});
+          continue;
+        }
         let evx=0,evy=0;
         if(prev && now>prev.lastSeen+18){
           const dt=(now-prev.lastSeen)/1000;
           const rawVx=(o.x-prev.x)/dt, rawVy=(o.y-prev.y)/dt;
-          // v4.22: velocity is inferred from successive sightings, not read from hidden state.
-          const smooth=.58+predictionN*.24;
+          const smooth=.54+predictionN*.29;
           evx=(prev.vx||0)*(1-smooth)+rawVx*smooth;
           evy=(prev.vy||0)*(1-smooth)+rawVy*smooth;
         }else if(prev){ evx=prev.vx||0; evy=prev.vy||0; }
+        // Smooth, bounded visual estimate error. It shrinks as the observer gets closer
+        // and as Focus/Prediction improve; no per-frame jitter and no fake collision.
+        const errAmp=(.34-perceptionSkill*.24)*Math.max(.18,Math.min(1,d/18));
+        const phase=(o.id*1.731+(p.perceptionTrackSeed||0));
+        const targetErrX=(p.perceptionBiasX||0)*(.35+farN*.65)+Math.sin(phase)*errAmp;
+        const targetErrY=(p.perceptionBiasY||0)*(.35+farN*.65)+Math.cos(phase*1.17)*errAmp;
+        const errX=(prev?.errX||0)*.72+targetErrX*.28;
+        const errY=(prev?.errY||0)*.72+targetErrY*.28;
         const urgency=Math.max(0,Math.min(1,(peripheral+2.8-d)/(peripheral+2.8)));
-        const awareAt=prev?.awareAt ?? (now+humanRecognitionDelayMs(p,urgency));
-        p.perceivedObservers.set(o.id,{id:o.id,lastSeen:now,x:o.x,y:o.y,vx:evx,vy:evy,visible:true,awareAt});
+        const awareAt=prev?.confirmed ? (prev.awareAt||now) : (now+humanRecognitionDelayMs(p,urgency));
+        p.perceivedObservers.set(o.id,{id:o.id,lastSeen:now,x:o.x,y:o.y,vx:evx,vy:evy,visible:true,
+          awareAt,seenCount,confirmed:true,errX,errY});
       }
     }
     const out=[];
     for(const [id,m] of p.perceivedObservers){
       const age=now-m.lastSeen;
       if(age>memoryMs){ p.perceivedObservers.delete(id); continue; }
-      // Return a perception proxy. AI prediction sees only last-seen position and the
-      // motion vector estimated from sightings; collision continues to use real observers.
-      if(now<(m.awareAt||0)) continue;
+      if(!m.confirmed || now<(m.awareAt||0)) continue;
       if(m.awareAt){ p.lastRecognitionDelayMs=Math.max(0,m.awareAt-(m.lastSeen-age)); }
       const ageSec=age/1000;
       const fade=Math.max(0,1-age/memoryMs);
-      const px=m.x+(m.vx||0)*ageSec*fade;
-      const py=m.y+(m.vy||0)*ageSec*fade;
+      const px=m.x+(m.errX||0)*fade+(m.vx||0)*ageSec*fade;
+      const py=m.y+(m.errY||0)*fade+(m.vy||0)*ageSec*fade;
       const dx=px-p.x,dy=py-p.y;
       if(dx*dx+dy*dy<=r*r) out.push({
         id:m.id,x:px,y:py,vx:(m.vx||0)*fade,vy:(m.vy||0)*fade,
         phase:'move',phaseUntil:now+Math.max(120,memoryMs-age),speed:Math.hypot(m.vx||0,m.vy||0),
-        perceived:true,confidence:fade,lastSeenAge:age
+        perceived:true,confidence:fade*(.82+perceptionSkill*.18),lastSeenAge:age
       });
     }
     p.perceptionLastUpdate=now;
@@ -1862,6 +1888,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return null;
     }
     const nearby=nearestThreats(raw,p,22);
+    // v4.39 SPARSE-FIELD GUARD: the most avoidable deaths were happening with only
+    // one or two readable observers nearby. In a sparse field there is usually plenty
+    // of road, so value clean clearance over clever late skims and commit earlier.
+    const sparseField=nearby.length<=2;
     // v4.32 MULTI-OBSERVER SURVIVAL: evaluate the whole perceived field before
     // choosing a live dodge. This prevents escaping observer A into B/C.
     const clusterNow=observerClusterPlan(p,s,nearby);
@@ -1905,7 +1935,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const tc=Math.max(0,Math.min(horizon,-(dx*rvx+dy*rvy)/rv2));
         const cx=dx+rvx*tc, cy=dy+rvy*tc;
         const cpa=Math.hypot(cx,cy);
-        const corridor=1.95+avoid*.64+pred*.32;
+        const corridor=(1.95+avoid*.64+pred*.32)*(sparseField?1.14:1);
         if(tc>.08 && cpa<corridor){
           const conf=o.confidence==null?1:o.confidence;
           const w=(corridor-cpa)/corridor*(1.45-tc/horizon*.42)*(.55+.45*conf);
@@ -1921,7 +1951,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
         const px=p.x+s.ux*p.speed*t,py=p.y+s.uy*p.speed*t;
         const sep=Math.hypot(px-ox,py-oy);
-        const warn=2.28+avoid*.54;
+        const warn=(2.28+avoid*.54)*(sparseField?1.13:1);
         if(sep<warn){
           const w=(warn-sep)/warn*(1.20-t/horizon*.34);
           danger+=w;
@@ -1952,9 +1982,43 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     else { p.dangerTier=rawTier; if(rawTier) p.dangerTierUntil=now+180; }
     // Start early only when trajectories are actually converging. Mere proximity alone
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
-    const predictive=danger>.22 && bestT<2.65;
-    const emergency=nearest<2.75;
+    const predictive=danger>(sparseField?.14:.22) && bestT<(sparseField?2.95:2.65);
+    const emergency=nearest<(sparseField?3.15:2.75);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
+
+    // v4.38 ADAPTIVE RE-JUDGMENT: a committed human dodge is not blind. If the
+    // tracked observer materially changes its perceived heading/speed, or the predicted
+    // collision side flips, unlock one early re-think instead of stubbornly holding the
+    // old click. Small estimate noise is ignored and revisions have a cooldown.
+    if(threatId>=0){
+      const tracked=nearby.find(o=>o.id===threatId);
+      if(tracked){
+        const tvx=tracked.vx||0, tvy=tracked.vy||0;
+        const tsp=Math.hypot(tvx,tvy);
+        const pvx=p.evadeRevisionVx||0, pvy=p.evadeRevisionVy||0;
+        const psp=Math.hypot(pvx,pvy);
+        let headingDelta=0;
+        if(tsp>.15 && psp>.15){
+          const dot=Math.max(-1,Math.min(1,(tvx*pvx+tvy*pvy)/(tsp*psp)));
+          headingDelta=Math.acos(dot);
+        }
+        const speedDelta=Math.abs(tsp-psp);
+        const sideNow=((tracked.x-p.x)*s.nx+(tracked.y-p.y)*s.ny)<0?-1:1;
+        const sideFlip=p.liveEvadeThreat===threatId && p.liveEvadeSide && sideNow===p.liveEvadeSide;
+        const meaningful=(headingDelta>.34 || speedDelta>1.65 || (sideFlip && bestT<1.35));
+        if(p.evadeRevisionThreat===threatId && meaningful && now>(p.evadeRevisionCooldown||0) && now<p.liveEvadeUntil){
+          // Better Prediction/Reaction revises sooner; still keep a human-sized delay.
+          const reviseDelay=48+(1-pred)*54+(1-react)*38;
+          p.liveEvadeNextThink=Math.min(p.liveEvadeNextThink,now+reviseDelay);
+          p.liveEvadeUntil=Math.min(p.liveEvadeUntil,now+reviseDelay+45);
+          p.evadeRevisionCooldown=now+260+(1-ctrl)*150;
+        }
+        if(p.evadeRevisionThreat!==threatId || now-(p.evadeRevisionAt||0)>150){
+          p.evadeRevisionThreat=threatId;
+          p.evadeRevisionVx=tvx; p.evadeRevisionVy=tvy; p.evadeRevisionAt=now;
+        }
+      }
+    }
 
     if(now>=p.liveEvadeNextThink){
       // v4.34: when boxed, pick one whole-corridor breakout before considering
@@ -2012,6 +2076,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // decides which side is still safe 1-2 seconds later.
         let score=r.score + future.score*1.28;
         if(future.minClear<1.20) score += (1.20-future.minClear)*8.0;
+        // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
+        // free road to take a cleaner diagonal, so a low-clearance candidate pays heavily.
+        if(sparseField){
+          const sparseClear=1.62+avoid*.20+pred*.12;
+          if(future.minClear<sparseClear) score += (sparseClear-future.minClear)*12.5;
+          if(r.minClear<sparseClear*.82) score += (sparseClear*.82-r.minClear)*10.0;
+          if(c.kind==='diag') score-=.72;
+          if(c.kind==='wide' && bestT<2.45) score-=.42;
+          if(c.kind==='alt') score+=.80;
+        }
         if(clusterNow.frontCount>=2){
           const clusterDist=Math.abs(off-clusterNow.preferredOffset);
           score += clusterDist*(.22+clusterNow.confidence*.58);
@@ -2033,8 +2107,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         if(c.kind==='zig') score+=.48;
         if(c.kind==='spin') score+=1.05;
         if(c.side===preferred) score-=.42;
-        if(c.kind==='stop') score += (bestT<.48 && danger>1.45 && bothSidesBusy) ? .10 : 8.20;
-        if(c.kind==='back') score += (bestT<.30 && bothSidesBusy) ? 1.15 : 12.0;
+        if(c.kind==='stop') score += sparseField ? 18.0 : ((bestT<.48 && danger>1.45 && bothSidesBusy) ? .10 : 8.20);
+        if(c.kind==='back') score += sparseField ? 22.0 : ((bestT<.30 && bothSidesBusy) ? 1.15 : 12.0);
         score+=(Math.random()-.5)*(1-skill)*.90;
         if(!best||score<best.score) best={...c,off,score};
       }
@@ -2049,7 +2123,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           : best.kind==='back' ? 72+Math.random()*28
           : best.kind==='zig' ? 330+Math.random()*150
           : best.kind==='spin' ? 300+Math.random()*120
-          : 560+Math.random()*230;
+          : (sparseField?650:560)+Math.random()*(sparseField?210:230);
         p.liveEvadeUntil=now+hold;
         // v4.28: after a real dodge, keep the cleared lane briefly and rejoin gradually.
         // This prevents dodge-one-observer -> instant apex rejoin -> hit-next-observer deaths.
@@ -3778,6 +3852,55 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       speedMul=(0.895+controlSkill*0.055)*(failedControl?.91:1);
     }
 
+    // v4.36 CORNER SURVIVAL 2: do not defend the perfect inside apex when the
+    // personally perceived observer field makes that apex the dangerous side. This
+    // is a soft, skill-aware surrender of inside line: safe corners keep the fast
+    // v4.16/v4.27 route, while danger progressively moves the target toward the
+    // current lane or the safer half of the road before live dodge takes authority.
+    {
+      const cSide=cornerInsideSide(si);
+      const cPower=cornerIntensity(si);
+      if(cSide!==0 && cPower>.038){
+        const seen=playerPerceivedObservers(p,20.5);
+        if(seen.length){
+          let insideRisk=0, outsideRisk=0, crossingRisk=0;
+          const predN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
+          const riskN=Math.max(0,Math.min(1,(p.stats.riskControl-72)/27));
+          for(const o of seen){
+            const dx=o.x-p.x, dy=o.y-p.y;
+            const along=dx*s.ux+dy*s.uy;
+            if(along<-.8 || along>17.5) continue;
+            const lat=dx*s.nx+dy*s.ny;
+            const w=Math.max(.12,1-along/19);
+            const onInside=(lat*cSide)>-.15;
+            if(onInside) insideRisk+=w; else outsideRisk+=w;
+            const rvx=(o.vx||0)-s.ux*p.speed, rvy=(o.vy||0)-s.uy*p.speed;
+            const rv2=rvx*rvx+rvy*rvy;
+            if(rv2>.01){
+              const tc=Math.max(0,Math.min(1.75,-(dx*rvx+dy*rvy)/rv2));
+              const cx=dx+rvx*tc, cy=dy+rvy*tc;
+              const cpa=Math.hypot(cx,cy);
+              if(tc>.04 && cpa<2.65){
+                const cw=(2.65-cpa)/2.65*(1.2-tc*.28);
+                crossingRisk+=cw;
+                if((cy*s.ny+cx*s.nx)*cSide>-.2) insideRisk+=cw*.85;
+                else outsideRisk+=cw*.55;
+              }
+            }
+          }
+          const apexThreat=Math.max(0,insideRisk-outsideRisk*.42)+crossingRisk*.32;
+          if(apexThreat>.20){
+            const halfNow=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+            const surrender=Math.max(0,Math.min(.78,(apexThreat-.16)*(.34+riskN*.12+predN*.10)));
+            const safeOff=cSide>0 ? Math.min(targetOff,halfNow*.18) : Math.max(targetOff,-halfNow*.18);
+            targetOff=targetOff*(1-surrender)+safeOff*surrender;
+            speedMul*=1-Math.min(.045,surrender*.035);
+            p.cornerSurvivalSurrender=surrender;
+          }else p.cornerSurvivalSurrender=0;
+        }else p.cornerSurvivalSurrender=0;
+      }else p.cornerSurvivalSurrender=0;
+    }
+
     // v4.25 integrated corner + observer authority: the current racing/apex target is
     // passed into the human controller, so avoidance bends that line instead of fighting it.
     // When a visible observer is genuinely dangerous,
@@ -3898,7 +4021,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const clickDx=mx-p.x, clickDy=my-p.y, clickD=Math.hypot(clickDx,clickDy)||1;
         // v4.35 tiered click reach: safe road stays relaxed, watch uses short
         // corrections, danger/emergency use decisive but still bounded escape clicks.
-        const maxClickDist=!dangerActive ? (8.1+controlN*1.2)
+        // v4.36 clear-road reach: when the racer currently perceives no observer
+        // nearby, allow a longer deliberate race click. As soon as anything enters
+        // the personal field, fall back to the shorter v4.31 re-readable cadence.
+        const clearForLongClick=!dangerActive && playerPerceivedObservers(p,21.5).length===0;
+        const maxClickDist=!dangerActive ? (clearForLongClick ? (10.0+controlN*1.45) : (8.25+controlN*1.05))
           : dangerTier>=3 ? (6.35+controlN*.75)
           : dangerTier===2 ? (6.05+controlN*.78)
           : (5.45+controlN*.72);
