@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.29";
+  const BUILD_ID = "v4.30";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -470,6 +470,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.23 human reaction pipeline: detection -> recognition -> decision -> click.
         reactionThreatId:-1, reactionDangerActive:false, mouseReactionReadyAt:0,
         lastReactionDelayMs:0, lastRecognitionDelayMs:0,
+        aiDiagRedundantClicks:0, aiDiagLastMode:"race", aiDiagModeChanges:0,
         variantMode:0,
         variantUntil:0,
         variantCooldown:6500+Math.random()*7000,
@@ -3718,8 +3719,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
         let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
         const legalMouse=courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
+        const prevMouseX=p.mouseTargetX??p.x, prevMouseY=p.mouseTargetY??p.y;
+        const nextMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : 'race';
+        if(Math.hypot(mx-prevMouseX,my-prevMouseY)<.38 && nextMode===(p.mouseMode||'race')) p.aiDiagRedundantClicks=(p.aiDiagRedundantClicks||0)+1;
+        if(nextMode!==(p.aiDiagLastMode||'race')){ p.aiDiagModeChanges=(p.aiDiagModeChanges||0)+1; p.aiDiagLastMode=nextMode; }
         p.mouseTargetX=mx; p.mouseTargetY=my;
-        p.mouseMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : 'race';
+        p.mouseMode=nextMode;
         p.mouseLastClickAt=now; p.mouseClickSeq=(p.mouseClickSeq||0)+1;
         if(!Array.isArray(p.mouseClickLog)) p.mouseClickLog=[];
         p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1});
@@ -4329,7 +4334,22 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let collisions=0,finishes=0,totalTime=0;
     for(const p of players){collisions+=p.match.collisions||0;if(p.done&&p.finishTime!=null){finishes++;totalTime+=p.finishTime;}}
     const avg=finishes?formatTime(totalTime/finishes):"--";
-    el.innerHTML=`<b>경기 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms · 자동보호 ${fpsProtectLevel}<br>옵저버 ${observers.length} · 충돌 ${collisions} · 추월 ${raceTotalOvertakes}<br>완주 ${finishes}/8 · 평균 ${avg}`;
+    const alive=players.filter(p=>!p.dead&&!p.done);
+    const clicks=players.reduce((n,p)=>n+(p.mouseClickSeq||0),0);
+    const stops=players.reduce((n,p)=>n+((p.mouseClickLog||[]).filter(c=>c.mode==='stop').length),0);
+    const evadeClicks=players.reduce((n,p)=>n+((p.mouseClickLog||[]).filter(c=>c.mode&&c.mode!=='race').length),0);
+    const redundant=players.reduce((n,p)=>n+(p.aiDiagRedundantClicks||0),0);
+    const modeChanges=players.reduce((n,p)=>n+(p.aiDiagModeChanges||0),0);
+    const avgReaction=players.length?players.reduce((n,p)=>n+(p.lastReactionDelayMs||0),0)/players.length:0;
+    const elapsedSec=Math.max(1,((gameNow()-(raceStart||gameNow()))/1000));
+    const clickRate=clicks/elapsedSec/Math.max(1,players.length);
+    const stopRate=clicks?stops/clicks*100:0;
+    const warnings=[];
+    if(clickRate>5.0) warnings.push('과다 클릭');
+    if(stopRate>5.0) warnings.push('스탑 과다');
+    if(redundant>Math.max(8,clicks*.12)) warnings.push('중복 클릭');
+    if(modeChanges>Math.max(12,clicks*.22)) warnings.push('판단 전환 과다');
+    el.innerHTML=`<b>v4.30 AI 진단</b><br>FPS ${diagFps.toFixed(0)} · frame ${diagFrameMs.toFixed(1)}ms · max ${diagMaxFrameMs.toFixed(1)}ms · 자동보호 ${fpsProtectLevel}<br>생존 ${alive.length}/8 · 옵저버 ${observers.length} · 충돌 ${collisions} · 완주 ${finishes}/8 · 평균 ${avg}<br>클릭 ${clicks} · 1인 초당 ${clickRate.toFixed(2)} · 회피클릭 ${evadeClicks} · 스탑 ${stops} (${stopRate.toFixed(1)}%)<br>평균 최근 반응 ${avgReaction.toFixed(0)}ms · 중복클릭 ${redundant} · 행동전환 ${modeChanges}<br>${warnings.length?`⚠ ${warnings.join(' · ')}`:'AI 입력 진단 정상'}`;
   }
 
   const SIM_STEP_MS = 1000/50;
@@ -4607,6 +4627,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const minX=view.sx-pad, maxX=view.sx+view.viewW+pad;
     const minY=view.sy-pad, maxY=view.sy+view.viewH+pad;
     const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
+    // v4.30 visual-only observer silhouette: the actual collision remains the same
+    // circular hit test, but the sprite-like body is deliberately wider than tall.
+    const obsRx=r*1.48, obsRy=r*.62;
     const lineW=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
 
     // v2.31: use the already-maintained observer spatial grid for render culling.
@@ -4635,8 +4658,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const o=visibleObserverRender[vi];
       const x=(o.x-view.sx)*view.scale;
       const y=(o.y-view.sy)*view.scale;
-      ctx.moveTo(x+r*1.20,y);
-      ctx.ellipse(x,y,r*1.20,r*.72,0,0,Math.PI*2);
+      ctx.moveTo(x+obsRx,y);
+      ctx.ellipse(x,y,obsRx,obsRy,0,0,Math.PI*2);
     }
     ctx.fillStyle="#d6e8ff";
     ctx.fill();
@@ -4649,8 +4672,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const o=visibleObserverRender[vi];
       const x=(o.x-view.sx)*view.scale;
       const y=(o.y-view.sy)*view.scale;
-      ctx.moveTo(x+r*.50,y);
-      ctx.arc(x+r*.20,y,r*.30,0,Math.PI*2);
+      ctx.moveTo(x+r*.62,y);
+      ctx.ellipse(x+r*.24,y,r*.38,r*.23,0,0,Math.PI*2);
     }
     ctx.fillStyle="#83bcdf";
     ctx.fill();
