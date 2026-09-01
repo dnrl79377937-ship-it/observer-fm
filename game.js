@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.193";
+  const BUILD_ID = "v4.194";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -345,6 +345,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // not frame-by-frame random jitter.
         routeArchetype:(()=>{ const r=Math.random(); return r<.24?"extremeInside":r<.46?"inside":r<.67?"adaptive":r<.84?"wideCut":"variant"; })(),
         routeArchetypeStrength:.72+Math.random()*.28,
+        // v4.194: opening-line identity. The fast opening macro-line remains known,
+        // but racers no longer all stack on it: some climb to the extreme inside,
+        // some hold a middle-high band, and some deliberately run a lower variant.
+        openingLineBias:(()=>{ const r=Math.random(); return r<.22?1.0:r<.45?.62:r<.68?.22:r<.84?-.30:-.68; })(),
+        openingLineStrength:.82+Math.random()*.18,
         creativeModeUntil:0, creativeCooldown:900+Math.random()*1200,
         creativeSide:Math.random()<.5?-1:1, creativePhase:Math.random()*Math.PI*2,
         routeIdentityBias:Math.max(-.78,Math.min(.78,(Math.random()*1.20-.60)+(drivingStyle.attack-drivingStyle.safety)*.42)),
@@ -731,9 +736,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const id=identityOf(p);
     if(id.control && w[id.control]!=null && id.control!=="stopcon") w[id.control]*=1.16;
     // v2.51: stopcon is an emergency last resort only.
-    w.stopcon*=.006;
-    w.zigzag*=1.42;
-    w.backcon*=1.08;
+    w.stopcon*=.18;
+    w.zigzag*=1.18;
+    w.backcon*=.42;
     return w;
   }
 
@@ -868,12 +873,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.191: nearby danger uses a varied human control palette. Reverse is rare;
         // forward/diagonal movement is the default escape. No control is selected merely
         // because a far observer is visible.
-        const marseilleWeight=.035*packControlCalm*leaderControlCalm;
-        const stopWeight=.055*leaderControlCalm;
-        const spinWeight=.04*packControlCalm*leaderControlCalm;
-        const diagonalWeight=.66*packControlCalm;
-        const backWeight=((!sideEscapeOpen && immediateAlong<2.05) ? .035 : .006)*leaderControlCalm;
-        const zigWeight=.15*leaderControlCalm;
+        // v4.194: Marseille is disabled because the full-turn animation can look
+        // like a collision pass-through. Natural diagonal escape is the main tool;
+        // stop-control is more common, while reverse is a very rare last resort.
+        const marseilleWeight=0;
+        const stopWeight=.14*leaderControlCalm;
+        const spinWeight=.025*packControlCalm*leaderControlCalm;
+        const diagonalWeight=.82*packControlCalm;
+        const backWeight=((!sideEscapeOpen && immediateAlong<1.72) ? .012 : .0015)*leaderControlCalm;
+        const zigWeight=.10*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         let cut=marseilleWeight;
@@ -915,7 +923,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
         if(Math.random()<zigChance){
           const rr=Math.random();
-          const nearMode=rr<.78?"diagonal":rr<.92?"zigzag":rr<.97?"spin360":"stopcon";
+          const nearMode=rr<.80?"diagonal":rr<.88?"stopcon":rr<.96?"zigzag":"spin360";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -1356,7 +1364,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const controlSkill=Math.max(0,Math.min(1,(p.stats.control-72)/27));
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*1.08);
     const commit=Math.min(.995,.91+insideSkill*.045+readSkill*.018+controlSkill*.012+proximity*.018+power*.025);
-    return side*half*commit;
+    // v4.194: stable per-racer opening bands. +1 = extreme inside, 0 = central-fast,
+    // negative = lower/wider variant. This is a route choice, not random steering jitter.
+    const identity=Math.max(-.72,Math.min(1,p.openingLineBias??.25));
+    const strength=p.openingLineStrength||.9;
+    const signedCommit=(.48 + identity*.50)*strength;
+    return side*half*Math.max(-.18,Math.min(.998,commit*signedCommit));
   }
 
   function futureInsideBias(si){
@@ -2899,10 +2912,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const identityBias=(p.routeIdentityBias||0)*half*.24;
     const approachInside=openingInsideBias(si);
     const openingFast=openingFastLineTarget(p,si);
-    const identityKeep=openingFast!=null ? .985 : (Math.abs(approachInside)>.08 ? .92 : .79);
-    const identityScale=openingFast!=null ? .06 : (Math.abs(approachInside)>.08 ? .34 : 1);
+    const identityKeep=openingFast!=null ? .88 : (Math.abs(approachInside)>.08 ? .92 : .79);
+    const identityScale=openingFast!=null ? .42 : (Math.abs(approachInside)>.08 ? .34 : 1);
     off=off*identityKeep + (identityBias + identityWave)*identityScale;
-    if(openingFast!=null) off=off*.08+openingFast*.92;
+    if(openingFast!=null) off=off*.28+openingFast*.72;
     off=creativeRouteAdjustment(p,si,now,off);
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
