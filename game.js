@@ -7,6 +7,8 @@
   const rankingEl = document.getElementById("rankingList");
   const focusModeBtn = document.getElementById("focusModeBtn");
   const pauseBtn = document.getElementById("pauseBtn");
+  const povSelect = document.getElementById("povSelect");
+  let povPlayerIndex=-1;
   const layoutEl = document.querySelector(".layout");
   const broadcastEl = document.querySelector(".broadcast");
 
@@ -23,10 +25,11 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.28";
+  const BUILD_ID = "v4.29";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
+  if(povSelect){ povSelect.innerHTML=`<option value="-1">POV: OFF</option>`+names.map((n,i)=>`<option value="${i}">${n} POV</option>`).join(""); povSelect.addEventListener("change",()=>{povPlayerIndex=+povSelect.value;}); }
   const unitSprites={};
   const unitFiles={1:"scourge",2:"scout",3:"wraith",4:"mutalisk",5:"queen"};
   for(let r=1;r<=5;r++){
@@ -4133,6 +4136,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     let tx=leader.x, ty=leader.y;
 
+    // v4.29 AI POV: spectator can lock the broadcast camera to one actual racer.
+    const pov=players[povPlayerIndex];
+    if(povPlayerIndex>=0 && pov && !pov.done){
+      tx=pov.x; ty=pov.y;
+      leader=pov; second=null;
+    }
+
     // Only include P2 subtly when the lead battle is genuinely close.
     if(second && Math.abs(leaderProg-secondProg)<0.85){
       tx=leader.x*.94+second.x*.06;
@@ -4762,6 +4772,43 @@ targetOff=clampRoadOffset(si,targetOff,p);
     }
   }
 
+  function drawAIPOVOverlay(view){
+    if(povPlayerIndex<0) return;
+    const p=players[povPlayerIndex]; if(!p) return;
+    const now=gameNow();
+    const sx=x=>(x-view.sx)*view.scale, sy=y=>(y-view.sy)*view.scale;
+    ctx.save();
+    // Genuine held virtual-mouse target.
+    const tx=sx(p.mouseTargetX), ty=sy(p.mouseTargetY);
+    ctx.setLineDash([8,7]); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.88)';
+    ctx.beginPath(); ctx.moveTo(sx(p.x),sy(p.y)); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(tx,ty,8,0,Math.PI*2); ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx-12,ty);ctx.lineTo(tx+12,ty);ctx.moveTo(tx,ty-12);ctx.lineTo(tx,ty+12);ctx.stroke();
+    // Actual click log: recent commands only, never reconstructed from movement.
+    const logs=Array.isArray(p.mouseClickLog)?p.mouseClickLog:[];
+    for(let i=Math.max(0,logs.length-10);i<logs.length;i++){
+      const c=logs[i], age=now-c.t; if(age>2600) continue;
+      const a=Math.max(.18,1-age/2600), cx=sx(c.x),cy=sy(c.y);
+      ctx.globalAlpha=a; ctx.beginPath();ctx.arc(cx,cy,4.5,0,Math.PI*2);ctx.fillStyle='#ffe36e';ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    // Only observers present in this player's perception memory are highlighted.
+    if(p.perceivedObservers){
+      for(const m of p.perceivedObservers.values()){
+        const age=now-m.lastSeen; if(age>900 || now<(m.awareAt||0)) continue;
+        const cx=sx(m.x),cy=sy(m.y); ctx.beginPath();ctx.arc(cx,cy,12,0,Math.PI*2);
+        ctx.strokeStyle=(m.id===p.liveEvadeThreat)?'#ff6969':'#69e7ff';ctx.lineWidth=(m.id===p.liveEvadeThreat)?4:2;ctx.stroke();
+      }
+    }
+    ctx.globalAlpha=1;
+    const state=p.reactionDangerActive && now<(p.mouseReactionReadyAt||0)?'반응 대기':(p.mouseMode||'race');
+    const lines=[`${p.name} AI POV`, `행동 ${state} · 클릭 #${p.mouseClickSeq||0}`, `위협 OBS ${p.liveEvadeThreat>=0?p.liveEvadeThreat:'--'} · 반응 ${Math.round(p.lastReactionDelayMs||0)}ms`, `흰 십자=현재 실제 클릭 · 노란점=최근 실제 클릭 · 청록원=인지 OBS`];
+    ctx.font='600 18px system-ui,sans-serif'; const boxW=520,boxH=100;
+    ctx.fillStyle='rgba(5,10,18,.76)';ctx.fillRect(18,18,boxW,boxH);
+    lines.forEach((t,i)=>{ctx.fillStyle=i===0?'#fff':'#d9e7f5';ctx.fillText(t,32,43+i*21);});
+    ctx.restore();
+  }
+
   function render(ts){
     const W=canvas.width,H=canvas.height;
     ctx.clearRect(0,0,W,H);
@@ -4783,6 +4830,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const rp=renderOrder[i];
       if(!rp.dead || gameNow()<rp.hitFxUntil) drawPlayer(rp,view,i+1);
     }
+    drawAIPOVOverlay(view);
 
     const elapsed=raceStart ? Math.max(0,(simClock||ts||performance.now())-raceStart) : 0;
     clockEl.textContent=formatTime(elapsed);
