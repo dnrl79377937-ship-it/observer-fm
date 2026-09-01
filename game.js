@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 150;
+  const OBSERVER_COUNT = 130;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.192";
+  const BUILD_ID = "v4.193";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,7 +36,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.60;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_HIT_RADIUS = 0.65;     // v4.07: smaller racer sprite, collision tuned down accordingly
   const PLAYER_VISUAL_SCALE = 0.6583842;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.604314;         // observer speed ≈ 90% of player speed
@@ -50,7 +50,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_SAFE_BUFFER = 7.6;
   const AVOID_LANE_LOOKAHEAD = 3.05;
   const AVOID_HORIZONS = [0.22,0.48,0.82,1.20,1.72,2.35,3.10,3.85];   // compare future lane safety
-  const INSIDE_CORNER_STRENGTH = 1.075; // Kart-style inside apex bias
+  const INSIDE_CORNER_STRENGTH = 1.105; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
   const DEATH_EDGE_EXTRA = 4.50;      // v4.09: lethal zone begins well beyond the real route ribbon
@@ -339,7 +339,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           drivingStyle.style==="patient" ? -.62 :
           drivingStyle.style==="safeReader" ? -.82 : 0
         ),
-        creativeRouteBudget:.38, creativeRouteUsed:0, creativeMode:0,
+        creativeRouteBudget:.52, creativeRouteUsed:0, creativeMode:0,
+        // v4.193: persistent route archetype. Racers share the fast macro route but
+        // deliberately prefer different legal micro-lines. This is stable per racer,
+        // not frame-by-frame random jitter.
+        routeArchetype:(()=>{ const r=Math.random(); return r<.24?"extremeInside":r<.46?"inside":r<.67?"adaptive":r<.84?"wideCut":"variant"; })(),
+        routeArchetypeStrength:.72+Math.random()*.28,
         creativeModeUntil:0, creativeCooldown:900+Math.random()*1200,
         creativeSide:Math.random()<.5?-1:1, creativePhase:Math.random()*Math.PI*2,
         routeIdentityBias:Math.max(-.78,Math.min(.78,(Math.random()*1.20-.60)+(drivingStyle.attack-drivingStyle.safety)*.42)),
@@ -352,8 +357,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           const inside=(stats.insideLine-72)/27;
           const safety=((stats.riskControl+stats.stability)/2-72)/27;
           const style=(drivingStyle.attack-drivingStyle.safety);
-          const identity=(Math.random()*2-1)*(0.34-read*0.16);
-          return Math.max(-.72,Math.min(.72,identity+inside*.16+style*.22-safety*.10));
+          const identity=(Math.random()*2-1)*(0.58-read*0.12);
+          return Math.max(-.94,Math.min(.94,identity+inside*.22+style*.28-safety*.12));
         })(),
         routeBandPhase:Math.random()*Math.PI*2,
         // v4.10: rare/high-skill extreme-inside attempts. Success can create a huge
@@ -2558,7 +2563,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Dense fields temporarily raise the creative-route allowance and reduce
     // the trigger threshold. Normal sections remain close to the v2.41 70/30 mix.
     const denseBoost=danger>=8?.16:danger>=5?.11:danger>=3?.055:0;
-    const targetCreative=progress*Math.min(.55,p.creativeRouteBudget+denseBoost);
+    const targetCreative=progress*Math.min(.68,p.creativeRouteBudget+denseBoost);
     const triggerSlack=danger>=5?.040:.018;
     if(now>=p.creativeModeUntil && now>=p.creativeCooldown && p.creativeRouteUsed+triggerSlack<targetCreative){
       const roll=Math.random();
@@ -2569,8 +2574,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       else p.creativeMode=roll<.25?1:roll<.50?2:roll<.72?3:roll<.84?4:5;
       p.creativeSide=Math.random()<.5?-1:1;
       const dense=danger>=5;
-      p.creativeModeUntil=now+(dense?720:520)+Math.random()*(dense?1350:1150);
-      p.creativeCooldown=now+(dense?560:820)+Math.random()*(dense?900:1280);
+      p.creativeModeUntil=now+(dense?760:900)+Math.random()*(dense?1400:1700);
+      p.creativeCooldown=now+(dense?650:1150)+Math.random()*(dense?1000:1550);
     }
     if(now<p.creativeModeUntil){
       p.creativeRouteUsed=Math.min(.55,p.creativeRouteUsed+(danger>=5?.00265:.00215));
@@ -2625,8 +2630,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const skillN=(skill-72)/27;
       const insideN=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
       const apexCommit=Math.max(.965,Math.min(1.035,.995+lp*.026+skillN*.020+insideN*.022+(p.cleanConfidence||0)*.012));
-      const apex=cornerSide*half*apexCommit;
-      const phaseBlend=Math.max(.38,Math.min(.88,phasePlan.weight+.20));
+      let archetypeMul=1.0;
+      const arch=p.routeArchetype||"adaptive";
+      if(arch==="extremeInside") archetypeMul=1.075;
+      else if(arch==="inside") archetypeMul=1.025;
+      else if(arch==="wideCut") archetypeMul=.72;
+      else if(arch==="variant") archetypeMul=.84+Math.sin(si*.71+(p.routeBandPhase||0))*.16;
+      const apex=cornerSide*half*apexCommit*archetypeMul;
+      const phaseBlend=Math.max(.30,Math.min(.82,phasePlan.weight+.14));
       p.linePlanOffset=apex*(1-phaseBlend)+phasePlan.target*phaseBlend;
       p.linePlanUntil=now+280+Math.random()*90;
       return p.linePlanOffset;
@@ -2716,21 +2727,27 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const readTrust=(p.stats.routeReading-72)/27;
       const controlTrust=((p.stats.control+p.stats.consistency)/2-72)/27;
       const safetyBias=((p.stats.riskControl+p.stats.stability)/2-72)/27;
-      const routeVar=Math.max(.14,Math.min(.62,.50-readTrust*.20-controlTrust*.05+safetyBias*.06));
+      const routeVar=Math.max(.26,Math.min(.82,.66-readTrust*.15-controlTrust*.04+safetyBias*.05));
       let personalTarget=(p.routeBand||0);
+      const archetype=p.routeArchetype||"adaptive", archetypeStrength=p.routeArchetypeStrength||.8;
       if(cornerSide!==0 && cornerPower>.035){
         const insideTalent=(p.stats.insideLine-72)/27;
         const cornerTalent=(p.stats.cornering-72)/27;
-        const cornerBlend=Math.max(.18,Math.min(.72,.28+insideTalent*.20+cornerTalent*.14+readTrust*.10));
-        personalTarget=personalTarget*(1-cornerBlend)+cornerSide*(.68+insideTalent*.34)*cornerBlend;
+        let archetypeTarget=cornerSide*(.72+insideTalent*.25);
+        if(archetype==="extremeInside") archetypeTarget=cornerSide*(1.08+insideTalent*.08);
+        else if(archetype==="inside") archetypeTarget=cornerSide*(.92+insideTalent*.08);
+        else if(archetype==="wideCut") archetypeTarget=-cornerSide*(.34+Math.max(0,safetyBias)*.18);
+        else if(archetype==="variant") archetypeTarget=cornerSide*(.42+Math.sin(si*.73+(p.routeBandPhase||0))*.42);
+        const cornerBlend=Math.max(.30,Math.min(.88,.42+insideTalent*.18+cornerTalent*.12+archetypeStrength*.12));
+        personalTarget=personalTarget*(1-cornerBlend)+archetypeTarget*cornerBlend;
       }else{
-        // Gentle long-wave variation on straights gives each racer a recognisable
-        // path without twitching or random lane changes.
-        personalTarget+=Math.sin((si*.42)+(p.routeBandPhase||0))*(.16+routeVar*.18);
+        const wave=archetype==="variant"?.42:archetype==="wideCut"?.30:.24;
+        personalTarget+=Math.sin((si*.38)+(p.routeBandPhase||0))*wave*archetypeStrength;
+        if(archetype==="extremeInside") personalTarget*=1.12;
       }
-      personalTarget=Math.max(-1.12,Math.min(1.12,personalTarget));
+      personalTarget=Math.max(-1.16,Math.min(1.16,personalTarget));
       const personalDist=Math.abs(c-personalTarget);
-      score += personalDist*routeVar*(1.18+Math.max(0,1-readTrust)*.46);
+      score += personalDist*routeVar*(1.45+archetypeStrength*.45);
 
       // v4.06 DEATH-EDGE AWARENESS: no wall exists. Two outer rows are survivable,
       // but racers understand the third row is lethal. Extreme inside specialists can
@@ -4020,7 +4037,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
     if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.60)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
+    if(Math.abs(PLAYER_HIT_RADIUS-.65)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
@@ -6044,8 +6061,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==150)issues.push("옵저버150");
-    if(Math.abs(PLAYER_HIT_RADIUS-.60)>.0001)issues.push("HIT");
+    if(OBSERVER_COUNT!==130)issues.push("옵저버130");
+    if(Math.abs(PLAYER_HIT_RADIUS-.65)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
