@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.27";
+  const BUILD_ID = "v4.28";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -445,6 +445,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         liveEvadeUntil:0, liveEvadeNextThink:0, liveEvadeOffset:0, liveEvadeSpeed:1,
         liveEvadeSide:0, liveEvadePhase:0, liveEvadeDanger:0, liveEvadeThreat:-1,
         liveEvadeAction:"none",
+        // v4.28 survival balance: hold a safe escape lane briefly after a threat clears
+        // instead of snapping straight back into the racing line / next observer.
+        survivalRecoverUntil:0, survivalRecoverStart:0, survivalRecoverOffset:0,
         // v4.20 Virtual Mouse Human Controller. Movement follows a held click target
         // until the next human-timed command instead of consuming a fresh perfect target every tick.
         mouseTargetX:20.5, mouseTargetY:154.8, mouseNextThink:0, mouseCommandUntil:0,
@@ -1785,7 +1788,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let danger=0,nearest=99,threatId=-1,bestT=99,leftRisk=0,rightRisk=0;
     // Predict only a short human-readable horizon. We use the observer's visible motion,
     // not hidden route knowledge. Higher prediction skill samples a little farther ahead.
-    const horizon=1.35+pred*1.15;
+    const horizon=1.55+pred*1.25;
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
@@ -1800,7 +1803,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const tc=Math.max(0,Math.min(horizon,-(dx*rvx+dy*rvy)/rv2));
         const cx=dx+rvx*tc, cy=dy+rvy*tc;
         const cpa=Math.hypot(cx,cy);
-        const corridor=1.75+avoid*.58+pred*.28;
+        const corridor=1.95+avoid*.64+pred*.32;
         if(tc>.08 && cpa<corridor){
           const conf=o.confidence==null?1:o.confidence;
           const w=(corridor-cpa)/corridor*(1.45-tc/horizon*.42)*(.55+.45*conf);
@@ -1816,7 +1819,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
         const px=p.x+s.ux*p.speed*t,py=p.y+s.uy*p.speed*t;
         const sep=Math.hypot(px-ox,py-oy);
-        const warn=2.05+avoid*.48;
+        const warn=2.28+avoid*.54;
         if(sep<warn){
           const w=(warn-sep)/warn*(1.20-t/horizon*.34);
           danger+=w;
@@ -1829,8 +1832,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     p.liveEvadeDanger=danger;
     // Start early only when trajectories are actually converging. Mere proximity alone
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
-    const predictive=danger>.30 && bestT<2.35;
-    const emergency=nearest<2.55;
+    const predictive=danger>.22 && bestT<2.65;
+    const emergency=nearest<2.75;
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
     if(now>=p.liveEvadeNextThink){
@@ -1846,8 +1849,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // collision is virtually immediate and both lateral exits are crowded.
       const bothSidesBusy=leftRisk>.48 && rightRisk>.48;
       const candidates=[
-        {off:current+openSide*half*.52,spd:1.015,side:openSide,kind:'diag'},
-        {off:current+openSide*half*.78,spd:.985,side:openSide,kind:'wide'},
+        {off:current+openSide*half*.60,spd:1.012,side:openSide,kind:'diag'},
+        {off:current+openSide*half*.90,spd:.982,side:openSide,kind:'wide'},
         {off:current-openSide*half*.34,spd:1.00,side:-openSide,kind:'alt'},
         {off:current+openSide*half*.30,spd:.96,side:openSide,kind:'zig'},
         {off:current+openSide*half*.22,spd:.91,side:openSide,kind:'spin'},
@@ -1861,18 +1864,22 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const off=clampRoadOffset(Math.min(p.seg,segs.length-1),c.off,p);
         const r=rolloutActionRisk(p,s,off,c.spd,nearby);
         let score=r.score;
+        // v4.28 survival: never choose an escape click whose chord cuts outside the
+        // route-derived legal ribbon. This is geometry-derived, not screenshot coordinates.
+        const ex=p.x+s.ux*7.2+s.nx*off, ey=p.y+s.uy*7.2+s.ny*off;
+        if(!courseContainsPoint(ex,ey,ROUTE_PLAN_EXTRA*.72) || !lineStaysOnCourse(p.x,p.y,ex,ey,ROUTE_PLAN_EXTRA*.78)) score+=18.0;
         // v4.24 action priors: natural diagonal > stop when a crossing lane will clear
         // > wide arc > occasional feint. Back is punished heavily unless truly boxed in.
-        if(c.kind==='diag') score-=1.82+avoid*.48;
+        if(c.kind==='diag') score-=2.18+avoid*.56;
         // v4.25: corner line and observer escape are one decision. Prefer candidates
         // that preserve useful progress toward the current racing/apex line.
         const raceDeviation=Math.abs(off-current)/Math.max(1,half);
         score += raceDeviation*(bestT>1.15?.48:.20);
-        if(c.kind==='wide' && bestT<1.65) score-=1.02;
+        if(c.kind==='wide' && bestT<1.95) score-=1.34;
         if(c.kind==='zig') score+=.48;
         if(c.kind==='spin') score+=1.05;
         if(c.side===preferred) score-=.42;
-        if(c.kind==='stop') score += (bestT<.62 && danger>1.12 && bothSidesBusy) ? -.35 : 6.40;
+        if(c.kind==='stop') score += (bestT<.48 && danger>1.45 && bothSidesBusy) ? .10 : 8.20;
         if(c.kind==='back') score += (bestT<.30 && bothSidesBusy) ? 1.15 : 12.0;
         score+=(Math.random()-.5)*(1-skill)*.90;
         if(!best||score<best.score) best={...c,off,score};
@@ -1890,6 +1897,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           : best.kind==='spin' ? 300+Math.random()*120
           : 560+Math.random()*230;
         p.liveEvadeUntil=now+hold;
+        // v4.28: after a real dodge, keep the cleared lane briefly and rejoin gradually.
+        // This prevents dodge-one-observer -> instant apex rejoin -> hit-next-observer deaths.
+        if(best.kind!=='stop' && best.kind!=='back'){
+          p.survivalRecoverStart=now+hold;
+          p.survivalRecoverUntil=p.survivalRecoverStart+260+avoid*150+pred*110;
+          p.survivalRecoverOffset=best.off;
+        }
         // v4.26: a stop is a tiny human tap, not a long decision lock. Re-read the
         // field almost immediately after releasing so STOP -> next click feels crisp.
         if(best.kind==='stop') p.liveEvadeNextThink=now+hold+14+Math.random()*24;
@@ -1898,6 +1912,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     if(now<p.liveEvadeUntil){
       return {off:p.liveEvadeOffset,speedMul:p.liveEvadeSpeed,danger:p.liveEvadeDanger,side:p.liveEvadeSide};
+    }
+    // v4.28 safe re-entry: bleed the escape lane back toward the racing line only
+    // after the committed dodge has cleared. Keep moving; never turn this into stop-control.
+    if(now<(p.survivalRecoverUntil||0)){
+      const span=Math.max(1,(p.survivalRecoverUntil||0)-(p.survivalRecoverStart||now));
+      const t=Math.max(0,Math.min(1,(now-(p.survivalRecoverStart||now))/span));
+      const eased=t*t*(3-2*t);
+      const back=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
+      const off=(p.survivalRecoverOffset||0)*(1-eased)+back*eased;
+      p.liveEvadeAction='recover';
+      return {off:clampRoadOffset(Math.min(p.seg,segs.length-1),off,p),speedMul:1.0,danger:p.liveEvadeDanger*.35,side:p.liveEvadeSide};
     }
     p.liveEvadeAction='none';
     p.liveEvadeSpeed=1;
