@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.191";
+  const BUILD_ID = "v4.192";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,7 +36,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.55;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_HIT_RADIUS = 0.60;     // v4.07: smaller racer sprite, collision tuned down accordingly
   const PLAYER_VISUAL_SCALE = 0.6583842;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.604314;         // observer speed ≈ 90% of player speed
@@ -50,7 +50,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_SAFE_BUFFER = 7.6;
   const AVOID_LANE_LOOKAHEAD = 3.05;
   const AVOID_HORIZONS = [0.22,0.48,0.82,1.20,1.72,2.35,3.10,3.85];   // compare future lane safety
-  const INSIDE_CORNER_STRENGTH = 1.035; // Kart-style inside apex bias
+  const INSIDE_CORNER_STRENGTH = 1.075; // Kart-style inside apex bias
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
   const DEATH_EDGE_EXTRA = 4.50;      // v4.09: lethal zone begins well beyond the real route ribbon
@@ -813,7 +813,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     const si=Math.min(p.seg,segs.length-1),s=segs[si];
     let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
-    const closeObs=playerNearbyObservers(p,8.5);
+    const closeObs=playerNearbyObservers(p,6.8);
 
     // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
     if(!closeObs.length){
@@ -831,8 +831,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const o=closeObs[i],dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;if(along<=0)continue;
       const lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<3.9&&lat<2.35&&along<immediateAlong){immediate=o;immediateAlong=along;}
-      if(along<6.6&&lat<4.4&&along<nearAlong){nearAhead=o;nearAlong=along;}
+      if(along<3.15&&lat<2.25&&along<immediateAlong){immediate=o;immediateAlong=along;}
+      if(along<4.8&&lat<3.8&&along<nearAlong){nearAhead=o;nearAlong=along;}
     }
 
     if(p.controlMode==="normal"&&p.reactiveControlCooldown<=0){
@@ -863,12 +863,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.191: nearby danger uses a varied human control palette. Reverse is rare;
         // forward/diagonal movement is the default escape. No control is selected merely
         // because a far observer is visible.
-        const marseilleWeight=.09*packControlCalm*leaderControlCalm;
-        const stopWeight=.13*leaderControlCalm;
-        const spinWeight=.10*packControlCalm*leaderControlCalm;
-        const diagonalWeight=.34*packControlCalm;
+        const marseilleWeight=.035*packControlCalm*leaderControlCalm;
+        const stopWeight=.055*leaderControlCalm;
+        const spinWeight=.04*packControlCalm*leaderControlCalm;
+        const diagonalWeight=.66*packControlCalm;
         const backWeight=((!sideEscapeOpen && immediateAlong<2.05) ? .035 : .006)*leaderControlCalm;
-        const zigWeight=.34*leaderControlCalm;
+        const zigWeight=.15*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         let cut=marseilleWeight;
@@ -907,10 +907,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
       if(nearAhead){
         const nearLeaderCalm=liveRaceSituation(p).rank===1?.55:1;
-        const zigChance=Math.min(.995,(.78+reaction*.08+prediction*.08+pressure*.05)*1.24*nearLeaderCalm);
+        const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
         if(Math.random()<zigChance){
           const rr=Math.random();
-          const nearMode=rr<.48?"diagonal":rr<.82?"zigzag":rr<.93?"spin360":"stopcon";
+          const nearMode=rr<.78?"diagonal":rr<.92?"zigzag":rr<.97?"spin360":"stopcon";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -1622,11 +1622,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function humanLiveEvadeController(p,s,now){
-    // v4.17 HUMAN-LIKE LIVE CONTROL
-    // This is intentionally not a perfect route oracle. It only reads observers inside
-    // the racer's vision, reacts with a stat-dependent delay, and then re-reads the field
-    // every ~55-145 ms. The repeated short inputs naturally create zigzags, feints and
-    // occasional back-controls instead of a single smooth lane correction.
+    // v4.192 SMOOTH HUMAN-LIKE LIVE CONTROL
+    // Nearby danger creates one committed evasive arc instead of many tiny corrections.
+    // The racer keeps the chosen side long enough to visibly glide around the observer,
+    // then blends back to the optimized inside line once the threat has passed.
     if(safeAt(p.x,p.y)) return null;
     const vision=Math.min(AVOID_SCAN_RADIUS,p.visionRadius||30);
     const raw=playerNearbyObservers(p,vision);
@@ -1661,25 +1660,26 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(pd<2.8) danger+=(2.8-pd)*1.35;
     }
     p.liveEvadeDanger=danger;
-    const trigger=nearest<3.8 || front>.46 || danger>.82;
+    const trigger=nearest<4.15 || front>.42 || danger>.78;
     if(!trigger && now>=p.liveEvadeUntil) return null;
 
     if(now>=p.liveEvadeNextThink){
-      // Better racers react sooner, but nobody has zero reaction time.
-      const thinkMs=145-react*52-ctrl*30 + Math.random()*28;
-      p.liveEvadeNextThink=now+Math.max(52,thinkMs);
+      // v4.192: do not spam new micro-inputs. A human commits to an evasive curve
+      // for roughly a quarter second, then checks the threat again.
+      const thinkMs=285-react*38-ctrl*28 + Math.random()*55;
+      p.liveEvadeNextThink=now+Math.max(205,thinkMs);
 
       // Evaluate mouse-like impulses: hard left/right, soft left/right, forward hold,
       // and a real reverse tap. Re-evaluating these rapidly creates visible body movement.
       const current=p.desiredOffset;
       const candidates=[
-        {off:current-half*.88,spd:.985,side:-1,kind:'hard'},
-        {off:current-half*.48,spd:1.00,side:-1,kind:'soft'},
+        {off:current-half*.72,spd:.995,side:-1,kind:'hard'},
+        {off:current-half*.42,spd:1.005,side:-1,kind:'soft'},
         {off:current,spd:1.015,side:0,kind:'forward'},
-        {off:current+half*.48,spd:1.00,side:1,kind:'soft'},
-        {off:current+half*.88,spd:.985,side:1,kind:'hard'},
+        {off:current+half*.42,spd:1.005,side:1,kind:'soft'},
+        {off:current+half*.72,spd:.995,side:1,kind:'hard'},
         {off:current+(left<=right?-1:1)*half*.22,spd:-.10,side:(left<=right?-1:1),kind:'back'},
-        {off:current+(left<=right?-1:1)*half*.58,spd:.94,side:(left<=right?-1:1),kind:'diagonal'},
+        {off:current+(left<=right?-1:1)*half*.52,spd:.99,side:(left<=right?-1:1),kind:'diagonal'},
         {off:current,spd:.08,side:0,kind:'stop'}
       ];
       let best=null;
@@ -1688,9 +1688,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // Humans prefer a decisive side when the center is closing. A tiny persistence
         // bonus prevents meaningless frame jitter while still allowing rapid reversals.
         let score=r.score;
-        if(c.side && c.side===p.liveEvadeSide) score-=.30+ctrl*.30;
-        if(c.kind==='hard' && danger>1.0) score-=.12;
-        if(c.kind==='soft' && nearest<4.4) score-=.58;
+        if(c.side && c.side===p.liveEvadeSide) score-=1.05+ctrl*.42;
+        if(c.kind==='hard' && danger>1.25) score-=.10;
+        if(c.kind==='soft' && nearest<4.4) score-=.82;
         if(c.kind==='forward' && danger>.75) score+=1.4;
         if(c.kind==='back'){
           // v4.19: reverse is an emergency tap only when the threat is almost on top of us.
@@ -1705,17 +1705,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(best){
         // When both sides close, force a side-switch feint more often. This is the
         // visible "온몸 비틀기" behavior rather than a random cosmetic zigzag skill.
-        if(danger>1.05 && p.liveEvadeSide && Math.random()<(.34+react*.30)){
+        if(danger>2.05 && nearest<2.15 && p.liveEvadeSide && Math.random()<(.08+react*.10)){
           const flip=-p.liveEvadeSide;
-          best.off=current+flip*half*(.62+Math.random()*.24);
-          best.side=flip; best.spd=.975;
+          best.off=current+flip*half*(.48+Math.random()*.16);
+          best.side=flip; best.spd=.99;
         }
         p.liveEvadeOffset=clampRoadOffset(Math.min(p.seg,segs.length-1),best.off,p);
         p.liveEvadeSpeed=best.spd;
         p.liveEvadeSide=best.side||p.liveEvadeSide||1;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
-        p.liveEvadeUntil=now+(best.kind==='back'?45+Math.random()*28:best.kind==='stop'?45+Math.random()*45:80+Math.random()*75);
+        p.liveEvadeUntil=now+(best.kind==='back'?70+Math.random()*30:best.kind==='stop'?70+Math.random()*45:245+Math.random()*115);
         p.match.avoids++;
       }
     }
@@ -3165,7 +3165,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(insideSide!==0 && turnPower>0.055){
         const halfRoad=Math.max(1.8,widths[si]*1.13);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
-        const apexBlend=Math.min(0.999,0.93+turnPower*1.62);
+        const apexBlend=Math.min(0.999,0.955+turnPower*1.68);
         targetOff=targetOff*(1-apexBlend)+apexOff*apexBlend;
       }
 
@@ -3174,8 +3174,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const futureInside=futureInsideBias(si);
       if(Math.abs(futureInside)>0.10){
         const halfRoad2=Math.max(1.8,widths[si]*1.15);
-        const futureApex=futureInside*halfRoad2*1.035;
-        targetOff=targetOff*0.025+futureApex*0.975;
+        const futureApex=futureInside*halfRoad2*1.075;
+        targetOff=targetOff*0.012+futureApex*0.988;
       }
 
       // v4.15: hold the inside side across the whole approach straight. The
@@ -4020,7 +4020,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
     if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.55)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
+    if(Math.abs(PLAYER_HIT_RADIUS-.60)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
@@ -6045,7 +6045,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==150)issues.push("옵저버150");
-    if(Math.abs(PLAYER_HIT_RADIUS-.55)>.0001)issues.push("HIT");
+    if(Math.abs(PLAYER_HIT_RADIUS-.60)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
