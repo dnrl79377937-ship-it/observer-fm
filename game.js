@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.194";
+  const BUILD_ID = "v4.195";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,7 +36,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.65;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_HIT_RADIUS = 0.62;     // v4.07: smaller racer sprite, collision tuned down accordingly
   const PLAYER_VISUAL_SCALE = 0.6583842;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.604314;         // observer speed ≈ 90% of player speed
@@ -1640,15 +1640,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function humanLiveEvadeController(p,s,now){
-    // v4.192 SMOOTH HUMAN-LIKE LIVE CONTROL
-    // Nearby danger creates one committed evasive arc instead of many tiny corrections.
-    // The racer keeps the chosen side long enough to visibly glide around the observer,
-    // then blends back to the optimized inside line once the threat has passed.
+    // v4.195 PREDICTIVE FLOW EVADE
+    // Read an observer's current travel vector and begin a single broad, committed arc
+    // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
-    const vision=Math.min(AVOID_SCAN_RADIUS,p.visionRadius||30);
+    const vision=Math.min(30,p.visionRadius||30);
     const raw=playerNearbyObservers(p,vision);
     if(!raw.length){ p.liveEvadeDanger=0; return null; }
-    const nearby=nearestThreats(raw,p,18);
+    const nearby=nearestThreats(raw,p,22);
     const react=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
     const pred=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
     const ctrl=Math.max(0,Math.min(1,(p.stats.control-72)/27));
@@ -1656,84 +1655,71 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const skill=(react+pred+ctrl+avoid)/4;
     const half=Math.max(3.3,widths[Math.min(p.seg,widths.length-1)]*.72);
 
-    let danger=0, nearest=99, front=0, left=0, right=0, threatId=-1;
+    let danger=0,nearest=99,threatId=-1,bestT=99,leftRisk=0,rightRisk=0;
+    // Predict only a short human-readable horizon. We use the observer's visible motion,
+    // not hidden route knowledge. Higher prediction skill samples a little farther ahead.
+    const horizon=1.15+pred*.95;
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
-      const along=dx*s.ux+dy*s.uy, lat=dx*s.nx+dy*s.ny;
+      const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
       const d=Math.hypot(dx,dy); nearest=Math.min(nearest,d);
-      // Human perception: imminent crossing matters more than raw Euclidean distance.
-      if(along>-2.2 && along<12.5 && Math.abs(lat)<6.2){
-        const imminence=Math.max(0,1-Math.max(0,along)/12.5);
-        const lateral=Math.max(0,1-Math.abs(lat)/6.2);
-        const w=imminence*lateral;
-        danger+=w;
-        if(along>0){ front+=w; threatId=o.id; }
-        if(lat<0) left+=w; else right+=w;
+      if(along<-3.0 || along>20.5 || Math.abs(lat)>10.5) continue;
+      const samples=6+Math.round(pred*5);
+      for(let k=1;k<=samples;k++){
+        const t=horizon*k/samples;
+        const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
+        const px=p.x+s.ux*p.speed*t,py=p.y+s.uy*p.speed*t;
+        const sep=Math.hypot(px-ox,py-oy);
+        const warn=2.05+avoid*.48;
+        if(sep<warn){
+          const w=(warn-sep)/warn*(1.20-t/horizon*.34);
+          danger+=w;
+          if(t<bestT){bestT=t;threatId=o.id;}
+          const olat=(ox-px)*s.nx+(oy-py)*s.ny;
+          if(olat<0) leftRisk+=w; else rightRisk+=w;
+        }
       }
-      // short imperfect prediction, not omniscient future knowledge
-      const t=.22+pred*.48;
-      const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
-      const fx=p.x+s.ux*p.speed*t,fy=p.y+s.uy*p.speed*t;
-      const pd=Math.hypot(fx-ox,fy-oy);
-      if(pd<2.8) danger+=(2.8-pd)*1.35;
     }
     p.liveEvadeDanger=danger;
-    const trigger=nearest<4.15 || front>.42 || danger>.78;
-    if(!trigger && now>=p.liveEvadeUntil) return null;
+    // Start early only when trajectories are actually converging. Mere proximity alone
+    // no longer causes frantic inputs, but a close observer still gets an emergency read.
+    const predictive=danger>.34 && bestT<1.95;
+    const emergency=nearest<2.55;
+    if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
     if(now>=p.liveEvadeNextThink){
-      // v4.192: do not spam new micro-inputs. A human commits to an evasive curve
-      // for roughly a quarter second, then checks the threat again.
-      const thinkMs=285-react*38-ctrl*28 + Math.random()*55;
-      p.liveEvadeNextThink=now+Math.max(205,thinkMs);
-
-      // Evaluate mouse-like impulses: hard left/right, soft left/right, forward hold,
-      // and a real reverse tap. Re-evaluating these rapidly creates visible body movement.
+      // Commit for a visibly smooth interval. Replanning is slower than v4.194 so the
+      // unit draws one natural diagonal curve instead of several tiny left/right taps.
+      p.liveEvadeNextThink=now+(390-react*55-ctrl*35+Math.random()*85);
       const current=p.desiredOffset;
+      const openSide=leftRisk<=rightRisk?-1:1;
+      const preferred=p.liveEvadeSide||openSide;
       const candidates=[
-        {off:current-half*.72,spd:.995,side:-1,kind:'hard'},
-        {off:current-half*.42,spd:1.005,side:-1,kind:'soft'},
-        {off:current,spd:1.015,side:0,kind:'forward'},
-        {off:current+half*.42,spd:1.005,side:1,kind:'soft'},
-        {off:current+half*.72,spd:.995,side:1,kind:'hard'},
-        {off:current+(left<=right?-1:1)*half*.22,spd:-.10,side:(left<=right?-1:1),kind:'back'},
-        {off:current+(left<=right?-1:1)*half*.52,spd:.99,side:(left<=right?-1:1),kind:'diagonal'},
-        {off:current,spd:.08,side:0,kind:'stop'}
+        {off:current+openSide*half*.48,spd:1.01,side:openSide,kind:'diag'},
+        {off:current+openSide*half*.72,spd:.985,side:openSide,kind:'wide'},
+        {off:current-openSide*half*.38,spd:1.00,side:-openSide,kind:'alt'},
+        {off:current,spd:.12,side:0,kind:'stop'}
       ];
       let best=null;
       for(const c of candidates){
-        const r=rolloutActionRisk(p,s,clampRoadOffset(Math.min(p.seg,segs.length-1),c.off,p),c.spd,nearby);
-        // Humans prefer a decisive side when the center is closing. A tiny persistence
-        // bonus prevents meaningless frame jitter while still allowing rapid reversals.
+        const off=clampRoadOffset(Math.min(p.seg,segs.length-1),c.off,p);
+        const r=rolloutActionRisk(p,s,off,c.spd,nearby);
         let score=r.score;
-        if(c.side && c.side===p.liveEvadeSide) score-=1.05+ctrl*.42;
-        if(c.kind==='hard' && danger>1.25) score-=.10;
-        if(c.kind==='soft' && nearest<4.4) score-=.82;
-        if(c.kind==='forward' && danger>.75) score+=1.4;
-        if(c.kind==='back'){
-          // v4.19: reverse is an emergency tap only when the threat is almost on top of us.
-          // If a diagonal/side escape has room, reversing is heavily discouraged.
-          const emergencyBack = nearest<1.72 && front>1.40 && danger>1.55 && left>0.55 && right>0.55;
-          score += emergencyBack ? (-.08-avoid*.12) : 60.0;
-        }
-        // imperfect human judgement: lower prediction/control adds bounded error
-        score += (Math.random()-.5)*(1-skill)*2.0;
-        if(!best || score<best.score) best={...c,score,minClear:r.minClear};
+        // Prefer broad diagonal flow; stopping is useful if the crossing path will clear.
+        if(c.kind==='diag') score-=1.20+avoid*.35;
+        if(c.kind==='wide' && bestT<1.35) score-=.85;
+        if(c.side===preferred) score-=.35;
+        if(c.kind==='stop') score += (bestT<.78 && danger>1.0) ? -1.1 : 3.2;
+        score+=(Math.random()-.5)*(1-skill)*1.15;
+        if(!best||score<best.score) best={...c,off,score};
       }
       if(best){
-        // When both sides close, force a side-switch feint more often. This is the
-        // visible "온몸 비틀기" behavior rather than a random cosmetic zigzag skill.
-        if(danger>2.05 && nearest<2.15 && p.liveEvadeSide && Math.random()<(.08+react*.10)){
-          const flip=-p.liveEvadeSide;
-          best.off=current+flip*half*(.48+Math.random()*.16);
-          best.side=flip; best.spd=.99;
-        }
-        p.liveEvadeOffset=clampRoadOffset(Math.min(p.seg,segs.length-1),best.off,p);
+        p.liveEvadeOffset=best.off;
         p.liveEvadeSpeed=best.spd;
-        p.liveEvadeSide=best.side||p.liveEvadeSide||1;
+        p.liveEvadeSide=best.side||p.liveEvadeSide||openSide;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
-        p.liveEvadeUntil=now+(best.kind==='back'?70+Math.random()*30:best.kind==='stop'?70+Math.random()*45:245+Math.random()*115);
+        p.liveEvadeUntil=now+(best.kind==='stop'?150+Math.random()*80:520+Math.random()*210);
         p.match.avoids++;
       }
     }
@@ -4050,7 +4036,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
     if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.65)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
+    if(Math.abs(PLAYER_HIT_RADIUS-.62)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
@@ -6075,7 +6061,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버130");
-    if(Math.abs(PLAYER_HIT_RADIUS-.65)>.0001)issues.push("HIT");
+    if(Math.abs(PLAYER_HIT_RADIUS-.62)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
