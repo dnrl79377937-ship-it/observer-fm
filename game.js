@@ -18,12 +18,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 120;
+  const OBSERVER_COUNT = 150;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.19";
+  const BUILD_ID = "v4.191";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,8 +36,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.52;     // v4.07: smaller racer sprite, collision tuned down accordingly
-  const PLAYER_VISUAL_SCALE = 0.693036;  // v4.07: additional -10% from v4.04
+  const PLAYER_HIT_RADIUS = 0.55;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_VISUAL_SCALE = 0.6583842;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.604314;         // observer speed ≈ 90% of player speed
   const OBS_WANDER_RANGE = 0.88;        // legacy value (not used for full-map roam)
@@ -472,6 +472,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           controlAttempts:0,controlSuccesses:0,
           controlByType:{
             zigzag:{attempts:0,successes:0},
+            diagonal:{attempts:0,successes:0},
+            spin360:{attempts:0,successes:0},
+            marseille:{attempts:0,successes:0},
             backcon:{attempts:0,successes:0},
             stopcon:{attempts:0,successes:0},
             wide:{attempts:0,successes:0}
@@ -810,16 +813,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     const si=Math.min(p.seg,segs.length-1),s=segs[si];
     let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
-    const closeObs=playerNearbyObservers(p,15.5);
+    const closeObs=playerNearbyObservers(p,8.5);
 
     // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
     if(!closeObs.length){
       // v2.54: on a clear road, never keep braking/reversing from an old threat.
       // The racer immediately returns to the fastest straight/inside line.
-      if(p.controlMode==="stopcon" || p.controlMode==="backcon" || !p.reactiveControl){
-        p.controlMode="normal";p.controlUntil=0;p.reactiveControl=false;
-        p.reactiveThreatId=-1;p.controlQuality=1;p.controlMistakeSide=0;
-      }
+      // v4.191: absolutely no trick-control on empty road. Cancel every reactive
+      // control immediately, including zigzag / diagonal / 360 / Marseille.
+      p.controlMode="normal";p.controlUntil=0;p.reactiveControl=false;
+      p.reactiveThreatId=-1;p.controlQuality=1;p.controlMistakeSide=0;
+      p.backconStyle="none";p.marseilleUntil=0;
       return;
     }
 
@@ -827,8 +831,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const o=closeObs[i],dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;if(along<=0)continue;
       const lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<4.8&&lat<2.5&&along<immediateAlong){immediate=o;immediateAlong=along;}
-      if(along<10.8&&lat<5.0&&along<nearAlong){nearAhead=o;nearAlong=along;}
+      if(along<3.9&&lat<2.35&&along<immediateAlong){immediate=o;immediateAlong=along;}
+      if(along<6.6&&lat<4.4&&along<nearAlong){nearAhead=o;nearAlong=along;}
     }
 
     if(p.controlMode==="normal"&&p.reactiveControlCooldown<=0){
@@ -856,36 +860,47 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const leaderControlCalm=liveRaceSituation(p).rank===1?.55:1;
         // v3.51: only when an observer is immediately ahead, increase both
         // zigzag and backcon selection weights by 20% relative to v3.50.
-        const marseilleWeight=(.075+((p.stats.control-72)/27)*.050+((p.stats.aggression-72)/27)*.020)*1.35*packControlCalm*leaderControlCalm;
-        const stopWeight=.012*1.35*leaderControlCalm;
-        const backBase=sideEscapeOpen?.095:.165;
-        const backWeight=backBase*1.42*packControlCalm*leaderControlCalm;
-        const zigBase=Math.max(.001,1-marseilleWeight-stopWeight-backBase);
-        const zigWeight=zigBase*1.34*leaderControlCalm;
-        const totalWeight=marseilleWeight+stopWeight+backWeight+zigWeight;
+        // v4.191: nearby danger uses a varied human control palette. Reverse is rare;
+        // forward/diagonal movement is the default escape. No control is selected merely
+        // because a far observer is visible.
+        const marseilleWeight=.09*packControlCalm*leaderControlCalm;
+        const stopWeight=.13*leaderControlCalm;
+        const spinWeight=.10*packControlCalm*leaderControlCalm;
+        const diagonalWeight=.34*packControlCalm;
+        const backWeight=((!sideEscapeOpen && immediateAlong<2.05) ? .035 : .006)*leaderControlCalm;
+        const zigWeight=.34*leaderControlCalm;
+        const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
-        if(r<marseilleWeight){
+        let cut=marseilleWeight;
+        if(r<cut){
           p.controlMode="marseille";
           p.reactiveControl=true;
           p.reactiveThreatId=immediate.id;
           p.modeStart=now;
-          p.controlUntil=now+470+Math.random()*150;
+          p.controlUntil=now+360+Math.random()*120;
           p.marseilleUntil=p.controlUntil;
           p.marseilleSide=(leftBlock<=rightBlock?-1:1);
-          p.reactiveControlCooldown=1050+Math.random()*950;
+          p.reactiveControlCooldown=850+Math.random()*760;
           p.match.controlAttempts++;
           p.match.controlSuccesses++;
+          const mc=p.match.controlByType&&p.match.controlByType.marseille;if(mc){mc.attempts++;mc.successes++;}
           addAutoHighlight("MARSEILLE",`${p.name} · 마르세유턴 회피`,now,p.index,2);
-        }else if(r<marseilleWeight+stopWeight){
-          beginControl(p,"stopcon",now,80+Math.random()*70,true,immediate.id);
-          p.reactiveControlCooldown=1600+Math.random()*1500;
-        }else if(r<marseilleWeight+stopWeight+backWeight){
-          const styleHint=immediateAlong<2.75 || (leftBlock>0&&rightBlock>0) ? "long" : "tap";
-          beginControl(p,"backcon",now,220+Math.random()*120,true,immediate.id,styleHint);
-          p.reactiveControlCooldown=900+Math.random()*1000;
+        }else if(r<(cut+=stopWeight)){
+          beginControl(p,"stopcon",now,55+Math.random()*55,true,immediate.id);
+          p.reactiveControlCooldown=900+Math.random()*900;
+        }else if(r<(cut+=spinWeight)){
+          beginControl(p,"spin360",now,300+Math.random()*110,true,immediate.id);
+          p.reactiveControlCooldown=800+Math.random()*750;
+        }else if(r<(cut+=diagonalWeight)){
+          beginControl(p,"diagonal",now,180+Math.random()*130,true,immediate.id);
+          p.reactiveControlCooldown=620+Math.random()*650;
+        }else if(r<(cut+=backWeight)){
+          // Only a tiny reverse tap. Long back-controls are disabled in v4.191.
+          beginControl(p,"backcon",now,95+Math.random()*50,true,immediate.id,"tap");
+          p.reactiveControlCooldown=1400+Math.random()*1000;
         }else{
-          beginControl(p,"zigzag",now,300+Math.random()*260,true,immediate.id);
-          p.reactiveControlCooldown=760+Math.random()*900;
+          beginControl(p,"zigzag",now,240+Math.random()*210,true,immediate.id);
+          p.reactiveControlCooldown=620+Math.random()*700;
         }
         return;
       }
@@ -894,10 +909,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const nearLeaderCalm=liveRaceSituation(p).rank===1?.55:1;
         const zigChance=Math.min(.995,(.78+reaction*.08+prediction*.08+pressure*.05)*1.24*nearLeaderCalm);
         if(Math.random()<zigChance){
-          const nearMode=Math.random()<.80?"zigzag":"backcon";
-          beginControl(p,nearMode,now,(nearMode==="backcon"?220+Math.random()*120:290+Math.random()*190),true,nearAhead.id,
-            nearMode==="backcon"?"tap":null);
-          p.reactiveControlCooldown=1500+Math.random()*1900;return;
+          const rr=Math.random();
+          const nearMode=rr<.48?"diagonal":rr<.82?"zigzag":rr<.93?"spin360":"stopcon";
+          const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
+          beginControl(p,nearMode,now,dur,true,nearAhead.id);
+          p.reactiveControlCooldown=950+Math.random()*1200;return;
         }
       }
     }
@@ -906,9 +922,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // controls only. Never stop on this branch.
     if(nearAhead && p.controlMode==="normal"&&p.controlCooldown<=0){
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
-      // v2.53: nearby-but-not-urgent movement strongly favors zigzag; backcon is rare.
-      const mode=Math.random()<.995?"zigzag":"backcon";
-      let duration=mode==="backcon"?290+Math.random()*150:300+Math.random()*220;
+      // v4.191: nearby-but-not-urgent threats stay forward-moving. No backcon here.
+      const rr=Math.random();
+      const mode=rr<.52?"diagonal":rr<.86?"zigzag":rr<.95?"spin360":"stopcon";
+      let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
       p.controlCooldown=(4300-ag*650)+Math.random()*(4200-ag*400);
@@ -1644,7 +1661,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(pd<2.8) danger+=(2.8-pd)*1.35;
     }
     p.liveEvadeDanger=danger;
-    const trigger=nearest<4.6 || front>.32 || danger>.62;
+    const trigger=nearest<3.8 || front>.46 || danger>.82;
     if(!trigger && now>=p.liveEvadeUntil) return null;
 
     if(now>=p.liveEvadeNextThink){
@@ -1661,7 +1678,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         {off:current,spd:1.015,side:0,kind:'forward'},
         {off:current+half*.48,spd:1.00,side:1,kind:'soft'},
         {off:current+half*.88,spd:.985,side:1,kind:'hard'},
-        {off:current+(left<=right?-1:1)*half*.22,spd:-.16,side:(left<=right?-1:1),kind:'back'}
+        {off:current+(left<=right?-1:1)*half*.22,spd:-.10,side:(left<=right?-1:1),kind:'back'},
+        {off:current+(left<=right?-1:1)*half*.58,spd:.94,side:(left<=right?-1:1),kind:'diagonal'},
+        {off:current,spd:.08,side:0,kind:'stop'}
       ];
       let best=null;
       for(const c of candidates){
@@ -1676,8 +1695,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         if(c.kind==='back'){
           // v4.19: reverse is an emergency tap only when the threat is almost on top of us.
           // If a diagonal/side escape has room, reversing is heavily discouraged.
-          const emergencyBack = nearest<2.35 && front>1.05 && danger>1.15;
-          score += emergencyBack ? (-.35-avoid*.30) : 18.0;
+          const emergencyBack = nearest<1.72 && front>1.40 && danger>1.55 && left>0.55 && right>0.55;
+          score += emergencyBack ? (-.08-avoid*.12) : 60.0;
         }
         // imperfect human judgement: lower prediction/control adds bounded error
         score += (Math.random()-.5)*(1-skill)*2.0;
@@ -1696,7 +1715,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         p.liveEvadeSide=best.side||p.liveEvadeSide||1;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
-        p.liveEvadeUntil=now+(best.kind==='back'?70+Math.random()*45:95+Math.random()*90);
+        p.liveEvadeUntil=now+(best.kind==='back'?45+Math.random()*28:best.kind==='stop'?45+Math.random()*45:80+Math.random()*75);
         p.match.avoids++;
       }
     }
@@ -2569,7 +2588,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(p.creativeMode===4){
         // v2.51: old creative stop is replaced by a moving escape.
         if(danger>=3 && p.controlMode==="normal" && now>=p.controlCooldown){
-          beginControl(p,Math.random()<.972?"zigzag":"backcon",now,260+Math.random()*220,true,-1);
+          beginControl(p,Math.random()<.55?"diagonal":"zigzag",now,240+Math.random()*190,true,-1);
           p.controlCooldown=now+1200+Math.random()*1100;
         }
         return baseOff*.88;
@@ -3290,6 +3309,22 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       speedMul*=p.reactiveControl
         ? ((0.985+controlSkill*.025)*(failedControl?.91:.995))
         : ((0.945+controlSkill*.045)*(failedControl?.89:1));
+    } else if(controlCanOverride && p.controlMode==="diagonal"){
+      // v4.191 diagonal dodge: a short forward-biased sidestep around a nearby threat.
+      const elapsed=Math.max(0,now-p.modeStart),dur=Math.max(1,p.controlUntil-p.modeStart);
+      const t=Math.max(0,Math.min(1,elapsed/dur));
+      const side=p.controlMistakeSide||p.liveEvadeSide||(p.index%2?1:-1);
+      const pulse=Math.sin(Math.PI*t);
+      targetOff += side*half*(.48+controlSkill*.12)*pulse;
+      speedMul*=.99+controlSkill*.025;
+    } else if(controlCanOverride && p.controlMode==="spin360"){
+      // v4.191 360-control: a compact circular feint while maintaining forward progress.
+      const elapsed=Math.max(0,now-p.modeStart),dur=Math.max(1,p.controlUntil-p.modeStart);
+      const t=Math.max(0,Math.min(1,elapsed/dur));
+      const side=p.controlMistakeSide||p.liveEvadeSide||(p.index%2?1:-1);
+      targetOff += side*half*.46*Math.sin(t*Math.PI*2);
+      speedMul*=.91+controlSkill*.05;
+      p.visualAngle += side*(Math.PI*2)*Math.min(1,dt/dur);
     } else if(controlCanOverride && p.controlMode==="marseille"){
       const elapsed=Math.max(0,now-p.modeStart);
       const dur=Math.max(1,p.controlUntil-p.modeStart);
@@ -3317,12 +3352,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(style==="tap"){
         // Very short rear tap: immediately snaps forward after a tiny reverse.
         const reverseMs=(p.reactiveControl
-          ? Math.max(58,82-controlSkill*15)
-          : Math.max(70,102-controlSkill*18))*(failedControl?1.16:1);
+          ? Math.max(38,58-controlSkill*10)
+          : Math.max(48,72-controlSkill*12))*(failedControl?1.16:1);
         const escapeSide=failedControl?p.controlMistakeSide:(p.index%2?1:-1);
         targetOff += escapeSide*half*(.09+controlSkill*.035)*(failedControl?1.20:1);
         speedMul = elapsed<reverseMs
-          ? (-0.18+controlSkill*.025)
+          ? (-0.10+controlSkill*.018)
           : ((1.20+controlSkill*.045)*(failedControl?.90:1));
       }else{
         // Long back-control: a clearly visible backward move followed by a stronger forward release.
@@ -3985,7 +4020,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
     if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.52)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
+    if(Math.abs(PLAYER_HIT_RADIUS-.55)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
@@ -6009,11 +6044,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==120)issues.push("옵저버120");
-    if(Math.abs(PLAYER_HIT_RADIUS-.52)>.0001)issues.push("HIT");
+    if(OBSERVER_COUNT!==150)issues.push("옵저버150");
+    if(Math.abs(PLAYER_HIT_RADIUS-.55)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
-    if(Math.abs(PLAYER_VISUAL_SCALE-.693036)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
+    if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
