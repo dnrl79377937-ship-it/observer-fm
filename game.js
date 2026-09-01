@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.25";
+  const BUILD_ID = "v4.26";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -430,6 +430,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // until the next human-timed command instead of consuming a fresh perfect target every tick.
         mouseTargetX:20.5, mouseTargetY:154.8, mouseNextThink:0, mouseCommandUntil:0,
         mouseClickSeq:0, mouseClickLog:[], mouseMode:"race", mouseLastClickAt:0,
+        // v4.26 persistent human click rhythm. Each racer keeps a recognizable
+        // command tempo, click reach and risk/rejoin character instead of sharing
+        // one global mouse cadence. Stable for the race; never frame-randomized.
+        mouseRhythm:({apexHunter:.88,safeReader:1.12,attacker:.84,lineMaster:.94,balanced:1.00,controller:.91,patient:1.15,opportunist:.87}[drivingStyle.style]||1)*(0.96+Math.random()*.08),
+        mouseReach:({apexHunter:1.08,safeReader:.91,attacker:1.12,lineMaster:1.04,balanced:1.00,controller:.96,patient:.90,opportunist:1.09}[drivingStyle.style]||1)*(0.97+Math.random()*.06),
+        mouseDangerTempo:({apexHunter:.92,safeReader:.88,attacker:.84,lineMaster:.94,balanced:1.00,controller:.86,patient:1.05,opportunist:.87}[drivingStyle.style]||1),
+        mouseRejoinBias:({apexHunter:1.10,safeReader:.82,attacker:1.08,lineMaster:1.13,balanced:1.00,controller:.94,patient:.84,opportunist:1.05}[drivingStyle.style]||1),
         // v4.21 perception: only personally seen observers may drive AI decisions.
         perceivedObservers:new Map(), perceptionLastUpdate:0, perceptionFocusId:-1,
         // v4.23 human reaction pipeline: detection -> recognition -> decision -> click.
@@ -1858,12 +1865,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
         p.liveEvadeAction=best.kind;
-        const hold=best.kind==='stop' ? 75+Math.random()*55
-          : best.kind==='back' ? 80+Math.random()*35
+        const hold=best.kind==='stop' ? 48+Math.random()*34
+          : best.kind==='back' ? 72+Math.random()*28
           : best.kind==='zig' ? 330+Math.random()*150
           : best.kind==='spin' ? 300+Math.random()*120
           : 560+Math.random()*230;
         p.liveEvadeUntil=now+hold;
+        // v4.26: a stop is a tiny human tap, not a long decision lock. Re-read the
+        // field almost immediately after releasing so STOP -> next click feels crisp.
+        if(best.kind==='stop') p.liveEvadeNextThink=now+hold+14+Math.random()*24;
         p.match.avoids++;
       }
     }
@@ -3651,8 +3661,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
         // Human-like imperfect click placement. Better control means less pointer error.
         // Error is tiny and continuous; it does not create random lane changes.
         const err=(1-controlN)*0.16;
-        let mx=tx+(Math.random()-.5)*err;
-        let my=ty+(Math.random()-.5)*err;
+        const reach=Math.max(.82,Math.min(1.16,p.mouseReach||1));
+        let mx=p.x+(tx-p.x)*reach+(Math.random()-.5)*err;
+        let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
         const legalMouse=courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
         p.mouseTargetX=mx; p.mouseTargetY=my;
@@ -3661,11 +3672,17 @@ targetOff=clampRoadOffset(si,targetOff,p);
         if(!Array.isArray(p.mouseClickLog)) p.mouseClickLog=[];
         p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1});
         if(p.mouseClickLog.length>1800) p.mouseClickLog.splice(0,p.mouseClickLog.length-1800);
-        const calmMs=245-reactionN*45+Math.random()*105;
-        const dangerMs=92-reactionN*24+Math.random()*48;
-        const cadence=dangerN>.18?dangerMs:calmMs;
+        // v4.26 individual click rhythm: patient/safe racers use longer deliberate
+        // commands; attackers/opportunists click sooner and farther. Under danger the
+        // personal danger tempo remains visible without creating per-frame twitching.
+        const rhythm=Math.max(.78,Math.min(1.22,p.mouseRhythm||1));
+        const dangerTempo=Math.max(.78,Math.min(1.12,p.mouseDangerTempo||1));
+        const calmMs=(245-reactionN*45+Math.random()*105)*rhythm;
+        const dangerMs=(92-reactionN*24+Math.random()*48)*dangerTempo;
+        let cadence=dangerN>.18?dangerMs:calmMs;
+        if(p.mouseMode==='stop') cadence=Math.min(cadence,52+Math.random()*28);
         p.mouseNextThink=now+cadence;
-        p.mouseCommandUntil=now+cadence+120;
+        p.mouseCommandUntil=now+cadence+(p.mouseMode==='stop'?18:120);
       }
       tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
