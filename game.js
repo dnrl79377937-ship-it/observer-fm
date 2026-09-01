@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.20";
+  const BUILD_ID = "v4.24";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -425,10 +425,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // reaction delay and repeated re-reads of the visible observer field.
         liveEvadeUntil:0, liveEvadeNextThink:0, liveEvadeOffset:0, liveEvadeSpeed:1,
         liveEvadeSide:0, liveEvadePhase:0, liveEvadeDanger:0, liveEvadeThreat:-1,
+        liveEvadeAction:"none",
         // v4.20 Virtual Mouse Human Controller. Movement follows a held click target
         // until the next human-timed command instead of consuming a fresh perfect target every tick.
         mouseTargetX:20.5, mouseTargetY:154.8, mouseNextThink:0, mouseCommandUntil:0,
         mouseClickSeq:0, mouseClickLog:[], mouseMode:"race", mouseLastClickAt:0,
+        // v4.21 perception: only personally seen observers may drive AI decisions.
+        perceivedObservers:new Map(), perceptionLastUpdate:0, perceptionFocusId:-1,
+        // v4.23 human reaction pipeline: detection -> recognition -> decision -> click.
+        reactionThreatId:-1, reactionDangerActive:false, mouseReactionReadyAt:0,
+        lastReactionDelayMs:0, lastRecognitionDelayMs:0,
         variantMode:0,
         variantUntil:0,
         variantCooldown:6500+Math.random()*7000,
@@ -827,7 +833,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     const si=Math.min(p.seg,segs.length-1),s=segs[si];
     let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
-    const closeObs=playerNearbyObservers(p,6.8);
+    const closeObs=playerPerceivedObservers(p,6.8);
 
     // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
     if(!closeObs.length){
@@ -881,11 +887,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // like a collision pass-through. Natural diagonal escape is the main tool;
         // stop-control is more common, while reverse is a very rare last resort.
         const marseilleWeight=0;
-        const stopWeight=.14*leaderControlCalm;
-        const spinWeight=.025*packControlCalm*leaderControlCalm;
-        const diagonalWeight=.82*packControlCalm;
-        const backWeight=((!sideEscapeOpen && immediateAlong<1.72) ? .012 : .0015)*leaderControlCalm;
-        const zigWeight=.10*leaderControlCalm;
+        const stopWeight=.22*leaderControlCalm;
+        const spinWeight=.012*packControlCalm*leaderControlCalm;
+        const diagonalWeight=1.02*packControlCalm;
+        const backWeight=((!sideEscapeOpen && immediateAlong<1.38) ? .004 : .00025)*leaderControlCalm;
+        const zigWeight=.055*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         let cut=marseilleWeight;
@@ -927,7 +933,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
         if(Math.random()<zigChance){
           const rr=Math.random();
-          const nearMode=rr<.80?"diagonal":rr<.88?"stopcon":rr<.96?"zigzag":"spin360";
+          const nearMode=rr<.76?"diagonal":rr<.94?"stopcon":rr<.985?"zigzag":"spin360";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -941,7 +947,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
       // v4.191: nearby-but-not-urgent threats stay forward-moving. No backcon here.
       const rr=Math.random();
-      const mode=rr<.52?"diagonal":rr<.86?"zigzag":rr<.95?"spin360":"stopcon";
+      const mode=rr<.68?"diagonal":rr<.90?"stopcon":rr<.975?"zigzag":"spin360";
       let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -1149,6 +1155,93 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         for(let i=0;i<bucket.length;i++) out.push(bucket[i]);
       }
     }
+    return out;
+  }
+
+  // v4.23 HUMAN REACTION TIMING
+  // Returns a small, player-specific delay instead of letting the AI react on the same frame.
+  // Reaction/focus/pressure reduce delay; consistency reduces timing variance.
+  function humanRecognitionDelayMs(p,urgency=0){
+    const reactionN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
+    const focusN=Math.max(0,Math.min(1,(p.stats.focus-72)/27));
+    const pressureN=Math.max(0,Math.min(1,(p.stats.pressure-72)/27));
+    const consistencyN=Math.max(0,Math.min(1,(p.stats.consistency-72)/27));
+    const skill=reactionN*.55+focusN*.30+pressureN*.15;
+    const base=150-skill*62-urgency*24;
+    const spread=34-consistencyN*18;
+    return Math.max(58,Math.min(176,base+(Math.random()-.5)*spread));
+  }
+
+  function humanCommandDelayMs(p,urgency=0){
+    const reactionN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const focusN=Math.max(0,Math.min(1,(p.stats.focus-72)/27));
+    const skill=reactionN*.52+controlN*.30+focusN*.18;
+    const base=104-skill*43-urgency*18;
+    return Math.max(34,Math.min(122,base+(Math.random()-.5)*24));
+  }
+
+  // v4.21 HUMAN PERCEPTION LAYER
+  // AI planning is no longer allowed to consume the omniscient nearby-observer list.
+  // A racer sees a forward cone plus a small close peripheral bubble, then keeps a
+  // short imperfect memory. Physical collision still checks the real observer field.
+  function playerPerceivedObservers(p,r,now=performance.now()){
+    if(!p.perceivedObservers || !(p.perceivedObservers instanceof Map)) p.perceivedObservers=new Map();
+    const reactionN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
+    const focusN=Math.max(0,Math.min(1,(p.stats.focus-72)/27));
+    const predictionN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
+    const visionScale=.76+focusN*.20+reactionN*.08;
+    const maxR=Math.min(r,(p.visionRadius||r)*visionScale);
+    const raw=playerNearbyObservers(p,maxR);
+    let hx=p.steerX||0, hy=p.steerY||0;
+    let hl=Math.hypot(hx,hy);
+    if(hl<.15){ const seg=segs[Math.min(p.seg,segs.length-1)]; hx=seg.ux; hy=seg.uy; hl=1; }
+    hx/=hl; hy/=hl;
+    const halfFov=(64+focusN*13)*Math.PI/180;
+    const cosFov=Math.cos(halfFov);
+    const peripheral=2.5+reactionN*.65;
+    const memoryMs=420+predictionN*310+focusN*150;
+    for(const o of raw){
+      const dx=o.x-p.x,dy=o.y-p.y,d=Math.hypot(dx,dy);
+      if(d<.001) continue;
+      const dot=(dx*hx+dy*hy)/d;
+      const visible=d<=peripheral || dot>=cosFov;
+      if(visible){
+        const prev=p.perceivedObservers.get(o.id);
+        let evx=0,evy=0;
+        if(prev && now>prev.lastSeen+18){
+          const dt=(now-prev.lastSeen)/1000;
+          const rawVx=(o.x-prev.x)/dt, rawVy=(o.y-prev.y)/dt;
+          // v4.22: velocity is inferred from successive sightings, not read from hidden state.
+          const smooth=.58+predictionN*.24;
+          evx=(prev.vx||0)*(1-smooth)+rawVx*smooth;
+          evy=(prev.vy||0)*(1-smooth)+rawVy*smooth;
+        }else if(prev){ evx=prev.vx||0; evy=prev.vy||0; }
+        const urgency=Math.max(0,Math.min(1,(peripheral+2.8-d)/(peripheral+2.8)));
+        const awareAt=prev?.awareAt ?? (now+humanRecognitionDelayMs(p,urgency));
+        p.perceivedObservers.set(o.id,{id:o.id,lastSeen:now,x:o.x,y:o.y,vx:evx,vy:evy,visible:true,awareAt});
+      }
+    }
+    const out=[];
+    for(const [id,m] of p.perceivedObservers){
+      const age=now-m.lastSeen;
+      if(age>memoryMs){ p.perceivedObservers.delete(id); continue; }
+      // Return a perception proxy. AI prediction sees only last-seen position and the
+      // motion vector estimated from sightings; collision continues to use real observers.
+      if(now<(m.awareAt||0)) continue;
+      if(m.awareAt){ p.lastRecognitionDelayMs=Math.max(0,m.awareAt-(m.lastSeen-age)); }
+      const ageSec=age/1000;
+      const fade=Math.max(0,1-age/memoryMs);
+      const px=m.x+(m.vx||0)*ageSec*fade;
+      const py=m.y+(m.vy||0)*ageSec*fade;
+      const dx=px-p.x,dy=py-p.y;
+      if(dx*dx+dy*dy<=r*r) out.push({
+        id:m.id,x:px,y:py,vx:(m.vx||0)*fade,vy:(m.vy||0)*fade,
+        phase:'move',phaseUntil:now+Math.max(120,memoryMs-age),speed:Math.hypot(m.vx||0,m.vy||0),
+        perceived:true,confidence:fade,lastSeenAge:age
+      });
+    }
+    p.perceptionLastUpdate=now;
     return out;
   }
 
@@ -1649,7 +1742,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
     const vision=Math.min(30,p.visionRadius||30);
-    const raw=playerNearbyObservers(p,vision);
+    const raw=playerPerceivedObservers(p,vision);
     if(!raw.length){ p.liveEvadeDanger=0; return null; }
     const nearby=nearestThreats(raw,p,22);
     const react=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
@@ -1662,13 +1755,32 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let danger=0,nearest=99,threatId=-1,bestT=99,leftRisk=0,rightRisk=0;
     // Predict only a short human-readable horizon. We use the observer's visible motion,
     // not hidden route knowledge. Higher prediction skill samples a little farther ahead.
-    const horizon=1.15+pred*.95;
+    const horizon=1.35+pred*1.15;
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
       const d=Math.hypot(dx,dy); nearest=Math.min(nearest,d);
       if(along<-3.0 || along>20.5 || Math.abs(lat)>10.5) continue;
-      const samples=6+Math.round(pred*5);
+      // v4.22 trajectory threat: estimate time of closest approach from observed motion.
+      // This lets racers bend away early from a crossing path while ignoring observers
+      // whose visible trajectory is moving away from them.
+      const rvx=(o.vx||0)-s.ux*p.speed, rvy=(o.vy||0)-s.uy*p.speed;
+      const rv2=rvx*rvx+rvy*rvy;
+      if(rv2>.01){
+        const tc=Math.max(0,Math.min(horizon,-(dx*rvx+dy*rvy)/rv2));
+        const cx=dx+rvx*tc, cy=dy+rvy*tc;
+        const cpa=Math.hypot(cx,cy);
+        const corridor=1.75+avoid*.58+pred*.28;
+        if(tc>.08 && cpa<corridor){
+          const conf=o.confidence==null?1:o.confidence;
+          const w=(corridor-cpa)/corridor*(1.45-tc/horizon*.42)*(.55+.45*conf);
+          danger+=w*1.35;
+          if(tc<bestT){bestT=tc;threatId=o.id;}
+          const crossLat=cx*s.nx+cy*s.ny;
+          if(crossLat<0) leftRisk+=w*1.25; else rightRisk+=w*1.25;
+        }
+      }
+      const samples=7+Math.round(pred*6);
       for(let k=1;k<=samples;k++){
         const t=horizon*k/samples;
         const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
@@ -1687,7 +1799,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     p.liveEvadeDanger=danger;
     // Start early only when trajectories are actually converging. Mere proximity alone
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
-    const predictive=danger>.34 && bestT<1.95;
+    const predictive=danger>.30 && bestT<2.35;
     const emergency=nearest<2.55;
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -1698,23 +1810,37 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const current=p.desiredOffset;
       const openSide=leftRisk<=rightRisk?-1:1;
       const preferred=p.liveEvadeSide||openSide;
+      // v4.24 HUMAN DODGE: choose one coherent human action, then commit to it.
+      // Diagonal flow is the default; stop-control is deliberately common for crossing
+      // trajectories; zigzag/360 are occasional feints; reverse exists only when a
+      // collision is virtually immediate and both lateral exits are crowded.
+      const bothSidesBusy=leftRisk>.48 && rightRisk>.48;
       const candidates=[
-        {off:current+openSide*half*.48,spd:1.01,side:openSide,kind:'diag'},
-        {off:current+openSide*half*.72,spd:.985,side:openSide,kind:'wide'},
-        {off:current-openSide*half*.38,spd:1.00,side:-openSide,kind:'alt'},
-        {off:current,spd:.12,side:0,kind:'stop'}
+        {off:current+openSide*half*.52,spd:1.015,side:openSide,kind:'diag'},
+        {off:current+openSide*half*.78,spd:.985,side:openSide,kind:'wide'},
+        {off:current-openSide*half*.34,spd:1.00,side:-openSide,kind:'alt'},
+        {off:current+openSide*half*.30,spd:.96,side:openSide,kind:'zig'},
+        {off:current+openSide*half*.22,spd:.91,side:openSide,kind:'spin'},
+        {off:current,spd:.02,side:0,kind:'stop'}
       ];
+      if(emergency && bestT<.34 && bothSidesBusy){
+        candidates.push({off:current+openSide*half*.16,spd:-.075,side:openSide,kind:'back'});
+      }
       let best=null;
       for(const c of candidates){
         const off=clampRoadOffset(Math.min(p.seg,segs.length-1),c.off,p);
         const r=rolloutActionRisk(p,s,off,c.spd,nearby);
         let score=r.score;
-        // Prefer broad diagonal flow; stopping is useful if the crossing path will clear.
-        if(c.kind==='diag') score-=1.20+avoid*.35;
-        if(c.kind==='wide' && bestT<1.35) score-=.85;
-        if(c.side===preferred) score-=.35;
-        if(c.kind==='stop') score += (bestT<.78 && danger>1.0) ? -1.1 : 3.2;
-        score+=(Math.random()-.5)*(1-skill)*1.15;
+        // v4.24 action priors: natural diagonal > stop when a crossing lane will clear
+        // > wide arc > occasional feint. Back is punished heavily unless truly boxed in.
+        if(c.kind==='diag') score-=1.55+avoid*.42;
+        if(c.kind==='wide' && bestT<1.65) score-=1.02;
+        if(c.kind==='zig') score+=.48;
+        if(c.kind==='spin') score+=1.05;
+        if(c.side===preferred) score-=.42;
+        if(c.kind==='stop') score += (bestT<1.05 && danger>.72) ? -1.45 : 2.55;
+        if(c.kind==='back') score += (bestT<.30 && bothSidesBusy) ? 1.15 : 12.0;
+        score+=(Math.random()-.5)*(1-skill)*.90;
         if(!best||score<best.score) best={...c,off,score};
       }
       if(best){
@@ -1723,7 +1849,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         p.liveEvadeSide=best.side||p.liveEvadeSide||openSide;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
-        p.liveEvadeUntil=now+(best.kind==='stop'?150+Math.random()*80:520+Math.random()*210);
+        p.liveEvadeAction=best.kind;
+        const hold=best.kind==='stop' ? 180+Math.random()*105
+          : best.kind==='back' ? 80+Math.random()*35
+          : best.kind==='zig' ? 330+Math.random()*150
+          : best.kind==='spin' ? 300+Math.random()*120
+          : 560+Math.random()*230;
+        p.liveEvadeUntil=now+hold;
         p.match.avoids++;
       }
     }
@@ -1753,7 +1885,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const pack=packAwareness(p,s);
     const packVisionBoost=pack.mates>=2 ? 1.18+pack.density*.12 : 1;
     const ownVision=Math.min(AVOID_SCAN_RADIUS,(p.visionRadius||AVOID_SCAN_RADIUS)*packVisionBoost);
-    const nearbyRaw=playerNearbyObservers(p,ownVision);
+    const nearbyRaw=playerPerceivedObservers(p,ownVision);
     // v4.19 CLOSE-REACTION GATE: do not pre-dodge observers far down the road.
     // A human-like racer keeps the optimized line until an observer is genuinely close.
     const imminentRaw=nearbyRaw.filter(o=>{
@@ -1763,7 +1895,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return d<4.9 || (along>-1.4 && along<6.6 && lat<4.9);
     });
     if(!imminentRaw.length){ p.avoidPlanUntil=0; return null; }
-    const sharedRaw=sharedPackDanger(p,s,imminentRaw,pack).filter(o=>{
+    const sharedRaw=imminentRaw.filter(o=>{
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy, lat=Math.abs(dx*s.nx+dy*s.ny);
       return Math.hypot(dx,dy)<5.2 || (along>-1.5 && along<6.9 && lat<5.1);
@@ -2206,7 +2338,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.575);
     const inside=cornerInsideSide(si);
     const turn=cornerIntensity(si);
-    const nearby=playerNearbyObservers(p,12.5);
+    const nearby=playerPerceivedObservers(p,12.5);
     let chosen=0;
 
     if(nearby.length<=2 && rs.nearestAheadGap<4.6){
@@ -2246,7 +2378,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(now<p.variantCooldown) return baseOff;
 
     // Never gamble into immediate observer danger.
-    const nearby=playerNearbyObservers(p,11.5);
+    const nearby=playerPerceivedObservers(p,11.5);
     if(nearby.length>0){
       p.variantCooldown=now+1600+Math.random()*2200;
       return baseOff;
@@ -2323,7 +2455,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const riskControl=(p.stats.riskControl-72)/27;
 
     // Estimate which side has more observer room over the immediate approach.
-    const nearby=playerNearbyObservers(p,15.0);
+    const nearby=playerPerceivedObservers(p,15.0);
     let leftRisk=0,rightRisk=0,frontRisk=0;
     const s=segs[Math.min(si,segs.length-1)];
     for(let i=0;i<nearby.length;i++){
@@ -2562,7 +2694,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function creativeRouteAdjustment(p,si,now,baseOff){
     const progress=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
-    const danger=playerNearbyObservers(p,18).length, lp=p.linePersonality||0;
+    const danger=playerPerceivedObservers(p,18).length, lp=p.linePersonality||0;
     // Dense fields temporarily raise the creative-route allowance and reduce
     // the trigger threshold. Normal sections remain close to the v2.41 70/30 mix.
     const denseBoost=danger>=8?.16:danger>=5?.11:danger>=3?.055:0;
@@ -2624,7 +2756,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // near-wall Kart-style apex instead of wasting space in the middle.
     const cornerSide=cornerInsideSide(si);
     const cornerPower=cornerIntensity(si);
-    const localObs=playerNearbyObservers(p,18.0);
+    const localObs=playerPerceivedObservers(p,18.0);
     if(localObs.length===0 && cornerSide!==0 && cornerPower>0.055){
       // v2.60: even on a clear road, use a true outside-entry/apex/exit sequence.
       const phasePlan=cornerPhaseTarget(p,si,half);
@@ -2823,7 +2955,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function stabilizeDrivingLine(p,si,targetOff){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
-    const density=playerNearbyObservers(p,15).length;
+    const density=playerPerceivedObservers(p,15).length;
     const corner=cornerIntensity(si);
     const lineSkill=((p.stats.cornering+p.stats.insideLine+p.stats.control)/3-72)/27;
 
@@ -3011,7 +3143,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const consistency=(p.stats.consistency-72)/27;
     const inside=cornerInsideSide(si);
     const future=futureInsideBias(si);
-    const nearby=playerNearbyObservers(p,12.0);
+    const nearby=playerPerceivedObservers(p,12.0);
 
     if(now<p.clutchDecisionUntil){
       return {off:p.clutchLineOffset,speedMul:p.clutchSpeedMul};
@@ -3093,7 +3225,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function limitDecisionChanges(p,si,now,targetOff){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.58);
-    const nearby=playerNearbyObservers(p,8.5);
+    const nearby=playerPerceivedObservers(p,8.5);
     let emergency=false;
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
@@ -3411,12 +3543,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Human controller is allowed to reverse briefly even though ordinary anti-freeze
       // logic forbids accidental backward movement.
       if(liveEvade.speedMul<0) p.controlMode="backcon";
+      // Human Dodge Controller action is authoritative while committed. This prevents
+      // the older trick controller from layering a second contradictory maneuver.
+      if(p.liveEvadeAction==='stop') p.controlMode='stopcon';
     }
 targetOff=clampRoadOffset(si,targetOff,p);
     const steerControl=(p.stats.control-72)/27;
     // v2.7 anti-freeze: outside collision / explicit backcon / explicit stopcon,
     // every active racer keeps meaningful forward motion.
-    if(now>=p.stunUntil && p.controlMode!=="stopcon" && p.controlMode!=="backcon" && speedMul<.62){
+    if(now>=p.stunUntil && p.controlMode!=="stopcon" && p.controlMode!=="backcon" && p.liveEvadeAction!=="stop" && speedMul<.62){
       speedMul=.62;
     }
 
@@ -3472,7 +3607,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=legalTarget.x; ty=legalTarget.y;
     }
 
-    // v4.20 VIRTUAL MOUSE: the planner above is now the player's "eyes + brain" only.
+    // v4.23 VIRTUAL MOUSE + HUMAN REACTION + PERSONAL VISION: the planner above is now the player's "eyes + brain" only.
     // It proposes a click, but steering consumes the last committed click target.
     // Safe running uses relaxed human click cadence; real danger shortens the cadence.
     // The click event itself is logged so later replay/debug can show genuine inputs,
@@ -3481,9 +3616,26 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const reactionN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
       const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
       const dangerN=Math.max(0,Math.min(1,p.liveEvadeDanger||0));
+      const threatId=liveEvade ? (p.liveEvadeThreat??-1) : -1;
+      const dangerActive=!!liveEvade;
+      // A newly recognized threat does not instantly become a mouse input. The racer
+      // spends a short player-specific judgment/hand delay while continuing the last command.
+      if(dangerActive && (!p.reactionDangerActive || threatId!==p.reactionThreatId)){
+        const urgency=Math.max(0,Math.min(1,dangerN/1.35));
+        const cmdDelay=humanCommandDelayMs(p,urgency);
+        p.mouseReactionReadyAt=now+cmdDelay;
+        p.lastReactionDelayMs=cmdDelay;
+        p.reactionThreatId=threatId;
+        p.reactionDangerActive=true;
+      }else if(!dangerActive){
+        p.reactionDangerActive=false;
+        p.reactionThreatId=-1;
+        p.mouseReactionReadyAt=0;
+      }
       const distToHeld=Math.hypot((p.mouseTargetX??p.x)-p.x,(p.mouseTargetY??p.y)-p.y);
       const needsClick=now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
-      if(needsClick){
+      const reactionReady=!dangerActive || now>=(p.mouseReactionReadyAt||0);
+      if(needsClick && reactionReady){
         // Human-like imperfect click placement. Better control means less pointer error.
         // Error is tiny and continuous; it does not create random lane changes.
         const err=(1-controlN)*0.16;
@@ -3492,7 +3644,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const legalMouse=courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
         p.mouseTargetX=mx; p.mouseTargetY=my;
-        p.mouseMode=liveEvade ? (liveEvade.speedMul<=.15?'stop':'evade') : 'race';
+        p.mouseMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : 'race';
         p.mouseLastClickAt=now; p.mouseClickSeq=(p.mouseClickSeq||0)+1;
         if(!Array.isArray(p.mouseClickLog)) p.mouseClickLog=[];
         p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1});
@@ -3540,7 +3692,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const edgeRoadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN*(p.wideDetourRace?1.025:1));
       const edgeLat=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
       if(Math.abs(edgeLat)>=edgeRoadHalf*.82 && p.controlMode==="normal"){
-        const edgeThreats=playerNearbyObservers(p,7.5);
+        const edgeThreats=playerPerceivedObservers(p,7.5);
         if(!edgeThreats.length) speedMul=Math.max(speedMul,1.0);
       }
     }
@@ -3548,7 +3700,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v3.3 오른쪽 3시 구간(seg 5~11): 실제 옵저버 위협/컨트롤이 없으면
     // 패스·코너 준비 AI 때문에 체감 감속이 생기지 않도록 정상 주행 속도를 보장.
     if(si>=5 && si<=11 && now>=p.stunUntil && p.controlMode==="normal"){
-      const eastThreats=playerNearbyObservers(p,7.5);
+      const eastThreats=playerPerceivedObservers(p,7.5);
       if(!eastThreats.length) speedMul=Math.max(speedMul,1.0);
     }
 
