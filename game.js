@@ -29,7 +29,6 @@
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
-  if(povSelect){ povSelect.innerHTML=`<option value="-1">POV: OFF</option>`+names.map((n,i)=>`<option value="${i}">${n} POV</option>`).join(""); povSelect.addEventListener("change",()=>{povPlayerIndex=+povSelect.value;}); }
   const unitSprites={};
   const unitFiles={1:"scourge",2:"scout",3:"wraith",4:"mutalisk",5:"queen"};
   for(let r=1;r<=5;r++){
@@ -62,6 +61,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
   const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika","HongKey","TaeHyeon","DVA","LiveCam"];
+  if(povSelect){
+    povSelect.innerHTML=`<option value="-1">POV: OFF</option>`+names.map((n,i)=>`<option value="${i}">${n} POV</option>`).join("");
+    povSelect.addEventListener("change",()=>{povPlayerIndex=+povSelect.value;});
+  }
   const colors = ["#66e3ff","#ffdb66","#ff7a8a","#9b8cff","#72f0a7","#ff9f5c","#f275ff","#b6f06e","#4df0d0","#ffb86b","#7dd3fc","#c4b5fd"];
 
   // v29: 20 FM-style attributes + individual driving personality.
