@@ -20,12 +20,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 100;
+  const OBSERVER_COUNT = 120;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.41";
+  const BUILD_ID = "v4.43";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1876,7 +1876,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function humanLiveEvadeController(p,s,now,raceOff){
-    // v4.195 PREDICTIVE FLOW EVADE
+    // v4.43 SURVIVAL AI 3: death-cause-driven predictive flow evade
     // Read an observer's current travel vector and begin a single broad, committed arc
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
@@ -1907,7 +1907,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const currentOff=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
     const clusterLeftRisk=(clusterNow.laneRisk?.[0]||0)+(clusterNow.laneRisk?.[1]||0)+(clusterNow.laneRisk?.[2]||0);
     const clusterRightRisk=(clusterNow.laneRisk?.[6]||0)+(clusterNow.laneRisk?.[7]||0)+(clusterNow.laneRisk?.[8]||0);
-    const boxedNow=clusterNow.frontCount>=3 && clusterNow.closeCount>=1 && clusterLeftRisk>3.2 && clusterRightRisk>3.2;
+    // v4.43 SURROUNDED fix: break out before the box fully closes.
+    const boxedNow=clusterNow.frontCount>=2 && clusterNow.closeCount>=1 && clusterLeftRisk>2.65 && clusterRightRisk>2.65;
     if(now<(p.breakoutUntil||0)){
       const bx=p.x+s.ux*7.5+s.nx*p.breakoutOffset, by=p.y+s.uy*7.5+s.ny*p.breakoutOffset;
       if(courseContainsPoint(bx,by,ROUTE_PLAN_EXTRA*.72) && lineStaysOnCourse(p.x,p.y,bx,by,ROUTE_PLAN_EXTRA*.78)){
@@ -1920,7 +1921,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let danger=0,nearest=99,threatId=-1,bestT=99,leftRisk=0,rightRisk=0;
     // Predict only a short human-readable horizon. We use the observer's visible motion,
     // not hidden route knowledge. Higher prediction skill samples a little farther ahead.
-    const horizon=1.55+pred*1.25;
+    const horizon=1.72+pred*1.38; // v4.43: earlier reads reduce LATE_REACTION / NO_EVADE deaths
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
@@ -1982,7 +1983,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     else { p.dangerTier=rawTier; if(rawTier) p.dangerTierUntil=now+180; }
     // Start early only when trajectories are actually converging. Mere proximity alone
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
-    const predictive=danger>(sparseField?.095:.18) && bestT<(sparseField?3.35:2.90);
+    // v4.43 NO_EVADE/LATE_REACTION fix: a readable converging path should trigger a
+    // committed dodge earlier, while non-converging nearby observers still do nothing.
+    const predictive=danger>(sparseField?.072:.135) && bestT<(sparseField?3.65:3.18);
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -2165,17 +2168,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const proposed=clampRoadOffset(Math.min(p.seg,segs.length-1),held*(1-eased)+back*eased,p);
       const holdRisk=scoreFutureEscapePath(p,s,held,1.0,rejoinObs);
       const joinRisk=scoreFutureEscapePath(p,s,proposed,1.0,rejoinObs);
-      const joinBad=rejoinObs.length && (joinRisk.minClear<1.42 || joinRisk.score>holdRisk.score+1.05);
+      // v4.43 EARLY_REJOIN fix: demand a visibly safer corridor before curling back.
+      const joinBad=rejoinObs.length && (joinRisk.minClear<1.72 || joinRisk.score>holdRisk.score+.72);
       p.survivalRejoinLastRisk=joinRisk.score||0;
       if(joinBad){
         p.survivalRejoinClearSince=0;
-        p.survivalRejoinHoldUntil=Math.max(p.survivalRejoinHoldUntil||0,now+150);
-        p.survivalRecoverUntil=Math.max(p.survivalRecoverUntil||0,now+170);
+        p.survivalRejoinHoldUntil=Math.max(p.survivalRejoinHoldUntil||0,now+230);
+        p.survivalRecoverUntil=Math.max(p.survivalRecoverUntil||0,now+260);
         p.liveEvadeAction='recover-hold';
         return {off:held,speedMul:1.01,danger:Math.max(p.liveEvadeDanger*.30,.16),side:p.liveEvadeSide};
       }
       if(!p.survivalRejoinClearSince) p.survivalRejoinClearSince=now;
-      const clearNeed=105+(1-avoid)*55+(1-pred)*45;
+      const clearNeed=145+(1-avoid)*65+(1-pred)*55; // v4.43: continuous safe-window confirmation
       if(now-p.survivalRejoinClearSince<clearNeed){
         p.liveEvadeAction='recover-check';
         return {off:held,speedMul:1.005,danger:p.liveEvadeDanger*.25,side:p.liveEvadeSide};
@@ -4019,7 +4023,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const needsClick=now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
       // v4.40 emergency re-judgment: human delay still exists, but an already obvious
       // imminent collision may interrupt it once instead of watching the racer drive straight in.
-      const emergencyReaction=dangerActive && ((p.dangerTier||0)>=2 || (p.liveEvadeDanger||0)>.72);
+      // v4.43 LATE_REACTION fix: tier-2 remains an immediate interrupt; a very short
+      // predicted time-to-contact can also interrupt the tail of the human delay.
+      const imminentRead=dangerActive && (p.liveEvadeDanger||0)>.48 && (p.dangerTier||0)>=1;
+      const emergencyReaction=dangerActive && ((p.dangerTier||0)>=2 || (p.liveEvadeDanger||0)>.72 || imminentRead);
       const reactionReady=!dangerActive || emergencyReaction || now>=(p.mouseReactionReadyAt||0);
       if(needsClick && reactionReady){
         // Human-like imperfect click placement. Better control means less pointer error.
@@ -4131,7 +4138,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(lethalOutsideRoad(p)){
       p.dead=true;
       p.match.collisions++;
-      p.match.deathPoints.push({round:currentRound,t:Math.max(0,now-raceStart),progressPct:+(100*Math.max(0,Math.min(1,currentProgress(p)/routeLength))).toFixed(1),x:+p.x.toFixed(2),y:+p.y.toFixed(2),cause:"OUTSIDE"});
+      p.match.deathPoints.push({round:currentRound,t:Math.max(0,now-raceStart),progressPct:+(100*Math.max(0,Math.min(1,currentProgress(p)/routeLength))).toFixed(1),x:+p.x.toFixed(2),y:+p.y.toFixed(2),...deathCauseSnapshot(p,now,null,"OUTSIDE")});
       p.cleanConfidenceMs=0; p.cleanConfidence=0;
       return;
     }
@@ -4234,7 +4241,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
             round:currentRound,
             t:Math.max(0,now-raceStart),
             progressPct:+(100*Math.max(0,Math.min(1,currentProgress(p)/routeLength))).toFixed(1),
-            x:+p.x.toFixed(2),y:+p.y.toFixed(2)
+            x:+p.x.toFixed(2),y:+p.y.toFixed(2),
+            ...deathCauseSnapshot(p,now,o)
           });
           triggerFollowerShockAvoid(p,o,now);
           p.cleanConfidenceMs=0;
@@ -4248,6 +4256,52 @@ targetOff=clampRoadOffset(si,targetOff,p);
       }
     }
   }
+
+  // v4.42 DEATH-CAUSE ANALYSIS:
+  // Capture what the racer actually knew/did immediately before death. This is
+  // diagnostic telemetry only; it never changes movement, collision, or survival.
+  function deathCauseSnapshot(p,now,hitObserver=null,forcedCause=null){
+    const si=Math.min(p.seg,segs.length-1), s=segs[si];
+    const recent=(Array.isArray(p.mouseClickLog)&&p.mouseClickLog.length)?p.mouseClickLog[p.mouseClickLog.length-1]:null;
+    const clickAge=recent?Math.max(0,now-recent.t):null;
+    const perceived=playerPerceivedObservers(p,12.5);
+    let close=0, veryClose=0;
+    for(const o of perceived){
+      const d=Math.hypot(o.x-p.x,o.y-p.y);
+      if(d<7.0) close++;
+      if(d<3.2) veryClose++;
+    }
+    const lat=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+    const roadHalf=Math.max(1.8,widths[si]*ROAD_MARGIN);
+    const rejoin=/recover/.test(p.liveEvadeAction||'');
+    const reacting=!!p.reactionDangerActive;
+    const reactionPending=reacting && (p.mouseReactionReadyAt||0)>now;
+    let cause=forcedCause;
+    if(!cause){
+      if(veryClose>=3 || close>=4) cause='SURROUNDED';
+      else if(rejoin) cause='EARLY_REJOIN';
+      else if(reactionPending) cause='LATE_REACTION';
+      else if((p.mouseMode||'race')==='race' && close>0) cause='NO_EVADE';
+      else if(recent && recent.mode!=='race' && clickAge!=null && clickAge<950) cause='WRONG_EVADE';
+      else if(perceived.length===0) cause='MISSED_PERCEPTION';
+      else cause='CONTACT';
+    }
+    return {
+      cause,
+      lastClick:recent?{ageMs:Math.round(clickAge),x:recent.x,y:recent.y,mode:recent.mode,threatId:recent.threatId}:null,
+      mouseMode:p.mouseMode||'race', evadeAction:p.liveEvadeAction||'none',
+      dangerTier:p.dangerTier||0, reactionPending,
+      perceived12:perceived.length, close7:close, veryClose3:veryClose,
+      lateral:+lat.toFixed(2), roadHalf:+roadHalf.toFixed(2),
+      hitObserver:hitObserver?{id:hitObserver.index??hitObserver.id??-1,x:+hitObserver.x.toFixed(2),y:+hitObserver.y.toFixed(2)}:null
+    };
+  }
+
+  const DEATH_CAUSE_KO={
+    OUTSIDE:'코스 이탈',SURROUNDED:'다중 포위',EARLY_REJOIN:'너무 빠른 복귀',
+    LATE_REACTION:'반응 지연',NO_EVADE:'회피 시작 지연',WRONG_EVADE:'잘못된 회피 방향',
+    MISSED_PERCEPTION:'인지 실패',CONTACT:'접촉'
+  };
 
   function triggerFollowerShockAvoid(hitPlayer,observer,now){
     const hitProg=currentProgress(hitPlayer);
@@ -5891,7 +5945,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const rows=aggregateTelemetry();
     body.innerHTML=rows.map(a=>{
       const deaths=a.deathPoints.length
-        ? a.deathPoints.slice(-4).map(d=>`R${d.round} ${d.progressPct}%`).join(" · ")
+        ? a.deathPoints.slice(-4).map(d=>`R${d.round} ${d.progressPct}% ${DEATH_CAUSE_KO[d.cause]||d.cause||"접촉"}`).join(" · ")
         : "-";
       const pb=loadRecordBook().players[a.name];
       return `<tr>
@@ -6730,7 +6784,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==100)issues.push("옵저버100");
+    if(OBSERVER_COUNT!==120)issues.push("옵저버120");
     if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
