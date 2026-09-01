@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.195";
+  const BUILD_ID = "v4.20";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -425,6 +425,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // reaction delay and repeated re-reads of the visible observer field.
         liveEvadeUntil:0, liveEvadeNextThink:0, liveEvadeOffset:0, liveEvadeSpeed:1,
         liveEvadeSide:0, liveEvadePhase:0, liveEvadeDanger:0, liveEvadeThreat:-1,
+        // v4.20 Virtual Mouse Human Controller. Movement follows a held click target
+        // until the next human-timed command instead of consuming a fresh perfect target every tick.
+        mouseTargetX:20.5, mouseTargetY:154.8, mouseNextThink:0, mouseCommandUntil:0,
+        mouseClickSeq:0, mouseClickLog:[], mouseMode:"race", mouseLastClickAt:0,
         variantMode:0,
         variantUntil:0,
         variantCooldown:6500+Math.random()*7000,
@@ -3466,6 +3470,40 @@ targetOff=clampRoadOffset(si,targetOff,p);
     {
       const legalTarget=courseAwareTarget(p,si,tx,ty);
       tx=legalTarget.x; ty=legalTarget.y;
+    }
+
+    // v4.20 VIRTUAL MOUSE: the planner above is now the player's "eyes + brain" only.
+    // It proposes a click, but steering consumes the last committed click target.
+    // Safe running uses relaxed human click cadence; real danger shortens the cadence.
+    // The click event itself is logged so later replay/debug can show genuine inputs,
+    // never a reconstructed movement trace.
+    {
+      const reactionN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
+      const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+      const dangerN=Math.max(0,Math.min(1,p.liveEvadeDanger||0));
+      const distToHeld=Math.hypot((p.mouseTargetX??p.x)-p.x,(p.mouseTargetY??p.y)-p.y);
+      const needsClick=now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
+      if(needsClick){
+        // Human-like imperfect click placement. Better control means less pointer error.
+        // Error is tiny and continuous; it does not create random lane changes.
+        const err=(1-controlN)*0.16;
+        let mx=tx+(Math.random()-.5)*err;
+        let my=ty+(Math.random()-.5)*err;
+        const legalMouse=courseAwareTarget(p,si,mx,my);
+        mx=legalMouse.x; my=legalMouse.y;
+        p.mouseTargetX=mx; p.mouseTargetY=my;
+        p.mouseMode=liveEvade ? (liveEvade.speedMul<=.15?'stop':'evade') : 'race';
+        p.mouseLastClickAt=now; p.mouseClickSeq=(p.mouseClickSeq||0)+1;
+        if(!Array.isArray(p.mouseClickLog)) p.mouseClickLog=[];
+        p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1});
+        if(p.mouseClickLog.length>1800) p.mouseClickLog.splice(0,p.mouseClickLog.length-1800);
+        const calmMs=245-reactionN*45+Math.random()*105;
+        const dangerMs=92-reactionN*24+Math.random()*48;
+        const cadence=dangerN>.18?dangerMs:calmMs;
+        p.mouseNextThink=now+cadence;
+        p.mouseCommandUntil=now+cadence+120;
+      }
+      tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
 
     let dx=tx-p.x, dy=ty-p.y;
