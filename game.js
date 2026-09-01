@@ -20,12 +20,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 130;
+  const OBSERVER_COUNT = 100;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.40";
+  const BUILD_ID = "v4.41";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2056,7 +2056,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // trajectories; zigzag/360 are occasional feints; reverse exists only when a
       // collision is virtually immediate and both lateral exits are crowded.
       const bothSidesBusy=leftRisk>.48 && rightRisk>.48;
-      const candidates=[
+      // v4.41 FUNDAMENTALS SURVIVAL: with only 1-2 readable observers, use
+      // boring, high-clearance movement. Do not throw away an easy dodge with a feint/stop.
+      const candidates=sparseField ? [
+        {off:current+openSide*half*.78*evadeWidth,spd:1.005,side:openSide,kind:'diag'},
+        {off:current+openSide*half*1.02*evadeWidth,spd:.985,side:openSide,kind:'wide'},
+        {off:current-openSide*half*.52*evadeWidth,spd:.995,side:-openSide,kind:'alt'}
+      ] : [
         {off:current+openSide*half*.60*evadeWidth,spd:tier===3?.995:1.012,side:openSide,kind:'diag'},
         {off:current+openSide*half*.90*evadeWidth,spd:tier===3?.955:.982,side:openSide,kind:'wide'},
         {off:current-openSide*half*.34*evadeWidth,spd:1.00,side:-openSide,kind:'alt'},
@@ -2079,7 +2085,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
         // free road to take a cleaner diagonal, so a low-clearance candidate pays heavily.
         if(sparseField){
-          const sparseClear=1.62+avoid*.20+pred*.12;
+          const sparseClear=2.70+avoid*.32+pred*.24;
           if(future.minClear<sparseClear) score += (sparseClear-future.minClear)*12.5;
           if(r.minClear<sparseClear*.82) score += (sparseClear*.82-r.minClear)*10.0;
           if(c.kind==='diag') score-=.72;
@@ -2123,13 +2129,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           : best.kind==='back' ? 72+Math.random()*28
           : best.kind==='zig' ? 330+Math.random()*150
           : best.kind==='spin' ? 300+Math.random()*120
-          : (sparseField?650:560)+Math.random()*(sparseField?210:230);
+          : (sparseField?820:560)+Math.random()*(sparseField?260:230);
         p.liveEvadeUntil=now+hold;
         // v4.28: after a real dodge, keep the cleared lane briefly and rejoin gradually.
         // This prevents dodge-one-observer -> instant apex rejoin -> hit-next-observer deaths.
         if(best.kind!=='stop' && best.kind!=='back'){
           p.survivalRecoverStart=now+hold;
-          p.survivalRecoverUntil=p.survivalRecoverStart+260+avoid*150+pred*110;
+          p.survivalRecoverUntil=p.survivalRecoverStart+(sparseField?520:260)+avoid*(sparseField?210:150)+pred*(sparseField?160:110);
           p.survivalRecoverOffset=best.off;
         }
         // v4.26: a stop is a tiny human tap, not a long decision lock. Re-read the
@@ -2213,13 +2219,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const d=Math.hypot(dx,dy);
       // v4.40 survival-first: begin reading obvious front threats before the last-second zone.
       // This is deliberately wider than the old gate; physical collision remains HIT 0.56.
-      return d<6.2 || (along>-1.8 && along<9.4 && lat<6.0);
+      return d<8.8 || (along>-2.4 && along<15.0 && lat<7.8);
     });
     if(!imminentRaw.length){ p.avoidPlanUntil=0; return null; }
     const sharedRaw=imminentRaw.filter(o=>{
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy, lat=Math.abs(dx*s.nx+dy*s.ny);
-      return Math.hypot(dx,dy)<6.5 || (along>-1.8 && along<9.7 && lat<6.2);
+      return Math.hypot(dx,dy)<9.1 || (along>-2.4 && along<15.3 && lat<8.0);
     });
     if(!sharedRaw.length) return null;
 
@@ -2238,7 +2244,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;
       const lat=dx*s.nx+dy*s.ny;
-      if(along>.35 && along<9.0 && Math.abs(lat)<Math.min(5.8,simpleRoadHalf*.90)){
+      if(along>.15 && along<14.4 && Math.abs(lat)<Math.min(7.2,simpleRoadHalf*1.04)){
         simpleFront.push({o,along,lat});
       }
     }
@@ -2252,18 +2258,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const dx=o.x-p.x,dy=o.y-p.y;
         const along=dx*s.ux+dy*s.uy;
         const lat=Math.abs(dx*s.nx+dy*s.ny);
-        if(along>-1.0 && along<9.2 && lat<simpleRoadHalf*1.05) interfering++;
+        if(along>-1.5 && along<13.8 && lat<simpleRoadHalf*1.14) interfering++;
       }
       if(interfering===0){
         const skill=Math.max(0,Math.min(1,
           (((p.stats.avoidance+p.stats.reaction+p.stats.prediction+p.stats.control)/4)-72)/27));
-        const leadT=Math.max(.48,Math.min(1.85,th.along/Math.max(5.2,p.speed)));
+        const leadT=Math.max(.72,Math.min(2.65,th.along/Math.max(4.8,p.speed)));
         const predX=predictedObserverX(th.o,leadT);
         const predY=predictedObserverY(th.o,leadT);
         const pdx=predX-p.x,pdy=predY-p.y;
         const predLat=pdx*s.nx+pdy*s.ny;
         // v4.40 virtual safety radius: on an open road, do not skim an isolated observer.
-        const clearance=2.45+skill*.55;
+        const clearance=3.55+skill*.78;
         const leftTarget=Math.max(-simpleRoadHalf*.97,Math.min(simpleRoadHalf*.97,predLat-clearance));
         const rightTarget=Math.max(-simpleRoadHalf*.97,Math.min(simpleRoadHalf*.97,predLat+clearance));
         const leftRisk=candidateAvoidanceRisk(p,s,leftTarget,.995,nearby);
@@ -2276,14 +2282,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // Lower-skill racers retain a small human-like error chance.
         // v4.40: isolated readable observers are a fundamentals check, not a dice roll.
         // If a legal lane has real clearance, commit to it deterministically.
-        if(chosen.r.minClear>1.05){
+        if(chosen.r.minClear>1.20){
           p.avoidPlanOffset=chosen.off;
           p.avoidPlanSpeedMul=.995;
           p.avoidPlanRisk=chosen.r.score;
-          p.avoidPlanUntil=now+Math.max(430,Math.min(820,th.along*58));
+          p.avoidPlanUntil=now+Math.max(720,Math.min(1280,th.along*78));
           p.avoidLastSide=Math.sign(chosen.off-p.desiredOffset)||p.avoidLastSide||1;
           p.avoidExitSide=p.avoidLastSide;
-          p.avoidExitUntil=p.avoidPlanUntil+420;
+          p.avoidExitUntil=p.avoidPlanUntil+720;
           p.avoidSideLockUntil=p.avoidPlanUntil;
           p.match.avoids++;
           p.match.simpleDodges=(p.match.simpleDodges||0)+1;
@@ -4013,12 +4019,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const needsClick=now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
       // v4.40 emergency re-judgment: human delay still exists, but an already obvious
       // imminent collision may interrupt it once instead of watching the racer drive straight in.
-      const emergencyReaction=dangerActive && ((p.dangerTier||0)>=3 || (p.liveEvadeDanger||0)>1.35);
+      const emergencyReaction=dangerActive && ((p.dangerTier||0)>=2 || (p.liveEvadeDanger||0)>.72);
       const reactionReady=!dangerActive || emergencyReaction || now>=(p.mouseReactionReadyAt||0);
       if(needsClick && reactionReady){
         // Human-like imperfect click placement. Better control means less pointer error.
         // Error is tiny and continuous; it does not create random lane changes.
-        const err=(1-controlN)*0.16;
+        const err=(1-controlN)*(dangerActive?0.055:0.16);
         const reach=Math.max(.82,Math.min(1.06,p.mouseReach||1));
         let mx=p.x+(tx-p.x)*reach+(Math.random()-.5)*err;
         let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
@@ -6724,7 +6730,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==130)issues.push("옵저버130");
+    if(OBSERVER_COUNT!==100)issues.push("옵저버100");
     if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
