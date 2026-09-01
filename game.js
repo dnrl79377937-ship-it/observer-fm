@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.39";
+  const BUILD_ID = "v4.40";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1629,9 +1629,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const survival=p.survivalNorm||0;
     // Better survival stats value clearance more strongly. The price is that
     // detours are penalized less, so these racers willingly travel farther.
-    const survivalSafety=1+survival*.32;
+    const survivalSafety=1.28+survival*.48; // v4.40: survival-first virtual clearance, physical HIT unchanged
     const timeLoss=(1-speedMul)*(19.0+situationRisk*7.0)/Math.max(.90,safetyBias);
-    const detour=Math.abs(targetOff-p.desiredOffset)*0.34*(2-safetyBias)*(1-survival*.38);
+    const detour=Math.abs(targetOff-p.desiredOffset)*0.23*(2-safetyBias)*(1-survival*.52);
     return {score:danger*safetyBias*survivalSafety+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
   }
 
@@ -1935,7 +1935,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const tc=Math.max(0,Math.min(horizon,-(dx*rvx+dy*rvy)/rv2));
         const cx=dx+rvx*tc, cy=dy+rvy*tc;
         const cpa=Math.hypot(cx,cy);
-        const corridor=(1.95+avoid*.64+pred*.32)*(sparseField?1.14:1);
+        const corridor=(2.18+avoid*.72+pred*.38)*(sparseField?1.28:1.08);
         if(tc>.08 && cpa<corridor){
           const conf=o.confidence==null?1:o.confidence;
           const w=(corridor-cpa)/corridor*(1.45-tc/horizon*.42)*(.55+.45*conf);
@@ -1951,7 +1951,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
         const px=p.x+s.ux*p.speed*t,py=p.y+s.uy*p.speed*t;
         const sep=Math.hypot(px-ox,py-oy);
-        const warn=(2.28+avoid*.54)*(sparseField?1.13:1);
+        const warn=(2.55+avoid*.62+pred*.22)*(sparseField?1.25:1.06);
         if(sep<warn){
           const w=(warn-sep)/warn*(1.20-t/horizon*.34);
           danger+=w;
@@ -1982,8 +1982,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     else { p.dangerTier=rawTier; if(rawTier) p.dangerTierUntil=now+180; }
     // Start early only when trajectories are actually converging. Mere proximity alone
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
-    const predictive=danger>(sparseField?.14:.22) && bestT<(sparseField?2.95:2.65);
-    const emergency=nearest<(sparseField?3.15:2.75);
+    const predictive=danger>(sparseField?.095:.18) && bestT<(sparseField?3.35:2.90);
+    const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
     // v4.38 ADAPTIVE RE-JUDGMENT: a committed human dodge is not blind. If the
@@ -2211,13 +2211,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy, lat=Math.abs(dx*s.nx+dy*s.ny);
       const d=Math.hypot(dx,dy);
-      return d<4.9 || (along>-1.4 && along<6.6 && lat<4.9);
+      // v4.40 survival-first: begin reading obvious front threats before the last-second zone.
+      // This is deliberately wider than the old gate; physical collision remains HIT 0.56.
+      return d<6.2 || (along>-1.8 && along<9.4 && lat<6.0);
     });
     if(!imminentRaw.length){ p.avoidPlanUntil=0; return null; }
     const sharedRaw=imminentRaw.filter(o=>{
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy, lat=Math.abs(dx*s.nx+dy*s.ny);
-      return Math.hypot(dx,dy)<5.2 || (along>-1.5 && along<6.9 && lat<5.1);
+      return Math.hypot(dx,dy)<6.5 || (along>-1.8 && along<9.7 && lat<6.2);
     });
     if(!sharedRaw.length) return null;
 
@@ -2236,7 +2238,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;
       const lat=dx*s.nx+dy*s.ny;
-      if(along>.65 && along<6.4 && Math.abs(lat)<Math.min(4.8,simpleRoadHalf*.72)){
+      if(along>.35 && along<9.0 && Math.abs(lat)<Math.min(5.8,simpleRoadHalf*.90)){
         simpleFront.push({o,along,lat});
       }
     }
@@ -2250,17 +2252,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const dx=o.x-p.x,dy=o.y-p.y;
         const along=dx*s.ux+dy*s.uy;
         const lat=Math.abs(dx*s.nx+dy*s.ny);
-        if(along>-.8 && along<6.8 && lat<simpleRoadHalf*.98) interfering++;
+        if(along>-1.0 && along<9.2 && lat<simpleRoadHalf*1.05) interfering++;
       }
       if(interfering===0){
         const skill=Math.max(0,Math.min(1,
           (((p.stats.avoidance+p.stats.reaction+p.stats.prediction+p.stats.control)/4)-72)/27));
-        const leadT=Math.max(.40,Math.min(1.45,th.along/Math.max(5.5,p.speed)));
+        const leadT=Math.max(.48,Math.min(1.85,th.along/Math.max(5.2,p.speed)));
         const predX=predictedObserverX(th.o,leadT);
         const predY=predictedObserverY(th.o,leadT);
         const pdx=predX-p.x,pdy=predY-p.y;
         const predLat=pdx*s.nx+pdy*s.ny;
-        const clearance=1.65+skill*.45;
+        // v4.40 virtual safety radius: on an open road, do not skim an isolated observer.
+        const clearance=2.45+skill*.55;
         const leftTarget=Math.max(-simpleRoadHalf*.97,Math.min(simpleRoadHalf*.97,predLat-clearance));
         const rightTarget=Math.max(-simpleRoadHalf*.97,Math.min(simpleRoadHalf*.97,predLat+clearance));
         const leftRisk=candidateAvoidanceRisk(p,s,leftTarget,.995,nearby);
@@ -2271,15 +2274,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
         // Skilled racers should almost never miss an isolated, obvious observer.
         // Lower-skill racers retain a small human-like error chance.
-        const successChance=Math.min(.995,.955+skill*.040);
-        if(Math.random()<successChance && chosen.r.minClear>.72){
+        // v4.40: isolated readable observers are a fundamentals check, not a dice roll.
+        // If a legal lane has real clearance, commit to it deterministically.
+        if(chosen.r.minClear>1.05){
           p.avoidPlanOffset=chosen.off;
           p.avoidPlanSpeedMul=.995;
           p.avoidPlanRisk=chosen.r.score;
-          p.avoidPlanUntil=now+Math.max(280,Math.min(620,th.along*34));
+          p.avoidPlanUntil=now+Math.max(430,Math.min(820,th.along*58));
           p.avoidLastSide=Math.sign(chosen.off-p.desiredOffset)||p.avoidLastSide||1;
           p.avoidExitSide=p.avoidLastSide;
-          p.avoidExitUntil=p.avoidPlanUntil+260;
+          p.avoidExitUntil=p.avoidPlanUntil+420;
           p.avoidSideLockUntil=p.avoidPlanUntil;
           p.match.avoids++;
           p.match.simpleDodges=(p.match.simpleDodges||0)+1;
@@ -4007,7 +4011,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       }
       const distToHeld=Math.hypot((p.mouseTargetX??p.x)-p.x,(p.mouseTargetY??p.y)-p.y);
       const needsClick=now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
-      const reactionReady=!dangerActive || now>=(p.mouseReactionReadyAt||0);
+      // v4.40 emergency re-judgment: human delay still exists, but an already obvious
+      // imminent collision may interrupt it once instead of watching the racer drive straight in.
+      const emergencyReaction=dangerActive && ((p.dangerTier||0)>=3 || (p.liveEvadeDanger||0)>1.35);
+      const reactionReady=!dangerActive || emergencyReaction || now>=(p.mouseReactionReadyAt||0);
       if(needsClick && reactionReady){
         // Human-like imperfect click placement. Better control means less pointer error.
         // Error is tiny and continuous; it does not create random lane changes.
@@ -4026,9 +4033,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
         // the personal field, fall back to the shorter v4.31 re-readable cadence.
         const clearForLongClick=!dangerActive && playerPerceivedObservers(p,21.5).length===0;
         const maxClickDist=!dangerActive ? (clearForLongClick ? (10.0+controlN*1.45) : (8.25+controlN*1.05))
-          : dangerTier>=3 ? (6.35+controlN*.75)
-          : dangerTier===2 ? (6.05+controlN*.78)
-          : (5.45+controlN*.72);
+          : dangerTier>=3 ? (6.75+controlN*.85)
+          : dangerTier===2 ? (6.35+controlN*.82)
+          : (5.75+controlN*.76);
         if(clickD>maxClickDist){ mx=p.x+clickDx/clickD*maxClickDist; my=p.y+clickDy/clickD*maxClickDist; }
         const legalMouse=courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
