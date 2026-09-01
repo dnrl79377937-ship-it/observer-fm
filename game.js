@@ -23,7 +23,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.26";
+  const BUILD_ID = "v4.27";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -36,7 +36,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
   // Engine safeguards. Visual sprite size is independent of collision radius.
-  const PLAYER_HIT_RADIUS = 0.62;     // v4.07: smaller racer sprite, collision tuned down accordingly
+  const PLAYER_HIT_RADIUS = 0.56;     // v4.07: smaller racer sprite, collision tuned down accordingly
   const PLAYER_VISUAL_SCALE = 0.6583842;  // v4.07: additional -10% from v4.04
   const OBS_VISUAL_SCALE = 0.851598;     // v4.03: +15%
   const OBS_SPEED_RATIO = 0.604314;         // observer speed ≈ 90% of player speed
@@ -303,7 +303,23 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function makePlayers(){
+    // v4.27 FINAL 8-RACER DIVERSITY: every heat gets a complete spread of stable
+    // human racing-line signatures. They still start from the same physical point,
+    // but immediately fan into distinct legal lines instead of forming a train.
+    // Shuffle once per heat so the behavior belongs to the racer for this race, not a color slot.
+    const laneSignatures=[
+      {arch:"extremeInside",open:1.00,band:.88,wave:.10},
+      {arch:"extremeInside",open:.82,band:.68,wave:-.08},
+      {arch:"inside",open:.60,band:.46,wave:.16},
+      {arch:"inside",open:.34,band:.24,wave:-.14},
+      {arch:"adaptive",open:.08,band:.02,wave:.20},
+      {arch:"variant",open:-.24,band:-.28,wave:-.22},
+      {arch:"wideCut",open:-.50,band:-.52,wave:.14},
+      {arch:"variant",open:-.72,band:-.72,wave:-.12}
+    ];
+    for(let j=laneSignatures.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[laneSignatures[j],laneSignatures[k]]=[laneSignatures[k],laneSignatures[j]];}
     return activeSourceIndexes.map((src,i)=>{
+      const laneSig=laneSignatures[i];
       const name=names[src];
       const pf=profiles[src];
       const stats=playerStats[src];
@@ -343,17 +359,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.193: persistent route archetype. Racers share the fast macro route but
         // deliberately prefer different legal micro-lines. This is stable per racer,
         // not frame-by-frame random jitter.
-        routeArchetype:(()=>{ const r=Math.random(); return r<.24?"extremeInside":r<.46?"inside":r<.67?"adaptive":r<.84?"wideCut":"variant"; })(),
-        routeArchetypeStrength:.72+Math.random()*.28,
+        routeArchetype:laneSig.arch,
+        routeArchetypeStrength:.84+Math.random()*.16,
         // v4.194: opening-line identity. The fast opening macro-line remains known,
         // but racers no longer all stack on it: some climb to the extreme inside,
         // some hold a middle-high band, and some deliberately run a lower variant.
-        openingLineBias:(()=>{ const r=Math.random(); return r<.22?1.0:r<.45?.62:r<.68?.22:r<.84?-.30:-.68; })(),
-        openingLineStrength:.82+Math.random()*.18,
+        openingLineBias:laneSig.open,
+        openingLineStrength:.91+Math.random()*.09,
         creativeModeUntil:0, creativeCooldown:900+Math.random()*1200,
         creativeSide:Math.random()<.5?-1:1, creativePhase:Math.random()*Math.PI*2,
         routeIdentityBias:Math.max(-.78,Math.min(.78,(Math.random()*1.20-.60)+(drivingStyle.attack-drivingStyle.safety)*.42)),
         routeIdentityPhase:Math.random()*Math.PI*2,
+        laneSignatureWave:laneSig.wave,
         // v4.02: personal route band. High route-reading racers stay closer to the
         // calculated racing line; lower route-reading / safety-oriented racers use
         // visibly different legal bands. Avoidance still has final authority.
@@ -362,8 +379,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           const inside=(stats.insideLine-72)/27;
           const safety=((stats.riskControl+stats.stability)/2-72)/27;
           const style=(drivingStyle.attack-drivingStyle.safety);
-          const identity=(Math.random()*2-1)*(0.58-read*0.12);
-          return Math.max(-.94,Math.min(.94,identity+inside*.22+style*.28-safety*.12));
+          const identity=(Math.random()*2-1)*(0.34-read*0.08);
+          // v4.27: signature is the anchor; stats/style bend it without collapsing
+          // eight racers back onto one mathematical optimum.
+          return Math.max(-1.02,Math.min(1.02,laneSig.band*.66+identity+inside*.18+style*.20-safety*.10));
         })(),
         routeBandPhase:Math.random()*Math.PI*2,
         // v4.10: rare/high-skill extreme-inside attempts. Success can create a huge
@@ -3050,7 +3069,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     // v2.45: persistent individual route identity keeps racers from stacking
     // on the same optimized line even when no observer forces a deviation.
-    const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*.10;
+    const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*.10 + (p.laneSignatureWave||0)*half;
     const identityBias=(p.routeIdentityBias||0)*half*.24;
     const approachInside=openingInsideBias(si);
     const openingFast=openingFastLineTarget(p,si);
@@ -3368,7 +3387,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const openingFast=openingFastLineTarget(p,si);
       if(openingFast!=null){
         const read=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
-        const blend=.94+read*.045;
+        // v4.27: openingFast already contains the racer's lane signature. Give it
+        // strong authority so the pack visibly fans out from the overlapped start.
+        const blend=.975+read*.020;
         targetOff=targetOff*(1-blend)+openingFast*blend;
       }
 
@@ -4255,7 +4276,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
     if(players.length!==8) issues.push(`선수 ${players.length}/8`);
     if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.62)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
+    if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
     if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
     if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
     if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
@@ -6280,7 +6301,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버130");
-    if(Math.abs(PLAYER_HIT_RADIUS-.62)>.0001)issues.push("HIT");
+    if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
     if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
