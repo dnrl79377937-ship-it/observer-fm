@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.94";
+  const BUILD_ID = "v4.95";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -3434,19 +3434,13 @@ function chooseAvoidanceLegacy84(p,s,now){
   // Fast-side calibration from actual map geometry:
   // 7->5 o'clock: upper corridor, 3->9 o'clock: upper corridor,
   // final 11->1 o'clock: lower corridor. Edge rows remain fully legal road.
-  function calibratedFastCorridor79(si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
-    let sign=0,strength=0;
-    // Segment lateral signs differ with travel direction.
-    // 0..5 travels right: negative lateral = screen-up.
-    if(idx<=5){ sign=-1; strength=.93; }
-    // 13..20 travels mostly left: positive lateral = screen-up.
-    else if(idx>=13 && idx<=20){ sign=1; strength=.94; }
-    // 28..32 travels right: positive lateral = screen-down.
-    else if(idx>=28 && idx<=32){ sign=1; strength=.955; }
-    if(!sign) return null;
-    return {off:sign*half*strength,sign,strength};
+  
+function calibratedFastCorridor79(si){
+    // v4.95: disabled.
+    // The old calibration forcibly pulled long horizontal corridors toward a selected
+    // screen-side edge. That is exactly what caused racers to leave an already-fast
+    // horizontal line and make a pointless vertical move to the one-row edge.
+    return null;
   }
 
   function raceLine79(p,si,baseOff,passActive=false){
@@ -4991,7 +4985,74 @@ function packContextOffset(p,si,now){
     return d;
   }
 
-  function bestRouteShortcut94(p,si){
+  
+  // v4.95 TRUE HORIZONTAL RUN LOCK
+  // Detect a run of several route segments that all travel mostly horizontally in
+  // the same direction. Once entered, preserve the racer's screen-Y and aim directly
+  // across the run. No lateral offset optimizer is allowed to drag the unit vertically.
+  function horizontalRun95(si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s0=segs[idx];
+    if(Math.abs(s0.ux)<.90) return null;
+    const dir=Math.sign(s0.ux)||1;
+    let end=idx,total=0;
+    for(let j=idx;j<segs.length;j++){
+      const s=segs[j];
+      if(Math.abs(s.ux)<.88 || Math.sign(s.ux)!==dir) break;
+      total+=s.L;
+      end=j;
+    }
+    if(end-idx<2 || total<28) return null;
+    return {start:idx,end,dir,total};
+  }
+
+  function horizontalTarget95(p,si,now,emergency=false){
+    if(emergency){
+      p.horizontal95Until=0;
+      return null;
+    }
+
+    // Continue a committed horizontal run even if the logical segment advances.
+    if((p.horizontal95Until||0)>now && Number.isFinite(p.horizontal95Y) && Number.isFinite(p.horizontal95X)){
+      const dx=p.horizontal95X-p.x;
+      if((p.horizontal95Dir||1)*dx>2.2){
+        return {x:p.horizontal95X,y:p.horizontal95Y,end:p.horizontal95End};
+      }
+      p.horizontal95Until=0;
+    }
+
+    const run=horizontalRun95(si);
+    if(!run) return null;
+
+    const endSeg=segs[run.end];
+    // Preserve current vertical position. Clamp only if that exact horizontal chord
+    // would leave the legal road; otherwise do not move vertically at all.
+    let y=p.y;
+    let x=endSeg.b[0]+run.dir*2.0;
+
+    if(!lineStaysOnCourse(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
+      // Fall back toward the current segment centerline in small steps, never to a
+      // preselected edge row.
+      const centerY=segs[si].b[1];
+      let found=false;
+      for(const k of [.18,.34,.50,.66,.82,1]){
+        const cy=p.y+(centerY-p.y)*k;
+        if(lineStaysOnCourse(p.x,p.y,x,cy,ROUTE_PLAN_EXTRA)){
+          y=cy; found=true; break;
+        }
+      }
+      if(!found) return null;
+    }
+
+    p.horizontal95Y=y;
+    p.horizontal95X=x;
+    p.horizontal95Dir=run.dir;
+    p.horizontal95End=run.end;
+    p.horizontal95Until=now+5200;
+    return {x,y,end:run.end};
+  }
+
+function bestRouteShortcut94(p,si){
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const maxJ=Math.min(segs.length-1,idx+10);
     let best=null;
@@ -5141,6 +5202,7 @@ function farthestVisibleFastTarget91(p,si){
 
   function noOrthogonalDrop91(p,si,tx,ty,emergency=false){
     if(emergency){
+      p.horizontal95Until=0;
       p.routeShortcut94Until=0;
       p.macroStraight93Until=0;
       return {x:tx,y:ty};
@@ -5148,7 +5210,11 @@ function farthestVisibleFastTarget91(p,si){
 
     const idx=Math.max(0,Math.min(segs.length-1,si));
 
-    // v4.94: first ask whether the route centerline itself contains a slower dogleg.
+    // v4.95: on a true long horizontal run, preserve screen-Y and go straight.
+    const horizontal95=horizontalTarget95(p,idx,performance.now(),false);
+    if(horizontal95) return {x:horizontal95.x,y:horizontal95.y};
+
+    // v4.94: otherwise ask whether the route centerline itself contains a slower dogleg.
     // If a much shorter legal chord exists, skip those intermediate route joints.
     const shortcut94=routeShortcutTarget94(p,idx,performance.now(),false);
     if(shortcut94) return {x:shortcut94.x,y:shortcut94.y};
@@ -5659,6 +5725,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
+
+    // v4.95: while a true horizontal run is committed, lateral lane optimization
+    // cannot pull the racer vertically toward an edge row.
+    if((p.horizontal95Until||0)>now && playerPerceivedObservers(p,21.5).length===0){
+      const hs=segs[si];
+      const rx95=p.x-hs.a[0], ry95=p.y-hs.a[1];
+      const currentOff95=rx95*hs.nx+ry95*hs.ny;
+      targetOff=currentOff95;
+    }
 
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
     const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.092,dt*(.00218+steerControl*.00050+steerTurn*.00048));
