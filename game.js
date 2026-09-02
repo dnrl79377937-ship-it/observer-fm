@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.60";
+  const BUILD_ID = "v4.61";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2098,7 +2098,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const committed=now<(p.committedEscapeUntil||0);
       // v4.60: visual contact is a hard state transition, not a weak bias. Route AI
       // is locked out until the escape corridor has remained safe for a grace window.
-      p.hardRouteLockUntil=Math.max(p.hardRouteLockUntil||0,now+1380+pred*260+avoid*220);
+      p.hardRouteLockUntil=Math.max(p.hardRouteLockUntil||0,now+920+pred*210+avoid*180);
       if(!committed && (p.routeBreakThreat!==rid || now>(p.routeBreakRefreshAt||0))){
         p.routeBreakThreat=rid;
         p.routeBreakForceClick=true;
@@ -2308,7 +2308,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const current=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
       const tier=p.dangerTier||0;
       // Watch = small flowing correction, Danger = decisive diagonal, Emergency = wider escape.
-      const evadeWidth=visualRouteBreak ? (tier>=2?1.82:1.62) : (tier===3?1.34:tier===2?1.18:tier===1?1.06:.88); // v4.60 larger escape corridor, not faster twitching
+      const evadeWidth=visualRouteBreak ? (tier>=3?1.56:tier>=2?1.38:1.16) : (tier===3?1.30:tier===2?1.15:tier===1?1.03:.88); // v4.61 pace-aware escape: still decisive, but no needless maximum-width detours
       const openSide=leftRisk<=rightRisk?-1:1;
       const preferred=p.liveEvadeSide||openSide;
       // v4.24 HUMAN DODGE: choose one coherent human action, then commit to it.
@@ -2385,7 +2385,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.25: corner line and observer escape are one decision. Prefer candidates
         // that preserve useful progress toward the current racing/apex line.
         const raceDeviation=Math.abs(off-current)/Math.max(1,half);
-        score += raceDeviation*(visualRouteBreak?.035:(bestT>1.15?.48:.20));
+        score += raceDeviation*(visualRouteBreak ? (tier>=3?.10:tier>=2?.20:.34) : (bestT>1.15?.52:.24)); // v4.61 preserve optimized race line when a smaller safe dodge exists
         if(c.kind==='wide' && bestT<1.95) score-=1.22;
         if(c.kind==='zig') score += (bothSidesBusy || clusterNow.frontCount>=2) ? -.18 : .72;
         if(c.kind==='spin') score += (!bothSidesBusy && bestT<1.05 && Math.abs(leftRisk-rightRisk)>.42) ? .18 : 1.38;
@@ -2397,6 +2397,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         if(!best||score<best.score) best={...c,off,score};
       }
       if(best){
+        // v4.61 OPTIMIZED ESCAPE: safety remains first, but a watch/danger dodge should
+        // not abandon the racing line farther than necessary. If the chosen corridor has
+        // comfortable clearance, pull it modestly back toward the optimized race offset.
+        // Emergency/boxed situations keep the full escape width.
+        if(!boxedNow && tier<3 && Number.isFinite(raceOff) && best.kind!=='stop' && best.kind!=='back'){
+          const comfort=Math.min(best.minClear||9, 9);
+          const safeComfort=comfort>3.15 || bestT>1.55;
+          if(safeComfort){
+            const keep=tier===1?.66:.78;
+            best.off=raceOff+(best.off-raceOff)*keep;
+            best.off=clampRoadOffset(Math.min(p.seg,segs.length-1),best.off,p);
+          }
+        }
         p.liveEvadeOffset=best.off;
         p.liveEvadeSpeed=best.spd;
         p.liveEvadeSide=best.side||p.liveEvadeSide||openSide;
@@ -2410,7 +2423,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           p.lockedEscapeOffset=best.off;
           p.lockedEscapeSide=best.side||openSide;
           p.lockedEscapeSpeed=Math.max(.97,best.spd);
-          p.hardRouteLockUntil=Math.max(p.hardRouteLockUntil||0,now+1100+pred*260+avoid*220);
+          p.hardRouteLockUntil=Math.max(p.hardRouteLockUntil||0,now+780+pred*220+avoid*180);
         }
         const hold=best.kind==='stop' ? 48+Math.random()*34
           : best.kind==='back' ? 72+Math.random()*28
@@ -4520,7 +4533,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // escape point based on the chosen safe corridor, so a memorized route click cannot
     // silently pull the unit back into an observer.
     if(now<(p.hardRouteLockUntil||0) && Number.isFinite(p.lockedEscapeOffset)){
-      const escapeAhead=8.8+Math.max(0,Math.min(1,(p.stats.control-72)/27))*1.25;
+      const lockTier=p.dangerTier||0;
+      const escapeAhead=(lockTier>=3?8.9:10.2)+Math.max(0,Math.min(1,(p.stats.control-72)/27))*1.35; // v4.61 more forward progress on safe escape chords
       let ex=p.x+s.ux*escapeAhead+s.nx*p.lockedEscapeOffset;
       let ey=p.y+s.uy*escapeAhead+s.ny*p.lockedEscapeOffset;
       const legalEscape=courseAwareTarget(p,si,ex,ey);
