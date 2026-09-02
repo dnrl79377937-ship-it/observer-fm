@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.8";
+  const BUILD_ID = "v4.59.9";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -502,6 +502,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // until the next human-timed command instead of consuming a fresh perfect target every tick.
         mouseTargetX:20.5, mouseTargetY:154.8, mouseNextThink:0, mouseCommandUntil:0,
         mouseClickSeq:0, mouseClickLog:[], mouseMode:"race", mouseLastClickAt:0,
+        // v4.59.9 AI DEATH BLACKBOX: 5-second rolling decision/perception trace.
+        aiBlackbox:[], aiBlackboxNextSample:0,
         // v4.26 persistent human click rhythm. Each racer keeps a recognizable
         // command tempo, click reach and risk/rejoin character instead of sharing
         // one global mouse cadence. Stable for the race; never frame-randomized.
@@ -4488,6 +4490,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=legalTarget.x; ty=legalTarget.y;
     }
 
+    // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
+    // the virtual mouse consumes the planner output. Diagnostic only; no steering changes.
+    recordAiBlackboxSample(p,now,tx,ty);
+
     // v4.23 VIRTUAL MOUSE + HUMAN REACTION + PERSONAL VISION: the planner above is now the player's "eyes + brain" only.
     // It proposes a click, but steering consumes the last committed click target.
     // Safe running uses relaxed human click cadence; real danger shortens the cadence.
@@ -4558,7 +4564,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         if(routeBreakInterrupt) p.routeBreakForceClick=false;
         p.mouseLastClickAt=now; p.mouseClickSeq=(p.mouseClickSeq||0)+1;
         if(!Array.isArray(p.mouseClickLog)) p.mouseClickLog=[];
-        p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1});
+        p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1,perceived21:playerPerceivedObservers(p,21.5).length,danger:+(p.liveEvadeDanger||0).toFixed(3),tier:p.dangerTier||0,routeBreak:!!p.routeBreakForceClick,committed:now<(p.committedEscapeUntil||0)});
         if(p.mouseClickLog.length>1800) p.mouseClickLog.splice(0,p.mouseClickLog.length-1800);
         // v4.26 individual click rhythm: patient/safe racers use longer deliberate
         // commands; attackers/opportunists click sooner and farther. Under danger the
@@ -4760,6 +4766,49 @@ targetOff=clampRoadOffset(si,targetOff,p);
     }
   }
 
+  // v4.59.9 rolling AI death blackbox. Keeps only the last ~5.5 seconds.
+  function recordAiBlackboxSample(p,now,plannedX,plannedY){
+    if(now<(p.aiBlackboxNextSample||0)) return;
+    p.aiBlackboxNextSample=now+120;
+    if(!Array.isArray(p.aiBlackbox)) p.aiBlackbox=[];
+    const seen=playerPerceivedObservers(p,28);
+    let close7=0, front12=0;
+    const si=Math.min(p.seg,segs.length-1), seg=segs[si];
+    const fx=seg?.ux||0, fy=seg?.uy||0;
+    for(const o of seen){
+      const dx=o.x-p.x,dy=o.y-p.y,d=Math.hypot(dx,dy);
+      if(d<7) close7++;
+      if(d<12 && dx*fx+dy*fy>0) front12++;
+    }
+    p.aiBlackbox.push({
+      t:Math.round(now),x:+p.x.toFixed(2),y:+p.y.toFixed(2),
+      plannedX:+plannedX.toFixed(2),plannedY:+plannedY.toFixed(2),
+      heldX:+(p.mouseTargetX??p.x).toFixed(2),heldY:+(p.mouseTargetY??p.y).toFixed(2),
+      mode:p.mouseMode||'race',action:p.liveEvadeAction||'none',threat:p.liveEvadeThreat??-1,
+      danger:+(p.liveEvadeDanger||0).toFixed(3),tier:p.dangerTier||0,
+      perceived28:seen.length,close7,front12,
+      reactionPending:!!p.reactionDangerActive && (p.mouseReactionReadyAt||0)>now,
+      routeBreak:!!p.routeBreakForceClick,combat:now<(p.routeBreakCombatUntil||0),
+      committed:now<(p.committedEscapeUntil||0),commitSide:p.committedEscapeSide||0
+    });
+    const cutoff=now-5500;
+    while(p.aiBlackbox.length && p.aiBlackbox[0].t<cutoff) p.aiBlackbox.shift();
+  }
+
+  function summarizeAiBlackbox(p,now){
+    const samples=(Array.isArray(p.aiBlackbox)?p.aiBlackbox:[]).filter(x=>x.t>=now-5000);
+    const clicks=(Array.isArray(p.mouseClickLog)?p.mouseClickLog:[]).filter(x=>x.t>=now-5000);
+    const modeCounts={}; for(const c of clicks) modeCounts[c.mode]=(modeCounts[c.mode]||0)+1;
+    let maxSeen=0,maxDanger=0,routeBreakFrames=0,commitFrames=0,reactionPendingFrames=0;
+    for(const x of samples){maxSeen=Math.max(maxSeen,x.perceived28||0);maxDanger=Math.max(maxDanger,x.danger||0);if(x.routeBreak)routeBreakFrames++;if(x.committed)commitFrames++;if(x.reactionPending)reactionPendingFrames++;}
+    return {
+      windowMs:5000,sampleCount:samples.length,clickCount:clicks.length,modeCounts,
+      maxSeen,maxDanger:+maxDanger.toFixed(3),routeBreakFrames,commitFrames,reactionPendingFrames,
+      lastClicks:clicks.slice(-14).map(c=>({...c,ageMs:Math.round(now-c.t)})),
+      trace:samples.slice(-46)
+    };
+  }
+
   // v4.42 DEATH-CAUSE ANALYSIS:
   // Capture what the racer actually knew/did immediately before death. This is
   // diagnostic telemetry only; it never changes movement, collision, or survival.
@@ -4796,7 +4845,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
       dangerTier:p.dangerTier||0, reactionPending,
       perceived12:perceived.length, close7:close, veryClose3:veryClose,
       lateral:+lat.toFixed(2), roadHalf:+roadHalf.toFixed(2),
-      hitObserver:hitObserver?{id:hitObserver.index??hitObserver.id??-1,x:+hitObserver.x.toFixed(2),y:+hitObserver.y.toFixed(2)}:null
+      hitObserver:hitObserver?{id:hitObserver.index??hitObserver.id??-1,x:+hitObserver.x.toFixed(2),y:+hitObserver.y.toFixed(2)}:null,
+      blackbox:summarizeAiBlackbox(p,now)
     };
   }
 
@@ -6448,7 +6498,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const rows=aggregateTelemetry();
     body.innerHTML=rows.map(a=>{
       const deaths=a.deathPoints.length
-        ? a.deathPoints.slice(-4).map(d=>`R${d.round} ${d.progressPct}% ${DEATH_CAUSE_KO[d.cause]||d.cause||"접촉"}`).join(" · ")
+        ? a.deathPoints.slice(-4).map(d=>{const b=d.blackbox||{};const m=b.modeCounts||{};return `R${d.round} ${d.progressPct}% ${DEATH_CAUSE_KO[d.cause]||d.cause||"접촉"} [시야${b.maxSeen??'-'} 클릭${b.clickCount??'-'} R${m.race||0}/E${(m.evade||0)+(m.diag||0)+(m.wide||0)+(m.zigzag||0)+(m.spin||0)}]`;}).join(" · ")
         : "-";
       const pb=loadRecordBook().players[a.name];
       return `<tr>
