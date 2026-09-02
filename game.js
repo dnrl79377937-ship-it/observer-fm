@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.07";
+  const BUILD_ID = "v5.08";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5378,6 +5378,80 @@ function farthestVisibleFastTarget91(p,si){
     return true;
   }
 
+
+  // v5.08 MAP-SPECIFIC FAST HORIZONTAL LINES
+  // Middle 3->9 corridor: prefer the upper side of the broad road.
+  // Final 11->1 corridor: after the last corner, hold the exit Y and drive
+  // horizontally all the way to the finish instead of re-targeting downward/upward.
+  function middleUpperLine508(si){
+    return si>=13 && si<=18;
+  }
+
+  function finalStraight508(si){
+    return si>=28 && si<=32;
+  }
+
+  function middleUpperTarget508(p,si){
+    if(!middleUpperLine508(si)) return null;
+    const s=segs[si];
+    const half=Math.max(1.8,widths[si]*ROAD_MARGIN*.96);
+
+    // Route direction here is right->left. Positive/negative normal sign can vary
+    // by segment, so choose the candidate with smaller world Y = visually upper.
+    const c1={x:s.b[0]+s.nx*half*.78,y:s.b[1]+s.ny*half*.78};
+    const c2={x:s.b[0]-s.nx*half*.78,y:s.b[1]-s.ny*half*.78};
+    const upper=c1.y<c2.y?c1:c2;
+
+    // Keep the path on the real broad road; edge row remains legal but this target
+    // stays slightly inside it rather than sitting on the one-tile border.
+    if(roadChordLegal507(p.x,p.y,upper.x,upper.y,ROUTE_PLAN_EXTRA)) return upper;
+
+    // If the far endpoint is too aggressive, use a forward point on the same upper lane.
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const ahead=Math.min(s.L,along+Math.max(5.0,Math.min(12.0,s.L-along)));
+    const ax=s.a[0]+s.ux*ahead;
+    const ay=s.a[1]+s.uy*ahead;
+    const u1={x:ax+s.nx*half*.76,y:ay+s.ny*half*.76};
+    const u2={x:ax-s.nx*half*.76,y:ay-s.ny*half*.76};
+    const upperAhead=u1.y<u2.y?u1:u2;
+    return roadChordLegal507(p.x,p.y,upperAhead.x,upperAhead.y,ROUTE_PLAN_EXTRA)
+      ? upperAhead
+      : null;
+  }
+
+  function finalHorizontalTarget508(p,si,now){
+    if(!finalStraight508(si)) return null;
+    const s=segs[si];
+
+    // Capture exit Y once when entering the final horizontal corridor.
+    if(!Number.isFinite(p.finalStraightY508) || p.finalStraightSeg508>si){
+      p.finalStraightY508=p.y;
+    }
+    p.finalStraightSeg508=si;
+
+    // Aim straight to the final route endpoint while preserving the captured Y.
+    // If that exact horizontal chord is not legal yet, aim as far forward as possible
+    // on the same Y, then extend again next frame.
+    const finish=route[route.length-1];
+    const dir=Math.sign(finish[0]-p.x)||1;
+    const finishX=finish[0];
+    const y=p.finalStraightY508;
+
+    if(roadChordLegal507(p.x,p.y,finishX,y,ROUTE_PLAN_EXTRA)){
+      return {x:finishX,y};
+    }
+
+    const maxStep=14.0;
+    for(let d=maxStep;d>=4.0;d-=1.0){
+      const x=p.x+dir*d;
+      if(roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
+        return {x,y};
+      }
+    }
+    return null;
+  }
+
   function broadRoadTarget507(p,si,now){
     const start=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[start];
@@ -5389,6 +5463,13 @@ function farthestVisibleFastTarget91(p,si){
       !!p.liveEvadeThreat ||
       p.controlMode!=="normal";
     if(emergency) return null;
+
+    // v5.08 explicit fast-line authority for the two user-specified horizontal runs.
+    const final508=finalHorizontalTarget508(p,start,now);
+    if(final508) return {...final508,kind:"final-horizontal-508"};
+
+    const upper508=middleUpperTarget508(p,start);
+    if(upper508) return {...upper508,kind:"middle-upper-508"};
 
     // Broad-road detection: use actual route width, but avoid forcing narrow connectors.
     const broad = widths[start] >= 7.8;
@@ -5466,6 +5547,12 @@ function updatePlayer(p, now, dt){
     const si=Math.min(p.seg,segs.length-1);
     const s=segs[si];
     const half=widths[si]*0.72;
+
+    // v5.08: final-straight Y lock is local to the last horizontal corridor.
+    if(!finalStraight508(si)){
+      p.finalStraightY508=NaN;
+      p.finalStraightSeg508=-1;
+    }
     let targetOff=optimalOffsetFor(p);
     const plannedOff=plannedRacingOffset(p,si,now);
     const packOff=packContextOffset(p,si,now);
@@ -6097,7 +6184,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(legacyCalm502){
       moveDirX=dx/d;
       moveDirY=dy/d;
-      if(horizontalHold503Active){
+      if(finalStraight508(si) && Number.isFinite(p.finalStraightY508)){
+        // v5.08: after the 11 o'clock corner, the finish run is a literal horizontal line.
+        moveDirX=Math.sign(route[route.length-1][0]-p.x)||1;
+        moveDirY=0;
+      }else if(horizontalHold503Active){
         // The road itself is horizontal here; do not carry any stale vertical heading.
         const dir=Math.sign(s.ux)||1;
         const centerErr=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
