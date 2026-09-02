@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.79";
+  const BUILD_ID = "v4.89";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2708,8 +2708,8 @@ function leaderLineDiscipline67(p,si){
     if(!avoid) return {off:baseOff,speedMul:1};
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
     const deviation=Math.abs(avoid.targetOff-info.solo);
-    const maxNormal=half*.74;
-    const maxLead=half*.48;
+    const maxNormal=half*.58; // v4.81 minimum-dodge cap
+    const maxLead=half*.40; // v4.82 leaders preserve inside line
     const cap=info.leadBattle?maxLead:maxNormal;
     let off=avoid.targetOff;
     if(deviation>cap){
@@ -2721,14 +2721,14 @@ function leaderLineDiscipline67(p,si){
     const emergency=(Number.isFinite(avoid.minClear) && avoid.minClear<.90) ||
                     avoid.mode==="stop";
     if(emergency){
-      const emergencyCap=info.leadBattle?half*.70:half*.92;
+      const emergencyCap=info.leadBattle?half*.66:half*.86;
       const d=avoid.targetOff-info.solo;
       off=info.solo+Math.sign(d)*Math.min(Math.abs(d),emergencyCap);
     }
     return {off,speedMul:avoid.speedMul||1};
   }
 
-function chooseAvoidance(p,s,now){
+function chooseAvoidanceLegacy84(p,s,now){
     if(safeAt(p.x,p.y)){
       p.avoidPlanUntil=0;
       return null;
@@ -4478,9 +4478,10 @@ function packContextOffset(p,si,now){
     p.wideDetourRace=false;
 
     if(p.humanMode===1){
-      off+=Math.sin(now*.012+p.humanPhase)*half*(.055+(1-control)*.09);
+      off+=Math.sin(now*.012+p.humanPhase)*half*(.025+(1-control)*.045);
     }else if(p.humanMode===2){
-      speedMul=.945+reaction*.028+prediction*.020;
+      // v4.86: no cosmetic clear-road hesitation; judgment differences appear under pressure.
+      speedMul=playerPerceivedObservers(p,18).length===0?1:(.965+reaction*.020+prediction*.012);
     }else if(p.humanMode===3){
       // v4.67: no cosmetic/safety-wide lane. Keep the optimized line.
       off=baseOff;
@@ -4492,7 +4493,7 @@ function packContextOffset(p,si,now){
       if(Math.random()<errorChance) p.decisionErrorUntil=now+170+Math.random()*210;
     }
     if(now<p.decisionErrorUntil){
-      off+=Math.sin(now*.018+p.index)*half*(.025+(1-stability)*.045);
+      off+=Math.sin(now*.018+p.index)*half*(.012+(1-stability)*.025);
       speedMul*=.988;
     }
     // v2.45: persistent individual route identity keeps racers from stacking
@@ -4769,7 +4770,190 @@ function packContextOffset(p,si,now){
     return targetOff*(1-blend)+executed*blend;
   }
 
-  function updatePlayer(p, now, dt){
+  
+  // v4.80-v4.84 INTEGRATED OBSERVER AI
+  // 4.80 future-threat prediction 3.0 / 4.81 minimum dodge 2.0 /
+  // 4.82 inside-line preservation / 4.83 multi-observer escape corridor 3.0 /
+  // 4.84 instant optimal-line rejoin 5.0.
+  function fastReference84(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const macro=optimalRacingLine2Offset(p,idx);
+    const corner=cornerPhysics64Target(p,idx,macro).off;
+    const linked=integratedFastLine74(p,idx,corner);
+    return raceLine79(p,idx,linked,false);
+  }
+
+  function predictedThreatSet84(p,s,now,r=26){
+    const raw=playerPerceivedObservers(p,r,now);
+    const out=[];
+    for(const o of raw){
+      const dx=o.x-p.x,dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy;
+      const lat=dx*s.nx+dy*s.ny;
+      if(along<-3.0 || along>24.0) continue;
+      const rvx=(o.vx||0)-s.ux*p.speed;
+      const rvy=(o.vy||0)-s.uy*p.speed;
+      const rv2=rvx*rvx+rvy*rvy;
+      let tc=99,cpa=Math.hypot(dx,dy);
+      if(rv2>.01){
+        tc=Math.max(0,Math.min(3.6,-(dx*rvx+dy*rvy)/rv2));
+        cpa=Math.hypot(dx+rvx*tc,dy+rvy*tc);
+      }
+      // 4.80: only projected conflict / genuinely occupied forward space is a threat.
+      const projected=tc<3.45 && cpa<5.4;
+      const occupied=along>-.6 && along<12.5 && Math.abs(lat)<4.6;
+      if(projected || occupied) out.push({o,along,lat,tc,cpa});
+    }
+    out.sort((a,b)=>(a.tc-b.tc)||(a.cpa-b.cpa));
+    return out;
+  }
+
+  function minimumEscape84(p,s,legacy,now){
+    if(!legacy || legacy.mode==="stop") return legacy;
+    const threats=predictedThreatSet84(p,s,now,28);
+    if(!threats.length) return null;
+
+    const nearby=threats.map(t=>t.o);
+    const idx=Math.min(p.seg,widths.length-1);
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    const fast=fastReference84(p,idx);
+    const current=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
+    const skill=Math.max(0,Math.min(1,
+      (((p.stats.avoidance+p.stats.prediction+p.stats.reaction+p.stats.control)/4)-72)/27));
+    const required=2.15+skill*.28;
+
+    // 4.81/4.82: search from the fastest inside line outward. The first genuinely
+    // safe compact lane wins; do not jump to the legacy wide dodge by default.
+    const legacyOff=Number.isFinite(legacy.targetOff)?legacy.targetOff:fast;
+    const toward=legacyOff-fast;
+    const candidates=[
+      fast,
+      fast+toward*.22,
+      fast+toward*.38,
+      fast+toward*.55,
+      fast+toward*.72,
+      legacyOff
+    ];
+
+    // 4.83: with several observers, also inspect compact escape corridors on BOTH
+    // sides, but keep the search close to the racing line before considering extremes.
+    if(threats.length>=2){
+      for(const f of [.18,.32,.46,.60]){
+        candidates.push(fast-half*f,fast+half*f);
+      }
+    }
+
+    let best=null;
+    const seen=[];
+    for(let off of candidates){
+      off=clampRoadOffset(idx,off,p);
+      if(seen.some(v=>Math.abs(v-off)<.08)) continue;
+      seen.push(off);
+      const risk=candidateAvoidanceRisk(p,s,off,legacy.speedMul||.998,nearby);
+      const deviation=Math.abs(off-fast);
+      // Prefer safety first, then minimum movement and preservation of the fast/inside lane.
+      const safeEnough=risk.minClear>=required;
+      const score=risk.score + deviation*(safeEnough?.52:.10) + Math.abs(off-current)*.06;
+      if(!best || (safeEnough&&!best.safeEnough) ||
+         (safeEnough===best.safeEnough && score<best.score)){
+        best={off,risk,score,safeEnough};
+      }
+    }
+    if(!best) return legacy;
+
+    // If no compact candidate meets required clearance, trust the safest scored lane,
+    // but cap gratuitous exterior travel unless this is a true close emergency.
+    let off=best.off;
+    const emergency=best.risk.minClear<1.12 || threats.some(t=>t.tc<.62 && t.cpa<1.55);
+    const maxDev=half*(emergency?.88:(threats.length>=2?.66:.54));
+    const d=off-fast;
+    if(Math.abs(d)>maxDev) off=fast+Math.sign(d)*maxDev;
+
+    return {
+      mode:legacy.mode||"planned",
+      targetOff:clampRoadOffset(idx,off,p),
+      speedMul:legacy.speedMul||.998,
+      risk:best.risk.score,
+      minClear:best.risk.minClear,
+      threatCount84:threats.length
+    };
+  }
+
+  function chooseAvoidance(p,s,now){
+    const legacy=chooseAvoidanceLegacy84(p,s,now);
+    return minimumEscape84(p,s,legacy,now);
+  }
+
+
+  // v4.85-v4.89 RACE AI 5.0 COMPLETION
+  // 4.85 leader survival 2.0 / 4.86 human judgment 3.0 /
+  // 4.87 stat-driven execution 3.0 / 4.88 unified situation score 4.0 /
+  // 4.89 final race-AI balance and anti-abnormal-routing pass.
+  function executionSkill87(p){
+    const inside=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+    const corner=Math.max(0,Math.min(1,(p.stats.cornering-72)/27));
+    const control=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const read=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const predict=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
+    return inside*.24+corner*.22+control*.21+read*.18+predict*.15;
+  }
+
+  function situationScore88(p,si,now,targetOff,avoid=null,passActive=false){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    const fast=fastReference84(p,idx);
+    const rs=liveRaceSituation(p);
+    const exec=executionSkill87(p);
+
+    let threat=0;
+    if(avoid){
+      const mc=Number.isFinite(avoid.minClear)?avoid.minClear:9;
+      threat=Math.max(0,Math.min(1,(3.2-mc)/3.2));
+    }
+    const leaderPressure=(rs.rank===1 && rs.nearestBehindGap<7.5) ||
+                         (rs.rank===2 && rs.nearestAheadGap<7.5);
+    const routeCost=Math.min(1,Math.abs(targetOff-fast)/Math.max(1,half));
+    const passNeed=passActive?1:0;
+
+    // 4.88: route time, observer danger, traffic, next-corner geometry and recovery
+    // are collapsed into one compact authority score.
+    let fastAuthority=.86 + exec*.10;
+    fastAuthority += leaderPressure?.025:0;
+    fastAuthority -= threat*.42;
+    fastAuthority -= passNeed*.24;
+    fastAuthority -= routeCost*.05;
+    fastAuthority=Math.max(.42,Math.min(.985,fastAuthority));
+    return {fast,fastAuthority,threat,leaderPressure,exec};
+  }
+
+  function finalRaceDiscipline89(p,si,now,targetOff,avoid=null,passActive=false){
+    const info=situationScore88(p,si,now,targetOff,avoid,passActive);
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+
+    // 4.85 leaders: survive, but never panic-route unless there is a real close threat.
+    if(info.leaderPressure && avoid && info.threat<.42){
+      const cap=half*.40;
+      const d=targetOff-info.fast;
+      targetOff=info.fast+Math.sign(d)*Math.min(Math.abs(d),cap);
+    }
+
+    // 4.89 final abnormal-route clamp. On clear road there is no justification for
+    // a large exterior excursion. During a pass or threat, allow proportionate room.
+    const maxDev=half*(avoid ? (.48+info.threat*.30) : (passActive?.46:.20));
+    const d=targetOff-info.fast;
+    if(Math.abs(d)>maxDev){
+      targetOff=info.fast+Math.sign(d)*maxDev;
+    }
+
+    // 4.87: stronger racers execute the same optimal route more precisely; weaker
+    // racers differ by small timing/precision error, never by deliberately bad macro paths.
+    const precisionAuthority=avoid ? Math.max(.18,info.fastAuthority*.34) : info.fastAuthority;
+    targetOff=targetOff*(1-precisionAuthority)+info.fast*precisionAuthority;
+    return clampRoadOffset(idx,targetOff,p);
+  }
+
+function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
 
@@ -4998,7 +5182,7 @@ function packContextOffset(p,si,now){
         speedMul*=.72;
       }else{
         const unified67=unifiedLine67(p,si,targetOff,avoid);
-        const leadBlend=lead67.leadBattle?.72:.84;
+        const leadBlend=lead67.leadBattle?.66:.82;
         targetOff=targetOff*(1-leadBlend)+unified67.off*leadBlend;
         speedMul*=unified67.speedMul;
       }
@@ -5007,14 +5191,14 @@ function packContextOffset(p,si,now){
       p.avoidRecoverOffset=p.avoidPlanOffset;
       p.avoidRecoverStart=now;
       const recovery=(p.stats.recovery-72)/27;
-      p.avoidRecoverUntil=now+(720-recovery*160);
+      p.avoidRecoverUntil=now+(500-recovery*120);
       p.avoidPlanOffset=targetOff;
       p.avoidPlanSpeedMul=1;
       p.avoidPlanRisk=0;
       p.avoidPlanUntil=0;
     }
     if(!avoid && now<p.avoidRecoverUntil){
-      const duration=Math.max(430,p.avoidRecoverUntil-(p.avoidRecoverStart||now));
+      const duration=Math.max(300,p.avoidRecoverUntil-(p.avoidRecoverStart||now));
       const t=Math.max(0,Math.min(1,(now-(p.avoidRecoverStart||now))/duration));
       // v4.64 SAFE REJOIN 3.1: recover toward the optimized line only as quickly as
       // the road ahead permits. Clear straights rejoin quickly; an approaching corner
@@ -5027,11 +5211,11 @@ function packContextOffset(p,si,now){
       const clearFactor=aheadObs===0?1:(aheadObs===1?.68:.38);
       const cornerFactor=Math.max(.30,1-futureTurn*2.25);
       const smooth=t<.18 ? t*.25 : t<.68 ? .045+(t-.18)*1.28 : .685+(t-.68)*.98;
-      let rejoinAuthority=Math.max(.12,Math.min(1,clearFactor*cornerFactor*(.88+recoveryN*.10+routeReadN*.08)));
+      let rejoinAuthority=Math.max(.24,Math.min(1,clearFactor*cornerFactor*(1.02+recoveryN*.10+routeReadN*.08)));
       const leadRejoin67=leaderLineDiscipline67(p,si);
       if(leadRejoin67.leadBattle && aheadObs===0){
         // P1/P2 restore the fast line quickly once the threat is clear.
-        rejoinAuthority=Math.max(rejoinAuthority,.88);
+        rejoinAuthority=Math.max(rejoinAuthority,.95);
       }
       const blend=Math.max(0,Math.min(1,smooth*rejoinAuthority));
       // v4.63: rejoin the future optimal macro-line, not merely the nearest local lane.
@@ -5041,8 +5225,8 @@ function packContextOffset(p,si,now){
       targetOff=from*(1-blend)+rejoin*blend;
       // If the road is completely clear and nearly straight, don't carry a slow
       // avoidance lane for the full recovery timer. Snap back progressively faster.
-      if(aheadObs===0 && futureTurn<.055 && t>.28){
-        const fastBlend=Math.min(.96,.66+(t-.28)*.72+recoveryN*.08);
+      if(aheadObs===0 && futureTurn<.075 && t>.16){
+        const fastBlend=Math.min(.985,.78+(t-.16)*.78+recoveryN*.08);
         targetOff=targetOff*(1-fastBlend)+rejoin*fastBlend;
       }
     }
@@ -5215,6 +5399,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(now>=p.stunUntil && p.controlMode!=="stopcon" && p.controlMode!=="backcon" && p.liveEvadeAction!=="stop" && speedMul<.62){
       speedMul=.62;
     }
+
+    // v4.85-v4.89 final integrated race-AI discipline:
+    // after all tactical/control choices, remove unjustified exterior wandering
+    // while preserving proportional room for a real observer threat or pass.
+    targetOff=finalRaceDiscipline89(p,si,now,targetOff,avoid,!!passPlan);
 
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
