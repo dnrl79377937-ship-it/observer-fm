@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.93";
+  const BUILD_ID = "v4.94";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4248,9 +4248,9 @@ function packContextOffset(p,si,now){
       if(!lineStaysOnCourse(start.x,start.y,q.x,q.y,ROUTE_PLAN_EXTRA*.72)) continue;
       const d=Math.hypot(q.x-start.x,q.y-start.y);
       const nc=nextMeaningfulCorner64(0,5);
-      // On a long straight, prepare on the OUTSIDE of the upcoming bend instead
-      // of hugging the inside too early. This produces a larger turn radius.
-      const entryBonus=nc ? nc.side*q.frac*nc.cls.power*.19/Math.max(1,nc.gap) : 0;
+      // v4.94: shortest-path game — no outside-entry reward on a clear straight.
+      // Future corners may affect steering later, but never justify a slower dogleg now.
+      const entryBonus=0;
       dp[b][b]=d+entryBonus;
     }
     for(let i=1;i<N;i++){
@@ -4273,23 +4273,21 @@ function packContextOffset(p,si,now){
           // expensive, while a long smooth arc can beat the raw shortest chord.
           let cost=base+l2+ang*ang*(4.25+cls.power*7.8);
           if(side && cls.power>=.055){
-            // cur is the entry side of the vertex, nxt is the apex/exit side.
-            // Positive cost term on side*cur.frac rewards OUTSIDE (-side); negative
-            // on side*nxt.frac rewards INSIDE (+side).
-            cost += side*cur.frac*cls.power*(.35+.48*cls.entry);
-            cost += -side*nxt.frac*cls.power*(.48+.56*cls.apex);
+            // v4.94: never reward an outside/dogleg entry. Reward only a useful
+            // inside apex; the route solver should minimize geometric path length first.
+            cost += -side*nxt.frac*cls.power*(.42+.48*cls.apex);
           }
           const future=nextMeaningfulCorner64(i,3);
           if(future){
             // Exit toward the outside of the current bend unless a close linked
             // corner needs the opposite side. For S-bends, that same exit naturally
             // becomes the outside entry of the following corner.
-            const w=future.cls.power*(future.gap===1?.33:future.gap===2?.20:.11);
+            const w=future.cls.power*(future.gap===1?.10:future.gap===2?.055:.025); // v4.94 minimal anticipation
             cost += future.side*nxt.frac*w;
           }
           // Wide straights should not default to centre. Lane changes are penalized
           // only when they add distance without preparing a meaningful bend.
-          if(cls.power<.055 && !future) cost += Math.abs(nxt.frac-cur.frac)*.052;
+          if(cls.power<.055) cost += Math.abs(nxt.frac-cur.frac)*.34; // v4.94 straight-line discipline
           if(cost<ndp[b][c]){ndp[b][c]=cost;back[i][b][c]=a;}
         }
       }
@@ -4976,7 +4974,91 @@ function packContextOffset(p,si,now){
   // Once a long legal horizontal chord is found, KEEP that target even if the logical
   // route index temporarily advances into a vertical connector. The hold ends only
   // when the racer physically reaches the far horizontal road or a true emergency occurs.
-  function discoverMacroStraight93(p,si){
+  
+  // v4.94 GLOBAL ROUTE-SHORTCUT GRAPH
+  // The old AI assumed every route[] joint must be visited in sequence. That is wrong
+  // on wide corridors: some centerline joints form a needless dogleg even though a
+  // direct chord across the painted road is shorter and fully legal.
+  //
+  // This planner is generic: no screenshot coordinates and no special segment IDs.
+  // It compares route-arc distance vs direct legal chord and skips intermediate joints
+  // whenever the chord is materially shorter.
+  function routeArcDistance94(fromSeg,toSeg){
+    fromSeg=Math.max(0,Math.min(segs.length-1,fromSeg));
+    toSeg=Math.max(fromSeg,Math.min(segs.length-1,toSeg));
+    let d=0;
+    for(let i=fromSeg;i<=toSeg;i++) d+=segs[i].L;
+    return d;
+  }
+
+  function bestRouteShortcut94(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const maxJ=Math.min(segs.length-1,idx+10);
+    let best=null;
+
+    // Search all future route segments, not just the next joint.
+    for(let j=idx+2;j<=maxJ;j++){
+      const s=segs[j];
+      const half=Math.max(2.0,widths[j]*ROAD_MARGIN*.972);
+      // Evaluate several lateral points on the future road. This lets the shortcut
+      // land naturally on the fastest side of a wide corridor.
+      const fracs=[-.92,-.65,-.35,0,.35,.65,.92];
+      for(const f of fracs){
+        const x=s.b[0]+s.nx*f*half;
+        const y=s.b[1]+s.ny*f*half;
+        const direct=Math.hypot(x-p.x,y-p.y);
+        if(direct<8) continue;
+        if(!lineStaysOnCourse(p.x,p.y,x,y,ROUTE_PLAN_EXTRA*.92)) continue;
+
+        // Compare against the actual route arc remaining from the racer's current
+        // position through every intermediate joint.
+        const cur=segs[idx];
+        const rx=p.x-cur.a[0],ry=p.y-cur.a[1];
+        const along=Math.max(0,Math.min(cur.L,rx*cur.ux+ry*cur.uy));
+        let arc=Math.max(0,cur.L-along);
+        for(let k=idx+1;k<=j;k++) arc+=segs[k].L;
+
+        const gain=arc-direct;
+        const ratio=direct/Math.max(1,arc);
+        // Require a real distance saving. Tiny corner cuts stay with normal racing AI.
+        if(gain<5.0 || ratio>.90) continue;
+
+        // Prefer maximum real distance saving, with a small reward for skipping more
+        // unnecessary joints. This directly rejects doglegs.
+        const score=gain+(j-idx)*.45;
+        if(!best || score>best.score){
+          best={x,y,j,f,direct,arc,gain,ratio,score};
+        }
+      }
+    }
+    return best;
+  }
+
+  function routeShortcutTarget94(p,si,now,emergency=false){
+    if(emergency){
+      p.routeShortcut94Until=0;
+      return null;
+    }
+
+    // Persist the selected shortcut until the racer reaches its landing road.
+    if((p.routeShortcut94Until||0)>now && Number.isFinite(p.routeShortcut94X)){
+      const dx=p.routeShortcut94X-p.x,dy=p.routeShortcut94Y-p.y;
+      if(Math.hypot(dx,dy)>3.2){
+        return {x:p.routeShortcut94X,y:p.routeShortcut94Y,j:p.routeShortcut94Seg,held:true};
+      }
+      p.routeShortcut94Until=0;
+    }
+
+    const best=bestRouteShortcut94(p,si);
+    if(!best) return null;
+    p.routeShortcut94X=best.x;
+    p.routeShortcut94Y=best.y;
+    p.routeShortcut94Seg=best.j;
+    p.routeShortcut94Until=now+4600;
+    return {x:best.x,y:best.y,j:best.j,held:true};
+  }
+
+function discoverMacroStraight93(p,si){
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[idx];
 
@@ -5059,14 +5141,19 @@ function farthestVisibleFastTarget91(p,si){
 
   function noOrthogonalDrop91(p,si,tx,ty,emergency=false){
     if(emergency){
+      p.routeShortcut94Until=0;
       p.macroStraight93Until=0;
       return {x:tx,y:ty};
     }
 
     const idx=Math.max(0,Math.min(segs.length-1,si));
 
-    // v4.93: once a long legal horizontal macro-line is available, keep it across
-    // any intermediate vertical connector segments instead of reconsidering every frame.
+    // v4.94: first ask whether the route centerline itself contains a slower dogleg.
+    // If a much shorter legal chord exists, skip those intermediate route joints.
+    const shortcut94=routeShortcutTarget94(p,idx,performance.now(),false);
+    if(shortcut94) return {x:shortcut94.x,y:shortcut94.y};
+
+    // v4.93 fallback: persistent horizontal macro-line.
     const straight93=macroStraightTarget93(p,idx,performance.now(),false);
     if(straight93) return {x:straight93.x,y:straight93.y};
 
@@ -5810,6 +5897,18 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v4.93: if a committed macro-straight bypassed connector segments, synchronize the
     // logical route segment to the future road the racer physically reached.
     forwardRouteResync93(p);
+    if((p.routeShortcut94Until||0)>now && Number.isFinite(p.routeShortcut94Seg)){
+      const sj=Math.max(p.seg,Math.min(segs.length-1,p.routeShortcut94Seg|0));
+      const ss=segs[sj],rx94=p.x-ss.a[0],ry94=p.y-ss.a[1];
+      const a94=Math.max(0,Math.min(ss.L,rx94*ss.ux+ry94*ss.uy));
+      const qx94=ss.a[0]+ss.ux*a94,qy94=ss.a[1]+ss.uy*a94;
+      const d294=(p.x-qx94)*(p.x-qx94)+(p.y-qy94)*(p.y-qy94);
+      const r94=Math.max(2.0,widths[sj]*ROAD_MARGIN)+1.4;
+      if(d294<=r94*r94 && sj>p.seg){
+        p.seg=sj;
+        p.routeShortcut94Until=0;
+      }
+    }
 
     // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
     // Death uses the route-derived capsule union, not hand-written red coordinates.
