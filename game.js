@@ -20,12 +20,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 120;
+  const OBSERVER_COUNT = 100;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.43";
+  const BUILD_ID = "v4.49";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -100,17 +100,52 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   ];
 
   // v2.21: stronger behavioral identity; never changes raw base speed.
+  // v4.46 RACE-SITUATION AI: leader/chaser/clutch behavior uses Aggression, Risk Control and Pressure.
+  // v4.45 PERSONALITY AI 2.0: persistent styles now alter line commitment, safety margin,
+  // click rhythm and rejoin patience. They never create random deaths or hidden speed boosts.
   const drivingIdentity={
-    apexHunter:{apex:1.13,safety:.94,pass:1.08,patience:.90,control:"zigzag"},
-    safeReader:{apex:.96,safety:1.13,pass:.92,patience:1.14,control:"wide"},
-    attacker:{apex:1.06,safety:.91,pass:1.15,patience:.86,control:"backcon"},
-    lineMaster:{apex:1.12,safety:1.02,pass:1.04,patience:1.03,control:"zigzag"},
-    balanced:{apex:1,safety:1,pass:1,patience:1,control:"zigzag"},
-    controller:{apex:.98,safety:1.10,pass:.94,patience:1.10,control:"zigzag"},
-    patient:{apex:.97,safety:1.08,pass:.96,patience:1.16,control:"wide"},
-    opportunist:{apex:1.08,safety:.96,pass:1.10,patience:.94,control:"backcon"}
+    apexHunter:{apex:1.18,safety:.94,pass:1.06,patience:.91,control:"zigzag",commit:1.10,evadeWidth:.96,rejoin:1.10},
+    safeReader:{apex:.93,safety:1.18,pass:.91,patience:1.18,control:"wide",commit:.91,evadeWidth:1.15,rejoin:.82},
+    attacker:{apex:1.08,safety:.90,pass:1.18,patience:.88,control:"zigzag",commit:1.15,evadeWidth:.94,rejoin:1.08},
+    lineMaster:{apex:1.17,safety:1.02,pass:1.04,patience:1.02,control:"zigzag",commit:1.11,evadeWidth:1.00,rejoin:1.13},
+    balanced:{apex:1,safety:1,pass:1,patience:1,control:"zigzag",commit:1,evadeWidth:1,rejoin:1},
+    controller:{apex:.98,safety:1.12,pass:.95,patience:1.08,control:"zigzag",commit:.98,evadeWidth:1.08,rejoin:.94},
+    patient:{apex:.95,safety:1.12,pass:.95,patience:1.20,control:"wide",commit:.90,evadeWidth:1.12,rejoin:.84},
+    opportunist:{apex:1.10,safety:.96,pass:1.14,patience:.94,control:"zigzag",commit:1.10,evadeWidth:.98,rejoin:1.05}
   };
   function identityOf(p){return drivingIdentity[p.drivingStyle?.style]||drivingIdentity.balanced;}
+
+  // v4.47 UNIT ADAPTATION AI: every chassis asks for a different kind of execution.
+  // This is not a hidden unit rating. Compatibility is derived from the same visible
+  // 20 FM attributes, so a racer can naturally be excellent on one unit and ordinary on another.
+  function unitAdaptationOf(p){
+    const st=p.stats||{};
+    const n=k=>Math.max(0,Math.min(1,((st[k]??85)-72)/27));
+    const avg=(...ks)=>ks.reduce((a,k)=>a+n(k),0)/ks.length;
+    switch(currentRound){
+      case 1: { // Scourge: twitchy / reactive; rewards reaction + control + acceleration.
+        const fit=avg('reaction','control','acceleration');
+        return {name:'SCOUT? NO · SCOURGE',fit,safety:.98+(.5-fit)*.05,apex:1.00,click:.90+fit*.08,think:.91,steer:1.08,pace:.997+fit*.006};
+      }
+      case 2: { // Scout: fast flowing lines; rewards pace + route reading + inside line.
+        const fit=avg('pace','routeReading','insideLine');
+        return {name:'SCOUT',fit,safety:.97,apex:1.04+fit*.05,click:1.08+fit*.08,think:1.04,steer:.98,pace:.997+fit*.006};
+      }
+      case 3: { // Wraith: precision/prediction unit; commits early to a read.
+        const fit=avg('prediction','focus','routeReading');
+        return {name:'WRAITH',fit,safety:1.01+fit*.035,apex:1.02,click:1.00+fit*.06,think:.96,steer:1.01,pace:.997+fit*.006};
+      }
+      case 4: { // Mutalisk: evasive/aggressive arcs; rewards avoidance + recovery + aggression.
+        const fit=avg('avoidance','recovery','aggression');
+        return {name:'MUTALISK',fit,safety:1.00+fit*.045,apex:.99,click:.96+fit*.07,think:.93,steer:1.05,pace:.997+fit*.006};
+      }
+      case 5: { // Queen: deliberate/heavier control; rewards stability + risk control + braking.
+        const fit=avg('stability','riskControl','braking');
+        return {name:'QUEEN',fit,safety:1.05+fit*.055,apex:.97,click:.94+fit*.06,think:1.06,steer:.94+fit*.04,pace:.997+fit*.006};
+      }
+      default:return {name:'UNIT',fit:.5,safety:1,apex:1,click:1,think:1,steer:1,pace:1};
+    }
+  }
   const signatureMoves={apexHunter:{label:"WALL APEX",inside:1.24,skim:1.18},safeReader:{label:"SAFE ARC",inside:.82,skim:1.04},attacker:{label:"THREAD ATTACK",inside:1.08,skim:1.30},lineMaster:{label:"PERFECT LINE",inside:1.30,skim:1.14},balanced:{label:"ADAPTIVE",inside:1,skim:1},controller:{label:"CONTROL CUT",inside:.90,skim:1.06},patient:{label:"WAIT & CUT",inside:.92,skim:1.08},opportunist:{label:"GAP HUNTER",inside:1.16,skim:1.26}};
   function signatureOf(p){return signatureMoves[p.drivingStyle?.style]||signatureMoves.balanced;}
 
@@ -339,6 +374,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // v2.55: survival-minded racers trade distance for safety.
       const survivalNorm=Math.max(0,Math.min(1,
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
+      // v4.44 STAT FEEL: widen the real gameplay gap between specialists without adding hidden 1v1/8-player ratings.
       const wideDetourRace=Math.random()<.02;
       const wideDetourSide=Math.random()<.5?-1:1;
       // v4.16: all eight racers start from the exact same physical point.
@@ -349,7 +385,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
         visionRadius:Math.max(26,Math.min(37,
-          27+((stats.prediction-72)/27)*5.2+((stats.reaction-72)/27)*2.3+((stats.focus-72)/27)*1.7)),
+          27+((stats.prediction-72)/27)*6.0+((stats.reaction-72)/27)*2.8+((stats.focus-72)/27)*2.3)),
         // v2.34: persistent route personality. Negative = safer/wider, positive = tighter inside.
         linePersonality:(
           drivingStyle.style==="apexHunter" ? .92 :
@@ -403,11 +439,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // Pace creates small but meaningful differences, not runaway gaps.
         speed: (
           9.43
-          + paceNorm*0.070
-          + ((stats.acceleration-85)/14)*0.018
-          + ((stats.consistency-85)/14)*0.011
-          + ((stats.endurance-85)/14)*0.008
-          + ((stats.luck-85)/14)*0.002
+          + paceNorm*0.105
+          + ((stats.acceleration-85)/14)*0.028
+          + ((stats.consistency-85)/14)*0.016
+          + ((stats.endurance-85)/14)*0.012
+          + ((stats.luck-85)/14)*0.0015
           + Math.random()*0.006
         ) * 1.566903319,
         desiredOffset:(i-3.5)*0.40,
@@ -469,9 +505,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // command tempo, click reach and risk/rejoin character instead of sharing
         // one global mouse cadence. Stable for the race; never frame-randomized.
         mouseRhythm:({apexHunter:.88,safeReader:1.12,attacker:.84,lineMaster:.94,balanced:1.00,controller:.91,patient:1.15,opportunist:.87}[drivingStyle.style]||1)*(0.96+Math.random()*.08),
-        mouseReach:({apexHunter:1.02,safeReader:.90,attacker:1.05,lineMaster:1.00,balanced:.97,controller:.94,patient:.89,opportunist:1.03}[drivingStyle.style]||1)*(0.97+Math.random()*.06),
+        mouseReach:({apexHunter:1.05,safeReader:.91,attacker:1.07,lineMaster:1.02,balanced:.97,controller:.94,patient:.90,opportunist:1.04}[drivingStyle.style]||1)*(0.985+Math.random()*.03),
         mouseDangerTempo:({apexHunter:.92,safeReader:.88,attacker:.84,lineMaster:.94,balanced:1.00,controller:.86,patient:1.05,opportunist:.87}[drivingStyle.style]||1),
-        mouseRejoinBias:({apexHunter:1.10,safeReader:.82,attacker:1.08,lineMaster:1.13,balanced:1.00,controller:.94,patient:.84,opportunist:1.05}[drivingStyle.style]||1),
+        mouseRejoinBias:identityOf({drivingStyle}).rejoin,
         // v4.21 perception: only personally seen observers may drive AI decisions.
         perceivedObservers:new Map(), perceptionLastUpdate:0, perceptionFocusId:-1,
         // v4.37 humanized perception. Stable personal bias + repeat-sighting confidence
@@ -504,6 +540,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         startLaunchUntil:0,
         startReactionMs:0,
         startExecution:1,
+        // v4.48 START AI: same physical spawn, different committed opening decisions.
+        startLineTarget:0, startLineCommit:0, startDecisionUntil:0, startBurstPhase:0,
         livePressure:0,
         newPB:false,
         newMapRecord:false,
@@ -756,12 +794,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const reactionNoise=(Math.random()-.5)*(46-consistency*14);
         p.startReactionMs=Math.max(45,Math.min(220,
           170-reaction*14-focus*9-start*10-pressure*6+reactionNoise*.32-(p.raceForm-1)*45));
-        p.startExecution=Math.max(.965,Math.min(1.035,
-          .996+skill*.012+(p.raceForm-1)*.07+(Math.random()-.5)*(.004-consistency*.0012)));
+        p.startExecution=Math.max(.960,Math.min(1.040,
+          .994+skill*.016+(p.raceForm-1)*.07+(Math.random()-.5)*(.004-consistency*.0012)));
 
-        const jitter=(Math.random()-.5)*(.016-consistency*.005);
-        p.startLaunchMul=Math.max(.965,Math.min(1.045,.996+skill*.014+jitter*.35+(p.raceForm-1)*.06));
-        p.startLaunchUntil=now+1750+Math.random()*350;
+        // Opening lane is derived from the persistent route signature + driving personality.
+        // No spawn offset is used: everyone still physically starts at x=20.5,y=154.8.
+        const half0=Math.max(2.0,widths[0]*.66);
+        const id=identityOf(p);
+        const styleBias=(id.apex-1)*.34+(id.pass-1)*.20-(id.safety-1)*.18;
+        const signature=(p.openingLineBias||0)*.78+(p.routeBand||0)*.22+styleBias;
+        const controlN=(p.stats.control-72)/27;
+        p.startLineTarget=Math.max(-half0*.92,Math.min(half0*.92,signature*half0));
+        p.startLineCommit=Math.max(.62,Math.min(1,.68+start*.13+reaction*.08+controlN*.07));
+        p.startDecisionUntil=now+2050+start*330+reaction*170;
+        p.startBurstPhase=Math.max(0,Math.min(1,skill));
+
+        const jitter=(Math.random()-.5)*(.014-consistency*.0045);
+        p.startLaunchMul=Math.max(.958,Math.min(1.052,.992+skill*.024+jitter*.30+(p.raceForm-1)*.06));
+        p.startLaunchUntil=now+2050+accel*260+start*180;
       }
     }
     lastTs=now;
@@ -781,7 +831,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function controlPreferenceWeights(p){
     // v2.11: each driving identity favors different manual-control choices.
-    const name=p.drivingStyle.name;
+    const name=p.drivingStyle.style;
     let w={zigzag:1.12,backcon:1.12,stopcon:.035,wide:1};
     if(name==="apexHunter")      w={zigzag:1.18,backcon:1.22,stopcon:.72,wide:.76};
     else if(name==="safeReader")w={zigzag:.84,backcon:.62,stopcon:1.48,wide:1.20};
@@ -1214,9 +1264,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const pressureN=Math.max(0,Math.min(1,(p.stats.pressure-72)/27));
     const consistencyN=Math.max(0,Math.min(1,(p.stats.consistency-72)/27));
     const skill=reactionN*.55+focusN*.30+pressureN*.15;
-    const base=150-skill*62-urgency*24;
-    const spread=34-consistencyN*18;
-    return Math.max(58,Math.min(176,base+(Math.random()-.5)*spread));
+    const base=156-skill*78-urgency*26;
+    const spread=38-consistencyN*25;
+    return Math.max(50,Math.min(184,base+(Math.random()-.5)*spread));
   }
 
   function humanCommandDelayMs(p,urgency=0){
@@ -1224,8 +1274,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
     const focusN=Math.max(0,Math.min(1,(p.stats.focus-72)/27));
     const skill=reactionN*.52+controlN*.30+focusN*.18;
-    const base=104-skill*43-urgency*18;
-    return Math.max(34,Math.min(122,base+(Math.random()-.5)*24));
+    const base=110-skill*55-urgency*20;
+    return Math.max(28,Math.min(130,base+(Math.random()-.5)*24));
   }
 
   // v4.21 HUMAN PERCEPTION LAYER
@@ -1239,17 +1289,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const predictionN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
     const consistencyN=Math.max(0,Math.min(1,(p.stats.consistency-72)/27));
     const perceptionSkill=focusN*.42+reactionN*.25+predictionN*.25+consistencyN*.08;
-    const visionScale=.75+focusN*.20+reactionN*.08;
+    const visionScale=.72+focusN*.27+reactionN*.10;
     const maxR=Math.min(r,(p.visionRadius||r)*visionScale);
     const raw=playerNearbyObservers(p,maxR);
     let hx=p.steerX||0, hy=p.steerY||0;
     let hl=Math.hypot(hx,hy);
     if(hl<.15){ const seg=segs[Math.min(p.seg,segs.length-1)]; hx=seg.ux; hy=seg.uy; hl=1; }
     hx/=hl; hy/=hl;
-    const halfFov=(63+focusN*14)*Math.PI/180;
+    const halfFov=(60+focusN*20)*Math.PI/180;
     const cosFov=Math.cos(halfFov);
-    const peripheral=2.45+reactionN*.70;
-    const memoryMs=400+predictionN*330+focusN*165;
+    const peripheral=2.30+reactionN*1.05;
+    const memoryMs=350+predictionN*430+focusN*220;
     for(const o of raw){
       const dx=o.x-p.x,dy=o.y-p.y,d=Math.hypot(dx,dy);
       if(d<.001) continue;
@@ -1280,7 +1330,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         }else if(prev){ evx=prev.vx||0; evy=prev.vy||0; }
         // Smooth, bounded visual estimate error. It shrinks as the observer gets closer
         // and as Focus/Prediction improve; no per-frame jitter and no fake collision.
-        const errAmp=(.34-perceptionSkill*.24)*Math.max(.18,Math.min(1,d/18));
+        const errAmp=(.39-perceptionSkill*.31)*Math.max(.16,Math.min(1,d/18));
         const phase=(o.id*1.731+(p.perceptionTrackSeed||0));
         const targetErrX=(p.perceptionBiasX||0)*(.35+farN*.65)+Math.sin(phase)*errAmp;
         const targetErrY=(p.perceptionBiasY||0)*(.35+farN*.65)+Math.cos(phase*1.17)*errAmp;
@@ -1629,9 +1679,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const survival=p.survivalNorm||0;
     // Better survival stats value clearance more strongly. The price is that
     // detours are penalized less, so these racers willingly travel farther.
-    const survivalSafety=1.28+survival*.48; // v4.40: survival-first virtual clearance, physical HIT unchanged
+    const survivalSafety=(1.20+survival*.72)*identityOf(p).safety; // v4.44: stronger stat separation; elite survival stats value clearance more, physical HIT unchanged
     const timeLoss=(1-speedMul)*(19.0+situationRisk*7.0)/Math.max(.90,safetyBias);
-    const detour=Math.abs(targetOff-p.desiredOffset)*0.23*(2-safetyBias)*(1-survival*.52);
+    const detour=Math.abs(targetOff-p.desiredOffset)*0.23*(2-safetyBias)*(1-survival*.66);
     return {score:danger*safetyBias*survivalSafety+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
   }
 
@@ -2625,7 +2675,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const gap=qp-my;
       if(gap>0 && gap<nearestAheadGap) nearestAheadGap=gap;
     }
-    return {rank,progress:my,remaining:Math.max(0,routeLength-my),nearestAheadGap};
+    let nearestBehindGap=999;
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done) continue;
+      const gap=my-currentProgress(q);
+      if(gap>0 && gap<nearestBehindGap) nearestBehindGap=gap;
+    }
+    const ratio=Math.max(0,Math.min(1,my/routeLength));
+    const state=rank===1
+      ? (nearestBehindGap<4.8 ? "LEADER_DEFEND" : "LEADER_CONTROL")
+      : (ratio>.78 ? "CLUTCH_CHASE" : (nearestAheadGap<5.2 ? "CHASE" : "RACE"));
+    return {rank,progress:my,remaining:Math.max(0,routeLength-my),nearestAheadGap,nearestBehindGap,ratio,state};
   }
 
   function tacticalRiskLevel(p,now){
@@ -2644,12 +2705,26 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const lateNeed=Math.max(0,(progressRatio-.58)/.42);
     const passChance=rs.nearestAheadGap<5.0 ? .12 : 0;
     let risk=.04 + aggression*.10 + pressure*.06 + rankNeed*(.14+.18*lateNeed) + passChance;
-    risk += prediction*.025 + riskControl*.018;
+    // v4.46: Risk Control must REDUCE reckless route acceptance, not increase it.
+    // Prediction can support a calculated attack because the racer reads moving gaps earlier.
+    risk += prediction*.025 - riskControl*.060;
     risk += (p.raceForm-1)*(.30+pressure*.08);
-    if(rs.rank===1) risk-=.10;                 // leader protects the race more often
-    else if(rs.rank===2 && progressRatio>.78) risk+=.045;
-    if(progressRatio>.88 && rs.rank>=3) risk+=.035+pressure*.018;
-    risk=Math.max(0,Math.min(.48,risk));
+
+    // Situation-aware race management. This changes route risk only; there is no rubber-band speed boost.
+    if(rs.rank===1){
+      // Leaders protect a result, especially late. High Risk Control makes this effect stronger.
+      risk-=.105 + Math.max(0,riskControl)*(.045+.055*progressRatio);
+      if(progressRatio>.72) risk-=.025+Math.max(0,pressure)*.018;
+    }else if(rs.rank===2){
+      // P2 attacks a reachable leader late, but composed racers do not panic if the gap is large.
+      if(progressRatio>.68 && rs.nearestAheadGap<6.2)
+        risk+=.035 + Math.max(0,aggression)*.030 + Math.max(0,pressure)*.018;
+    }else if(rs.rank>=3){
+      const urgency=Math.max(0,(progressRatio-.55)/.45);
+      risk+=urgency*(.025+Math.max(0,aggression)*.045+Math.max(0,pressure)*.025);
+    }
+    if(progressRatio>.88 && rs.rank>=3) risk+=.030+Math.max(0,pressure)*.022;
+    risk=Math.max(0,Math.min(.52,risk));
 
     p.tacticalRisk=risk;
     p.tacticalRiskUntil=now+520+Math.random()*380;
@@ -2674,7 +2749,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const nearby=playerPerceivedObservers(p,12.5);
     let chosen=0;
 
-    if(nearby.length<=2 && rs.nearestAheadGap<4.6){
+    // v4.46 leader protection: when closely chased, prefer the already-stable racing line
+    // instead of inventing a risky tactical lane change. Avoidance still has final authority.
+    if(rs.state==="LEADER_DEFEND" && nearby.length>0){
+      p.situationDecisionOffset=0;
+      p.situationDecisionUntil=now+360+Math.max(0,(p.stats.riskControl-72)/27)*180;
+      return baseOff;
+    }
+
+    if(nearby.length<=2 && rs.nearestAheadGap<4.9){
       let side=inside;
       if(side===0) side=(p.index%2?1:-1);
       const commit=Math.min(.96,.46+risk*.82+((p.stats.control-72)/27)*.08);
@@ -2895,15 +2978,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // racers may still overlap completely with no push, collision, or slowdown.
     let side=(qOff>=myOff)?-1:1;
     if(inside!==0 && Math.abs(qOff-inside*half)>half*.34 &&
-       (p.drivingStyle.name==="opportunist" || p.drivingStyle.name==="attacker" || aggression>.62)){
+       (p.drivingStyle.style==="opportunist" || p.drivingStyle.style==="attacker" || aggression>.62)){
       side=inside;
     }
 
     let commitment=.40;
-    if(p.drivingStyle.name==="safeReader" || p.drivingStyle.name==="patient") commitment=.32;
-    else if(p.drivingStyle.name==="attacker" || p.drivingStyle.name==="opportunist") commitment=.69;
-    else if(p.drivingStyle.name==="controller") commitment=.46;
+    if(p.drivingStyle.style==="safeReader" || p.drivingStyle.style==="patient") commitment=.32;
+    else if(p.drivingStyle.style==="attacker" || p.drivingStyle.style==="opportunist") commitment=.69;
+    else if(p.drivingStyle.style==="controller") commitment=.46;
 
+    commitment*=identityOf(p).commit;
     commitment+=aggression*.09+pressure*.06+control*.035;
     if(nearestGap<3.2) commitment+=.12;
     if(nearestGap<1.35) commitment+=.06;
@@ -2952,21 +3036,21 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // through it, then release smoothly. This is derived only from route curvature;
     // there are no hand-coded corner coordinates.
     if(seq.currentSide===0 && seq.nextSide!==0){
-      const approach=seq.nextSide*half*(.72+.22*precision);
+      const approach=seq.nextSide*half*(.68+.28*precision);
       return {target:approach,weight:.54+.24*routeRead,seq};
     }
 
     if(seq.currentSide!==0){
       if(phase<.24){
-        const earlyInside=seq.currentSide*half*(.76+.20*precision);
+        const earlyInside=seq.currentSide*half*(.71+.26*precision);
         return {target:earlyInside,weight:.58+.22*cornerSkill,seq};
       }
       if(phase<.76){
-        const apex=seq.currentSide*half*Math.min(.998,.955+.038*precision+.012*confidence);
+        const apex=seq.currentSide*half*Math.min(.998,.935+.058*precision+.012*confidence);
         return {target:apex,weight:.72+.22*precision,seq};
       }
       if(seq.nextSide!==0){
-        const release=seq.nextSide*half*(.68+.24*routeRead);
+        const release=seq.nextSide*half*(.62+.31*routeRead);
         return {target:release,weight:.50+.24*routeRead,seq};
       }
       const exit=seq.currentSide*half*(.58+.22*precision);
@@ -2992,7 +3076,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v4.14: shortest-path preparation. Move toward the UPCOMING INSIDE early
     // instead of swinging to the outside and making a large right-angle arc.
     const inside=(p.stats.insideLine-72)/27;
-    const setup=nextSide*half*(.66+.24*read+.08*inside);
+    const setup=nextSide*half*(.60+.30*read+.10*inside);
     const weight=Math.max(.22,Math.min(.76,(6-distanceSeg)*.095+.17*read+.10*corner+.08*inside));
     if(now<p.preCornerUntil) return baseOff*.42+p.preCornerOffset*.58;
     p.preCornerOffset=setup;
@@ -3022,6 +3106,79 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return baseOff*(1-w)+prep*w;
     }
     return baseOff;
+  }
+
+  // v4.49 CORNER / INSIDE-LINE FINALIZER:
+  // Build one continuous entry -> apex -> exit decision from route geometry.
+  // High Cornering / Inside Line / Route Reading racers commit earlier and closer
+  // to the legal inside edge. The next corner is considered before the current
+  // corner ends, so S-bends connect without a centre-line snap. Observer avoidance
+  // is applied later and always retains final authority.
+  function precisionCornerTarget(p,si,now,baseOff){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const half=Math.max(1.8,widths[Math.min(idx,widths.length-1)]*.565);
+    const insideN=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+    const cornerN=Math.max(0,Math.min(1,(p.stats.cornering-72)/27));
+    const readN=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const skill=Math.max(0,Math.min(1,insideN*.34+cornerN*.31+readN*.23+controlN*.12));
+    const seq=racingCornerSequence(idx);
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const phase=s.L>0?along/s.L:1;
+
+    // If the current segment is straight, prepare for the first meaningful turn.
+    if(seq.currentSide===0 && seq.nextSide!==0){
+      const gap=Math.max(1,(seq.nextIndex-idx));
+      const proximity=Math.max(0,1-Math.min(1,(gap-1)/5));
+      const commit=.58+.26*skill+.10*proximity;
+      const target=seq.nextSide*half*Math.min(.965,commit);
+      const w=.28+.28*readN+.14*cornerN+.12*proximity;
+      return baseOff*(1-Math.min(.76,w))+target*Math.min(.76,w);
+    }
+
+    if(seq.currentSide===0) return baseOff;
+
+    // Through the bend, progressively tighten to the apex. Good racers reach it
+    // earlier, hold it more accurately, then release toward the next optimal line.
+    let target=baseOff, weight=0;
+    if(phase<.22){
+      const entry=.70+.21*skill;
+      target=seq.currentSide*half*Math.min(.955,entry);
+      weight=.42+.28*cornerN+.12*readN;
+    }else if(phase<.72){
+      const apex=.925+.067*skill+(identityOf(p).apex-1)*.045;
+      target=seq.currentSide*half*Math.min(.997,Math.max(.86,apex));
+      weight=.64+.25*skill;
+    }else if(seq.nextSide!==0){
+      if(seq.nextSide===seq.currentSide){
+        // Same-direction linked corners: stay attached to the inside rather than
+        // unnecessarily opening the steering between bends.
+        target=seq.currentSide*half*Math.min(.995,.89+.09*skill);
+        weight=.52+.27*readN;
+      }else{
+        // Opposite-direction linked corners: cross the road smoothly only as much
+        // as necessary to set up the following apex.
+        const release=(phase-.72)/.28;
+        const nextCommit=.54+.34*readN+.08*cornerN;
+        const next=seq.nextSide*half*Math.min(.93,nextCommit);
+        const current=seq.currentSide*half*(.64+.20*skill);
+        target=current*(1-release)+next*release;
+        weight=.46+.28*readN+.10*controlN;
+      }
+    }else{
+      const exit=.54+.22*cornerN+.10*controlN;
+      target=seq.currentSide*half*Math.min(.88,exit);
+      weight=.36+.22*cornerN;
+    }
+
+    // Nearby observers do not disable corner skill, but they reduce racing-line
+    // stubbornness so the later avoidance planner can take over cleanly.
+    const obs=playerPerceivedObservers(p,10.5).length;
+    if(obs>0) weight*=obs>=3?.48:.68;
+    weight=Math.max(0,Math.min(.91,weight));
+    return baseOff*(1-weight)+target*weight;
   }
 
   function creativeRouteAdjustment(p,si,now,baseOff){
@@ -3605,6 +3762,26 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return r1x*r1x+r1y*r1y<r*r;
   }
 
+  // v4.48 START AI: racers still spawn at exactly the same coordinate. Start, Reaction,
+  // Acceleration and personality decide how quickly and how strongly each racer fans into
+  // a legal opening line. Observer avoidance below always has final authority.
+  function startOpeningTarget(p,si,now,targetOff){
+    if(!raceStart || now>=p.startDecisionUntil || si>2) return targetOff;
+    const elapsed=Math.max(0,now-raceStart-p.startReactionMs);
+    if(elapsed<=0) return targetOff;
+    const startN=Math.max(0,Math.min(1,(p.stats.start-72)/27));
+    const reactN=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
+    const accelN=Math.max(0,Math.min(1,(p.stats.acceleration-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const identity=identityOf(p);
+    const ramp=Math.max(0,Math.min(1,elapsed/(330-reactN*90)));
+    const settle=Math.max(0,Math.min(1,(p.startDecisionUntil-now)/620));
+    const blend=Math.min(.84,(.34+startN*.20+reactN*.10+controlN*.08)*(p.startLineCommit||.7)*1.24*ramp*Math.max(.48,settle));
+    // Strong starters establish their chosen lane earlier; acceleration affects execution, not hidden pace.
+    const executed=p.startLineTarget*(.86+accelN*.10+controlN*.04);
+    return targetOff*(1-blend)+executed*blend;
+  }
+
   function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -3691,7 +3868,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // follows the optimized racing line most of the time.
     const lineError=(100-p.profile.line)/100;
     const precision=(p.stats.insideLine+p.stats.cornering+p.stats.routeReading)/300;
-    const precisionNoise=0.007+(1-precision)*0.225;
+    const precisionNoise=0.004+(1-precision)*0.285;
     targetOff += Math.sin((now/1000)*0.7+p.index*1.3)*half*precisionNoise;
 
     // High inside-line racers visibly hold a tighter apex; lower line skill leaves
@@ -3699,8 +3876,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const insideNow=cornerInsideSide(si);
     if(insideNow!==0 && cornerIntensity(si)>0.06){
       const insideCommit=(p.stats.insideLine-72)/27;
-      const styleApex=(p.drivingStyle.name==="attacker"||p.drivingStyle.name==="apexHunter")?.055:
-        (p.drivingStyle.name==="safeReader"||p.drivingStyle.name==="patient")?-.075:0;
+      const styleApex=(identityOf(p).apex-1)*.42;
       const personalityApex=(p.linePersonality||0)*.095;
       const skillApex=insideNow*half*Math.min(.995,Math.max(.54,0.69+insideCommit*0.23+styleApex+personalityApex));
       targetOff=targetOff*(0.40-insideCommit*0.12)+skillApex*(0.60+insideCommit*0.12);
@@ -3721,18 +3897,27 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     targetOff=preCornerPositionTarget(p,si,now,targetOff);
     targetOff=linkedCornerTarget(p,si,targetOff);
+    targetOff=precisionCornerTarget(p,si,now,targetOff);
     targetOff=finalCornerBattleTarget(p,si,now,targetOff);
     targetOff=tacticalSituationOffset(p,si,now,targetOff);
     targetOff=tacticalVariantOffset(p,si,now,targetOff);
     targetOff=stabilizeDrivingLine(p,si,targetOff);
     const humanDrive=humanDrivingAdjustment(p,si,now,targetOff);
     targetOff=humanDrive.off;
+    targetOff=startOpeningTarget(p,si,now,targetOff);
+    const unitAI=unitAdaptationOf(p);
+    // Unit identity bends the chosen racing line, but never overrides observer avoidance.
+    if(insideNow!==0 && cornerIntensity(si)>.045){
+      const unitApex=insideNow*half*Math.min(.995,.70+unitAI.fit*.22);
+      const ub=Math.max(0,Math.min(.24,(unitAI.apex-1)*1.8+.10));
+      targetOff=targetOff*(1-ub)+unitApex*ub;
+    }
     targetOff=pressureLineAdjustment(p,si,now,targetOff);
     if(now<p.shockAvoidUntil){
       targetOff=targetOff*.16+p.shockAvoidOffset*.84;
     }
 
-    let speedMul=humanDrive.speedMul;
+    let speedMul=humanDrive.speedMul*unitAI.pace;
     if(passPlan) speedMul*=passPlan.speedMul;
     if(clutchPlan) speedMul*=clutchPlan.speedMul;
     if(now<p.startLaunchUntil){
@@ -4031,7 +4216,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       if(needsClick && reactionReady){
         // Human-like imperfect click placement. Better control means less pointer error.
         // Error is tiny and continuous; it does not create random lane changes.
-        const err=(1-controlN)*(dangerActive?0.055:0.16);
+        const err=(1-controlN)*(dangerActive?0.070:0.205);
         const reach=Math.max(.82,Math.min(1.06,p.mouseReach||1));
         let mx=p.x+(tx-p.x)*reach+(Math.random()-.5)*err;
         let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
@@ -4045,10 +4230,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
         // nearby, allow a longer deliberate race click. As soon as anything enters
         // the personal field, fall back to the shorter v4.31 re-readable cadence.
         const clearForLongClick=!dangerActive && playerPerceivedObservers(p,21.5).length===0;
-        const maxClickDist=!dangerActive ? (clearForLongClick ? (10.0+controlN*1.45) : (8.25+controlN*1.05))
+        const unitClick=unitAI.click||1;
+        const maxClickDist=(!dangerActive ? (clearForLongClick ? (10.0+controlN*1.45) : (8.25+controlN*1.05))
           : dangerTier>=3 ? (6.75+controlN*.85)
           : dangerTier===2 ? (6.35+controlN*.82)
-          : (5.75+controlN*.76);
+          : (5.75+controlN*.76))*unitClick;
         if(clickD>maxClickDist){ mx=p.x+clickDx/clickD*maxClickDist; my=p.y+clickDy/clickD*maxClickDist; }
         const legalMouse=courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
@@ -4071,10 +4257,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const dangerMs=(92-reactionN*24+Math.random()*48)*dangerTempo;
         // v4.35 tiered judgment cadence. Escalation speeds decisions up; safe road
         // remains calm. This is cadence, not omniscience: v4.23 reaction gate still applies.
-        let cadence = dangerTier>=3 ? Math.max(48,dangerMs*.68)
+        const unitThink=unitAI.think||1;
+        let cadence = (dangerTier>=3 ? Math.max(48,dangerMs*.68)
           : dangerTier===2 ? Math.max(58,dangerMs*.84)
           : dangerTier===1 ? Math.max(72,dangerMs*1.02)
-          : calmMs;
+          : calmMs)*unitThink;
         if(p.mouseMode==='stop') cadence=Math.min(cadence,48+Math.random()*22);
         p.mouseNextThink=now+cadence;
         p.mouseCommandUntil=now+cadence+(p.mouseMode==='stop'?18:120);
@@ -4085,7 +4272,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let dx=tx-p.x, dy=ty-p.y;
     const d=Math.hypot(dx,dy) || 1;
     const ndx=dx/d, ndy=dy/d;
-    const steerBlend=Math.min(.24,.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06);
+    const steerBlend=Math.min(.25,(.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06)*(unitAI.steer||1));
     p.steerX += (ndx-p.steerX)*steerBlend;
     p.steerY += (ndy-p.steerY)*steerBlend;
     const steerLen=Math.hypot(p.steerX,p.steerY)||1;
@@ -6784,7 +6971,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==120)issues.push("옵저버120");
+    if(OBSERVER_COUNT!==100)issues.push("옵저버100");
     if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
