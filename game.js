@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.74";
+  const BUILD_ID = "v4.79";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2692,7 +2692,8 @@ function leaderLineDiscipline67(p,si){
     const macro=optimalRacingLine2Offset(p,si);
     // v4.68: leader discipline follows the shortest-inside refined route as well.
     const soloBase=cornerPhysics64Target(p,si,macro).off;
-    const solo=integratedFastLine74(p,si,soloBase);
+    const solo74=integratedFastLine74(p,si,soloBase);
+    const solo=raceLine79(p,si,solo74,false);
     const leadBattle=(rs.rank===1 && rs.nearestBehindGap<7.5) ||
                      (rs.rank===2 && rs.nearestAheadGap<7.5);
     return {rs,solo,leadBattle};
@@ -3425,7 +3426,66 @@ function chooseAvoidance(p,s,now){
   // Read the actual racer ahead, compare open left/right lanes and the next 2-3
   // corners, then commit to a pass corridor. Racers remain non-solid; this is
   // tactical route choice, not collision physics or rubber-band speed.
-  function overtakePlan(p,si,now){
+  
+  // v4.75-v4.79 INTEGRATED RACE AI
+  // 4.75 chase 2.0 / 4.76 overtake 2.0 / 4.77 side-by-side 2.0
+  // 4.78 rejoin 4.0 / 4.79 racing line 4.0.
+  //
+  // Fast-side calibration from actual map geometry:
+  // 7->5 o'clock: upper corridor, 3->9 o'clock: upper corridor,
+  // final 11->1 o'clock: lower corridor. Edge rows remain fully legal road.
+  function calibratedFastCorridor79(si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    let sign=0,strength=0;
+    // Segment lateral signs differ with travel direction.
+    // 0..5 travels right: negative lateral = screen-up.
+    if(idx<=5){ sign=-1; strength=.93; }
+    // 13..20 travels mostly left: positive lateral = screen-up.
+    else if(idx>=13 && idx<=20){ sign=1; strength=.94; }
+    // 28..32 travels right: positive lateral = screen-down.
+    else if(idx>=28 && idx<=32){ sign=1; strength=.955; }
+    if(!sign) return null;
+    return {off:sign*half*strength,sign,strength};
+  }
+
+  function raceLine79(p,si,baseOff,passActive=false){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    const calibrated=calibratedFastCorridor79(idx);
+    let target=baseOff;
+
+    if(calibrated){
+      // These long corridors have an obvious shortest screen-side line.
+      // Normal racing strongly commits to it; a genuine pass may deviate modestly.
+      const authority=passActive?.58:.94;
+      target=target*(1-authority)+calibrated.off*authority;
+    }
+
+    // 4.79 global anti-exterior rule: outside of the calibrated corridors,
+    // do not create a large lane excursion unless traffic really blocks the route.
+    const macro=integratedFastLine74(p,idx,cornerPhysics64Target(
+      p,idx,optimalRacingLine2Offset(p,idx)).off);
+    const maxDev=half*(passActive?.52:.26);
+    const d=target-macro;
+    if(Math.abs(d)>maxDev && !calibrated){
+      target=macro+Math.sign(d)*maxDev;
+    }
+    return clampRoadOffset(idx,target,p);
+  }
+
+  function chaseLine75(p,si,baseOff){
+    const rs=liveRaceSituation(p);
+    if(rs.rank<=1 || rs.nearestAheadGap>8.5) return baseOff;
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const fast=raceLine79(p,idx,baseOff,false);
+    // Never copy a slower opponent's lane. A chaser follows the map's fast line.
+    const urgency=Math.max(0,Math.min(1,(8.5-rs.nearestAheadGap)/8.5));
+    const authority=.72+urgency*.20;
+    return baseOff*(1-authority)+fast*authority;
+  }
+
+function overtakePlan(p,si,now){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
 
     if(now<p.passPlanUntil && p.passPlanMode){
@@ -3454,7 +3514,7 @@ function chooseAvoidance(p,s,now){
     }
 
     // Prefer the racer that is both close and actually occupying our intended line.
-    const baseLine=optimalRacingLine2Offset(p,si);
+    const baseLine=raceLine79(p,si,integratedFastLine74(p,si,cornerPhysics64Target(p,si,optimalRacingLine2Offset(p,si)).off),false);
     let chosen=null,bestTarget=1e9;
     for(const t of ahead){
       const laneOverlap=Math.abs(t.off-baseLine);
@@ -3476,7 +3536,7 @@ function chooseAvoidance(p,s,now){
     // commitment only after a genuinely useful pass lane has been found.
     const laneCandidates=[
       Math.max(-half*.96,Math.min(half*.96,baseLine)),
-      -half*.68, half*.68, -half*.42, half*.42
+      -half*.56, half*.56, -half*.34, half*.34
     ];
     let bestOff=baseLine,bestScore=1e9;
     for(const off of laneCandidates){
@@ -3503,7 +3563,7 @@ function chooseAvoidance(p,s,now){
     for(const t of traffic){
       const q=t.q;
       if(q.passPlanMode && q.passTargetId===target.index && Math.abs(q.passPlanOffset-bestOff)<1.15){
-        const alt=-Math.sign(bestOff||1)*Math.min(half*.88,Math.max(half*.50,Math.abs(bestOff)));
+        const alt=-Math.sign(bestOff||1)*Math.min(half*.62,Math.max(half*.34,Math.abs(bestOff)));
         if(passLaneScore65(p,si,alt,traffic,baseLine)<=bestScore+.55) bestOff=alt;
       }
     }
@@ -3631,9 +3691,9 @@ function chooseAvoidance(p,s,now){
 
     const candidates=[
       Math.max(-half*.97,Math.min(half*.97,soloLine)),
-      -half*.70, half*.70,
-      -half*.46, half*.46,
-      -half*.24, half*.24
+      -half*.56, half*.56,
+      -half*.38, half*.38,
+      -half*.20, half*.20
     ];
     let bestOff=soloLine;
     let bestScore=multiCarCandidateScore66(p,si,soloLine,traffic,soloLine);
@@ -3675,7 +3735,7 @@ function chooseAvoidance(p,s,now){
 
     p.multiCarLineMode=mode;
     p.multiCarLineOffset=bestOff;
-    p.multiCarLineUntil=now+(sideBySide.length?430:320)+Math.random()*180;
+    p.multiCarLineUntil=now+(sideBySide.length?560:300)+Math.random()*150;
     return {off:bestOff,mode,authority};
   }
 
@@ -4894,6 +4954,7 @@ function packContextOffset(p,si,now){
         const leadPass67=leaderLineDiscipline67(p,si);
         if(leadPass67.leadBattle) authority65=Math.min(authority65,.52);
         targetOff=targetOff*(1-authority65)+passPlan.off*authority65;
+        targetOff=raceLine79(p,si,targetOff,true);
       }
     }
 
@@ -4906,7 +4967,9 @@ function packContextOffset(p,si,now){
         // v4.70-v4.73 integrated fastest-line authority.
         const fast69=cornerPhysics64Target(p,si,optimalRacingLine2Offset(p,si)).off;
         const fast74=integratedFastLine74(p,si,fast69);
-        targetOff=targetOff*.08+fast74*.92;
+        const chase75=chaseLine75(p,si,fast74);
+        const fast79=raceLine79(p,si,chase75,false);
+        targetOff=targetOff*.035+fast79*.965;
       }
     }
 
@@ -4972,13 +5035,14 @@ function packContextOffset(p,si,now){
       }
       const blend=Math.max(0,Math.min(1,smooth*rejoinAuthority));
       // v4.63: rejoin the future optimal macro-line, not merely the nearest local lane.
-      const rejoin=optimalRacingLine2Offset(p,si);
+      const rejoinBase=cornerPhysics64Target(p,si,optimalRacingLine2Offset(p,si)).off;
+      const rejoin=raceLine79(p,si,integratedFastLine74(p,si,rejoinBase),false);
       const from=p.avoidRecoverOffset;
       targetOff=from*(1-blend)+rejoin*blend;
       // If the road is completely clear and nearly straight, don't carry a slow
       // avoidance lane for the full recovery timer. Snap back progressively faster.
-      if(aheadObs===0 && futureTurn<.035 && t>.34){
-        const fastBlend=Math.min(.88,.48+(t-.34)*.62+recoveryN*.08);
+      if(aheadObs===0 && futureTurn<.055 && t>.28){
+        const fastBlend=Math.min(.96,.66+(t-.28)*.72+recoveryN*.08);
         targetOff=targetOff*(1-fastBlend)+rejoin*fastBlend;
       }
     }
