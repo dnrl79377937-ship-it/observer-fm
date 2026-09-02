@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.91";
+  const BUILD_ID = "v4.92";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4964,7 +4964,41 @@ function packContextOffset(p,si,now){
   // that can be reached by ONE legal chord. This naturally creates long diagonals
   // across wide corridors and removes the old "straight, then 90-degree drop" shape.
   // No screenshot coordinates or hand-drawn line coordinates are encoded here.
-  function farthestVisibleFastTarget91(p,si){
+  
+  // v4.92 STRAIGHT-CORRIDOR PRIORITY
+  // If the racer is already travelling mainly horizontally and the same horizontal
+  // chord remains inside the survivable road corridor, keep going straight.
+  // This deliberately ignores an upcoming vertical route joint when that joint is
+  // slower than simply continuing across the legal horizontal road.
+  // No screenshot coordinates / hand-marked line coordinates are used.
+  function straightCorridorTarget92(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    let hx=p.steerX||segs[idx].ux, hy=p.steerY||segs[idx].uy;
+    let hl=Math.hypot(hx,hy)||1; hx/=hl; hy/=hl;
+
+    // Only activate when actual motion is clearly horizontal.
+    if(Math.abs(hx)<.82 || Math.abs(hx)<Math.abs(hy)*2.0) return null;
+    const dir=Math.sign(hx)||Math.sign(segs[idx].ux)||1;
+
+    // Search farthest same-Y point that is fully inside the normal survivable route.
+    // Use almost the lethal corridor width so legal one-line edge strips count as road.
+    const extra=Math.max(ROUTE_PLAN_EXTRA,DEATH_EDGE_EXTRA-.35);
+    let best=null;
+    for(let dist=72;dist>=10;dist-=2){
+      const x=p.x+dir*dist, y=p.y;
+      if(x<2.5 || x>MAP_W-2.5) continue;
+      if(lineStaysOnCourse(p.x,p.y,x,y,extra)){
+        best={x,y,dist};
+        break;
+      }
+    }
+    if(!best) return null;
+
+    // It must be meaningfully longer than a tiny local correction.
+    return best.dist>=16 ? best : null;
+  }
+
+function farthestVisibleFastTarget91(p,si){
     const idx=Math.max(0,Math.min(segs.length-1,si));
     let best=null;
     const maxLook=Math.min(segs.length-1,idx+8);
@@ -4997,6 +5031,11 @@ function packContextOffset(p,si,now){
     if(emergency) return {x:tx,y:ty};
 
     const idx=Math.max(0,Math.min(segs.length-1,si));
+
+    // v4.92: a long legal horizontal corridor beats any upcoming vertical route joint.
+    const straight92=straightCorridorTarget92(p,idx);
+    if(straight92) return {x:straight92.x,y:straight92.y};
+
     const vis=farthestVisibleFastTarget91(p,idx);
 
     // Prefer the farthest legal chord over local segment-joint targets.
@@ -5025,6 +5064,32 @@ function packContextOffset(p,si,now){
     }
 
     return {x,y};
+  }
+
+
+  function forwardRouteResync92(p){
+    const cur=Math.max(0,Math.min(segs.length-1,p.seg));
+    const cs=segs[cur];
+    const crx=p.x-cs.a[0], cry=p.y-cs.a[1];
+    const ca=Math.max(0,Math.min(cs.L,crx*cs.ux+cry*cs.uy));
+    const cqx=cs.a[0]+cs.ux*ca, cqy=cs.a[1]+cs.uy*ca;
+    const currentD2=(p.x-cqx)*(p.x-cqx)+(p.y-cqy)*(p.y-cqy);
+
+    let best={i:cur,d2:currentD2};
+    const hi=Math.min(segs.length-1,cur+8);
+    for(let i=cur+1;i<=hi;i++){
+      const s=segs[i],rx=p.x-s.a[0],ry=p.y-s.a[1];
+      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+      const qx=s.a[0]+s.ux*along,qy=s.a[1]+s.uy*along;
+      const dx=p.x-qx,dy=p.y-qy,d2=dx*dx+dy*dy;
+      const legalR=Math.max(2.0,widths[i]*ROAD_MARGIN)+1.0;
+      if(d2<best.d2 && d2<=legalR*legalR) best={i,d2};
+    }
+
+    // Only jump forward when the future segment is clearly the better physical match.
+    if(best.i>cur && (currentD2>9 ? best.d2<currentD2*.62 : best.d2<2.25)){
+      p.seg=best.i;
+    }
   }
 
 function updatePlayer(p, now, dt){
@@ -5715,6 +5780,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
+
+    // v4.92: if a legal straight chord bypassed a slower connector, synchronize the
+    // logical route segment to the future road the racer physically reached.
+    forwardRouteResync92(p);
 
     // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
     // Death uses the route-derived capsule union, not hand-written red coordinates.
