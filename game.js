@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.61";
+  const BUILD_ID = "v4.62";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -807,8 +807,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const styleBias=(id.apex-1)*.34+(id.pass-1)*.20-(id.safety-1)*.18;
         const signature=(p.openingLineBias||0)*.78+(p.routeBand||0)*.22+styleBias;
         const controlN=(p.stats.control-72)/27;
-        p.startLineTarget=Math.max(-half0*.92,Math.min(half0*.92,signature*half0));
-        p.startLineCommit=Math.max(.62,Math.min(1,.68+start*.13+reaction*.08+controlN*.07));
+        // v4.62 OPENING FAST-LINE: the start fan is no longer allowed to waste the
+        // long first approach on the slow/outside half. Read the first real corner
+        // from route geometry and place every racer in a small skill/personality band
+        // around that corner's fastest inside approach. Diversity remains, but it is
+        // diversity around a good racing line rather than random upper/lower spreading.
+        const openingSide=Math.sign(openingInsideBias(0))||1;
+        const openingSkill=Math.max(0,Math.min(1,((p.stats.routeReading+p.stats.insideLine+p.stats.cornering)/3-72)/27));
+        const microBand=Math.max(-.16,Math.min(.16,signature*.10+(p.index%3-1)*.018));
+        const fastStartNorm=Math.max(.64,Math.min(.94,.72+openingSkill*.14+start*.05+microBand));
+        p.startLineTarget=openingSide*half0*fastStartNorm;
+        p.startLineCommit=Math.max(.76,Math.min(1,.80+start*.08+reaction*.06+controlN*.05));
         p.startDecisionUntil=now+2050+start*330+reaction*170;
         p.startBurstPhase=Math.max(0,Math.min(1,skill));
 
@@ -1622,8 +1631,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // negative = lower/wider variant. This is a route choice, not random steering jitter.
     const identity=Math.max(-.72,Math.min(1,p.openingLineBias??.25));
     const strength=p.openingLineStrength||.9;
-    const signedCommit=(.48 + identity*.50)*strength;
-    return side*half*Math.max(-.18,Math.min(.998,commit*signedCommit));
+    // v4.62: personal opening identities now vary inside a fast corridor only.
+    // Even the widest archetype stays on the correct side of the opening approach.
+    const signedCommit=(.72 + identity*.12)*strength;
+    return side*half*Math.max(.58,Math.min(.998,commit*signedCommit));
   }
 
   function futureInsideBias(si){
@@ -4125,7 +4136,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const settle=Math.max(0,Math.min(1,(p.startDecisionUntil-now)/620));
     const blend=Math.min(.84,(.34+startN*.20+reactN*.10+controlN*.08)*(p.startLineCommit||.7)*1.24*ramp*Math.max(.48,settle));
     // Strong starters establish their chosen lane earlier; acceleration affects execution, not hidden pace.
-    const executed=p.startLineTarget*(.86+accelN*.10+controlN*.04);
+    let executed=p.startLineTarget*(.86+accelN*.10+controlN*.04);
+    // v4.62: while the first-corner optimizer is available, trust its topology-derived
+    // fast side more than the old personal opening lane. This specifically prevents
+    // a racer from choosing a visibly slower side on the long opening approach.
+    const openingFast=openingFastLineTarget(p,si);
+    if(openingFast!=null){
+      const fastTrust=.82+Math.max(0,Math.min(1,(p.stats.routeReading-72)/27))*.10;
+      executed=executed*(1-fastTrust)+openingFast*fastTrust;
+    }
     return targetOff*(1-blend)+executed*blend;
   }
 
@@ -4297,13 +4316,28 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!avoid && now<p.avoidRecoverUntil){
       const duration=Math.max(430,p.avoidRecoverUntil-(p.avoidRecoverStart||now));
       const t=Math.max(0,Math.min(1,(now-(p.avoidRecoverStart||now))/duration));
-      // Three-stage feel: hold escape briefly, then settle onto the
-      // normal optimized racing line without a sudden steering snap.
-      const smooth=t<.22 ? t*.32 : t<.72 ? .07+(t-.22)*1.20 : .67+(t-.72)*1.18;
-      const blend=Math.max(0,Math.min(1,smooth));
+      // v4.62 SAFE REJOIN 2.0: recover toward the optimized line only as quickly as
+      // the road ahead permits. Clear straights rejoin quickly; an approaching corner
+      // or visible observer chain keeps the current safe line until the geometry settles.
+      const recoveryN=Math.max(0,Math.min(1,(p.stats.recovery-72)/27));
+      const routeReadN=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+      const aheadObs=playerPerceivedObservers(p,22.0).length;
+      let futureTurn=cornerIntensity(si);
+      for(let rk=1;rk<=3;rk++) futureTurn=Math.max(futureTurn,cornerIntensity(Math.min(segs.length-1,si+rk))*(1-rk*.12));
+      const clearFactor=aheadObs===0?1:(aheadObs===1?.68:.38);
+      const cornerFactor=Math.max(.30,1-futureTurn*2.25);
+      const smooth=t<.18 ? t*.25 : t<.68 ? .045+(t-.18)*1.28 : .685+(t-.68)*.98;
+      const rejoinAuthority=Math.max(.12,Math.min(1,clearFactor*cornerFactor*(.88+recoveryN*.10+routeReadN*.08)));
+      const blend=Math.max(0,Math.min(1,smooth*rejoinAuthority));
       const rejoin=plannedRacingOffset(p,si,now);
       const from=p.avoidRecoverOffset;
       targetOff=from*(1-blend)+rejoin*blend;
+      // If the road is completely clear and nearly straight, don't carry a slow
+      // avoidance lane for the full recovery timer. Snap back progressively faster.
+      if(aheadObs===0 && futureTurn<.035 && t>.34){
+        const fastBlend=Math.min(.88,.48+(t-.34)*.62+recoveryN*.08);
+        targetOff=targetOff*(1-fastBlend)+rejoin*fastBlend;
+      }
     }
     // v4.10 EXTREME INSIDE: a deliberate high-risk shortest-line gamble.
     // It is applied after ordinary avoidance planning so committed racers do not
