@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.00";
+  const BUILD_ID = "v5.01";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5331,6 +5331,23 @@ function farthestVisibleFastTarget91(p,si){
     if(best && best.i>cur+1) p.seg=best.i;
   }
 
+
+  // v5.01 HORIZONTAL CENTERLINE LOCK
+  function horizontalCenterLock501(p,si,now){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const next=segs[Math.min(segs.length-1,idx+1)];
+    const horizontal=Math.abs(s.ux)>=.88;
+    const nextCompatible=!next || Math.abs(next.ux)>=.72;
+    const emergency=
+      now<(p.hardRouteLockUntil||0) ||
+      now<(p.routeBreakCombatUntil||0) ||
+      (p.liveEvadeDanger||0)>.18 ||
+      !!p.liveEvadeThreat;
+    if(!horizontal || !nextCompatible || emergency) return false;
+    return playerPerceivedObservers(p,10.5).length===0;
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -5786,9 +5803,18 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
+    // v5.01 FINAL AUTHORITY: calm horizontal road = route centerline.
+    const centerLock501=horizontalCenterLock501(p,si,now);
+    if(centerLock501){
+      targetOff=0;
+      p.desiredOffset += (0-p.desiredOffset)*Math.min(1,dt*.020);
+    }
+
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
     const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.092,dt*(.00218+steerControl*.00050+steerTurn*.00048));
-    p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
+    if(!centerLock501){
+      p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
+    }
 
 
     // v5.00 NORMAL RACING TARGET — restore the proven v3-style steering model.
@@ -5796,15 +5822,21 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // No multi-segment optimized lookahead, no shortcut layer, no horizontal-lock layer,
     // and no v4.91 re-targeting during calm racing.
     const next=segs[Math.min(segs.length-1,si+1)];
-    let tx=s.b[0]+s.nx*p.desiredOffset;
-    let ty=s.b[1]+s.ny*p.desiredOffset;
+    const centerTarget501=horizontalCenterLock501(p,si,now);
+    const routeOff501=centerTarget501?0:p.desiredOffset;
+    let tx=s.b[0]+s.nx*routeOff501;
+    let ty=s.b[1]+s.ny*routeOff501;
 
     if(next && si<segs.length-1){
       const look=0.24;
-      const nx=next.b[0]+next.nx*p.desiredOffset;
-      const ny=next.b[1]+next.ny*p.desiredOffset;
-      const candX=tx*(1-look)+nx*look;
-      const candY=ty*(1-look)+ny*look;
+      const nx=next.b[0]+next.nx*routeOff501;
+      const ny=next.b[1]+next.ny*routeOff501;
+      let candX=tx*(1-look)+nx*look;
+      let candY=ty*(1-look)+ny*look;
+      if(centerTarget501 && Math.abs(next.ux)<.80){
+        candX=tx;
+        candY=ty;
+      }
 
       // Restricted red zones are planning vetoes only. If the 24% look-ahead would
       // cross one, keep the current-segment target instead of inventing a detour.
@@ -5881,6 +5913,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const reach=Math.max(.82,Math.min(1.06,p.mouseReach||1));
         let mx=p.x+(tx-p.x)*reach+(Math.random()-.5)*err;
         let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
+        if(!dangerActive && horizontalCenterLock501(p,si,now)){
+          my=ty;
+        }
         // v5.00: calm-racing mouse clicks consume the v3-style planner target directly.
         // Do not run v4.90~v4.95 re-targeting layers here.
         // v4.31 shorter human clicks: reduce the frequency of long screen-spanning
