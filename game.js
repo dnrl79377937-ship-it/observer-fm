@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.7";
+  const BUILD_ID = "v4.59.8";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2078,11 +2078,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const visualRouteBreak=!!routeBreakObserver && routeBreakScore>.075;
     if(visualRouteBreak){
       const rid=routeBreakObserver.id;
-      if(p.routeBreakThreat!==rid || now>(p.routeBreakRefreshAt||0)){
+      // v4.59.8 COMMITTED ESCAPE: visual contact may break the race line once,
+      // but it must NOT keep cancelling a good escape every ~125ms. While a chosen
+      // corridor is committed, hold that mouse command unless a true emergency appears.
+      const committed=now<(p.committedEscapeUntil||0);
+      if(!committed && (p.routeBreakThreat!==rid || now>(p.routeBreakRefreshAt||0))){
         p.routeBreakThreat=rid;
         p.routeBreakForceClick=true;
-        p.routeBreakRefreshAt=now+125+(1-react)*70;
-        p.routeBreakCombatUntil=now+1050+pred*320+avoid*240;
+        p.routeBreakRefreshAt=now+420+(1-react)*90;
+        p.routeBreakCombatUntil=now+1180+pred*300+avoid*220;
         p.mouseNextThink=Math.min(p.mouseNextThink||now,now+18);
         p.mouseCommandUntil=Math.min(p.mouseCommandUntil||now,now+18);
       }
@@ -2199,6 +2203,28 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const predictive=basePredictive && (!leaderNow || visualRouteBreak || finalDanger>.090 || bestT<3.82 || clusterNow.frontCount>=2); // v4.59.6 leader also abandons a held line on relevant visual contact
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
+
+    // v4.59.8 COMMITTED ESCAPE AI: once a safe corridor has been chosen, execute it.
+    // Do not oscillate between every newly perceived observer. Only a point-blank
+    // collision/real box is allowed to break the commitment early.
+    if(now<(p.committedEscapeUntil||0) && Number.isFinite(p.committedEscapeOffset)){
+      const hardOverride=boxedNow || nearest<1.62 || bestT<.26 || finalDanger>1.82;
+      const legalSeg=Math.min(p.seg,segs.length-1);
+      const cx=p.x+s.ux*6.6+s.nx*p.committedEscapeOffset;
+      const cy=p.y+s.uy*6.6+s.ny*p.committedEscapeOffset;
+      const stillLegal=courseContainsPoint(cx,cy,ROUTE_PLAN_EXTRA*.70) && lineStaysOnCourse(p.x,p.y,cx,cy,ROUTE_PLAN_EXTRA*.76);
+      if(stillLegal && !hardOverride){
+        p.liveEvadeOffset=p.committedEscapeOffset;
+        p.liveEvadeSide=p.committedEscapeSide||p.liveEvadeSide||0;
+        p.liveEvadeSpeed=p.committedEscapeSpeed||.995;
+        p.liveEvadeAction='commit';
+        p.liveEvadeThreat=p.committedEscapeThreat??threatId;
+        p.liveEvadeUntil=Math.max(p.liveEvadeUntil||0,p.committedEscapeUntil);
+        p.liveEvadeNextThink=Math.max(p.liveEvadeNextThink||0,p.committedEscapeUntil-70);
+        return {off:p.liveEvadeOffset,speedMul:p.liveEvadeSpeed,danger:p.liveEvadeDanger,side:p.liveEvadeSide};
+      }
+      if(!stillLegal || hardOverride) p.committedEscapeUntil=0;
+    }
 
     // v4.38 ADAPTIVE RE-JUDGMENT: a committed human dodge is not blind. If the
     // tracked observer materially changes its perceived heading/speed, or the predicted
@@ -2366,6 +2392,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           : best.kind==='spin' ? 300+Math.random()*120
           : (sparseField?820:560)+Math.random()*(sparseField?260:230);
         p.liveEvadeUntil=now+hold;
+        // v4.59.8: a forward diagonal/wide breakout is a real committed mouse move.
+        // Hold it long enough to visibly clear the obstacle field; do not re-pick a
+        // different observer every few frames. Skill changes the hold modestly.
+        if(best.kind==='diag' || best.kind==='wide' || best.kind==='breakout'){
+          const commitMs=(sparseField?760:650)+avoid*150+pred*120+ctrl*80+Math.random()*110;
+          p.committedEscapeUntil=now+commitMs;
+          p.committedEscapeOffset=best.off;
+          p.committedEscapeSide=best.side||openSide;
+          p.committedEscapeSpeed=Math.max(.94,best.spd);
+          p.committedEscapeThreat=threatId;
+          p.liveEvadeUntil=Math.max(p.liveEvadeUntil,p.committedEscapeUntil);
+          p.liveEvadeNextThink=Math.max(p.liveEvadeNextThink,p.committedEscapeUntil-70);
+        }
         // v4.57 EVADE CHAIN: keep context from first dodge through the next threat
         // and recovery. This gives detect -> dodge -> re-read -> optional second dodge
         // -> rejoin one continuous human-looking control sequence.
@@ -4536,7 +4575,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===1 ? Math.max(72,dangerMs*1.02)
           : calmMs)*unitThink;
         // v4.59.5: keep v4.59.4 click reach, but hold a clean-road command slightly longer.
-        if(now<(p.routeBreakCombatUntil||0)) cadence=Math.min(cadence,52+Math.random()*24);
+        if(now<(p.committedEscapeUntil||0)) cadence=Math.max(cadence,185+Math.random()*70);
+        else if(now<(p.routeBreakCombatUntil||0)) cadence=Math.min(cadence,105+Math.random()*45);
         if(dangerTier===0 && playerPerceivedObservers(p,21.5).length===0) cadence*=1.10;
         if(p.mouseMode==='stop') cadence=Math.min(cadence,48+Math.random()*22);
         p.mouseNextThink=now+cadence;
