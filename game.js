@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.04";
+  const BUILD_ID = "v5.05";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -159,27 +159,21 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }));
 
   // Centerline based on the user's supplied map.
-  // v5.04 ROUTE GEOMETRY FIX
-  // The two broad horizontal corridors are represented as actual horizontal centerlines.
-  // Previous points encoded a large diagonal/downward descent inside the middle corridor,
-  // so every steering algorithm eventually followed that false geometry.
   const route = [
     [21,158],[44,158],[73,158],[104,158],[130,157],[143,151],
-    [148,139],[148,121],[147,103],
-    // 3 -> 9 o'clock: enter smoothly, then run straight across the road center.
-    [142,101],[132,101],[118,101],[104,101],[89,101],[73,101],[54,101],[36,101],[23,101],
-    [20,94],[20,78],[20,61],[21,43],[27,28],[40,20],[57,18],[70,19],[78,26],
-    // 11 -> 1 o'clock: one continuous horizontal centerline to the finish side.
-    [81,35],[93,35],[111,35],[130,35],[145,35],[154,35]
+    [148,139],[148,121],[147,103],[139,91],[127,85],[111,83],
+    [101,88],[98,99],[89,105],[73,108],[54,108],[36,108],[23,105],
+    [20,94],[20,78],[20,61],[21,43],[27,28],[40,20],[57,18],
+    [70,19],[78,26],[81,34],[93,36],[111,35],[130,34],[145,34],[154,34]
   ];
 
   // Tuned road half widths. We keep controls constrained to the visible road.
-  const widths = route.map((pt, i) => {
-    const y=pt[1];
-    if(y>=145) return 9.5;                 // start/bottom corridor
-    if(y>=94 && y<=108) return 8.2;        // middle horizontal corridor
-    if(y<=42 && pt[0]>=76) return 7.8;     // final/top horizontal corridor
-    return 7.0;                            // connecting bends/vertical sections
+  const widths = route.map((_, i) => {
+    if (i < 6) return 9.5;
+    if (i < 13) return 7.0;
+    if (i < 21) return 8.2;
+    if (i < 28) return 7.0;
+    return 7.8;
   });
 
   const segs = [];
@@ -1224,6 +1218,44 @@ function courseContainsPoint(x,y,extra=0){
       if(!courseContainsPoint(x1+(x2-x1)*t,y1+(y2-y1)*t,extra)) return false;
     }
     return true;
+  }
+
+
+  // v5.05 HORIZONTAL TARGET PRESERVER
+  // On calm horizontal travel, never let courseAwareTarget's desiredOffset fallback
+  // replace a center/forward target with a vertical lane target.
+  function horizontalTarget505(p,si,tx,ty){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    if(Math.abs(s.ux)<.88) return null;
+
+    // Prefer the requested forward target when its endpoint is ordinary road.
+    // Red zones remain a planning veto; if they reject the chord, fall back ONLY
+    // to the current segment center endpoint, never to p.desiredOffset.
+    if(!inForbidden96(tx,ty) &&
+       !lineHitsForbidden96(p.x,p.y,tx,ty) &&
+       lineStaysOnCourse(p.x,p.y,tx,ty,ROUTE_PLAN_EXTRA)){
+      return {x:tx,y:ty};
+    }
+
+    const cx=s.b[0], cy=s.b[1];
+    if(!inForbidden96(cx,cy) &&
+       !lineHitsForbidden96(p.x,p.y,cx,cy) &&
+       lineStaysOnCourse(p.x,p.y,cx,cy,ROUTE_PLAN_EXTRA)){
+      return {x:cx,y:cy};
+    }
+
+    // If the red-zone planner itself is what blocks an otherwise normal road chord,
+    // keep moving forward along the current horizontal segment rather than dropping.
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const ahead=Math.min(s.L,along+Math.max(4.5,Math.min(11.0,s.L-along)));
+    const fx=s.a[0]+s.ux*ahead;
+    const fy=s.a[1]+s.uy*ahead;
+    if(courseContainsPoint(fx,fy,ROUTE_PLAN_EXTRA)){
+      return {x:fx,y:fy};
+    }
+    return {x:tx,y:ty};
   }
 
   function courseAwareTarget(p,si,tx,ty){
@@ -5831,7 +5863,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
     const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.092,dt*(.00218+steerControl*.00050+steerTurn*.00048));
-    if(!centerLock501){
+    if(!centerLock501 && !horizontalHold503(p,si)){
       p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
     }
 
@@ -5881,6 +5913,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
       let ey=p.y+s.uy*escapeAhead+s.ny*p.lockedEscapeOffset;
       const legalEscape=courseAwareTarget(p,si,ex,ey);
       tx=legalEscape.x; ty=legalEscape.y;
+    }
+
+    // v5.05: after all planner validation, horizontal calm travel gets one last
+    // geometry-only preservation pass before virtual mouse logic can consume it.
+    if(horizontalHold503Active && !liveEvade && now>=(p.hardRouteLockUntil||0)){
+      const kept505=horizontalTarget505(p,si,tx,ty);
+      if(kept505){ tx=kept505.x; ty=kept505.y; }
     }
 
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
@@ -5951,7 +5990,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===2 ? (6.35+controlN*.82)
           : (5.75+controlN*.76))*unitClick;
         if(clickD>maxClickDist){ mx=p.x+clickDx/clickD*maxClickDist; my=p.y+clickDy/clickD*maxClickDist; }
-        const legalMouse=courseAwareTarget(p,si,mx,my);
+        const horizontalMouse505=(!dangerActive && horizontalHold503Active)
+          ? horizontalTarget505(p,si,mx,my)
+          : null;
+        const legalMouse=horizontalMouse505 || courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
         const prevMouseX=p.mouseTargetX??p.x, prevMouseY=p.mouseTargetY??p.y;
         const nextMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : (now<(p.hardRouteLockUntil||0)?'route-lock':'race');
@@ -6010,7 +6052,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         // The road itself is horizontal here; do not carry any stale vertical heading.
         const dir=Math.sign(s.ux)||1;
         const centerErr=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-        if(Math.abs(centerErr)<0.55){
+        if(Math.abs(centerErr)<1.15){
           moveDirX=dir;
           moveDirY=0;
         }
