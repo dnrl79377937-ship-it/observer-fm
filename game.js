@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.3";
+  const BUILD_ID = "v4.59.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -100,7 +100,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   ];
 
   // v2.21: stronger behavioral identity; never changes raw base speed.
-  // v4.59.3 PRECISION SURVIVAL: early certain dodge, persistent side commitment, slower safe rejoin, less pointless over-avoid.
+  // v4.59.4 FUTURE SAFE CORRIDOR: prefer a lane that stays open 3–4s ahead, reduce stop-stutter, and slightly lengthen clear-road clicks.
   // v4.46 RACE-SITUATION AI: leader/chaser/clutch behavior uses Aggression, Risk Control and Pressure.
   // v4.45 PERSONALITY AI 2.0: persistent styles now alter line commitment, safety margin,
   // click rhythm and rejoin patience. They never create random deaths or hidden speed boosts.
@@ -997,7 +997,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const obsForward=ovx*s.ux+ovy*s.uy, obsLateral=Math.abs(ovx*s.nx+ovy*s.ny);
         const crossing=obsLateral>Math.abs(obsForward)*.72 && obsLateral>.18;
         const oneSidePressure=Math.abs(leftBlock-rightBlock)>=1;
-        const stopWeight=.0012*leaderControlCalm; // v4.56 nearly invisible: no stuttery stop spam
+        const stopWeight=.00022*leaderControlCalm; // v4.59.4 virtually eliminate stop-stutter
         const spinWeight=(oneSidePressure && sideEscapeOpen ? .082 : .030)*packControlCalm*leaderControlCalm;
         const diagonalWeight=(crossing?.98:1.30)*packControlCalm;
         const backWeight=((!sideEscapeOpen && immediateAlong<.92 && leftBlock>0 && rightBlock>0) ? .0065 : .00008)*leaderControlCalm;
@@ -1047,7 +1047,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           const nlat=Math.abs((nearMem?.vx||0)*s.nx+(nearMem?.vy||0)*s.ny);
           const nfwd=Math.abs((nearMem?.vx||0)*s.ux+(nearMem?.vy||0)*s.uy);
           const nearCross=nlat>nfwd*.72 && nlat>.18;
-          const nearMode=rr<(nearCross?.70:.84)?"diagonal":rr<(nearCross?.705:.842)?"stopcon":rr<(nearCross?.94:.935)?"zigzag":"spin360";
+          const nearMode=rr<(nearCross?.715:.855)?"diagonal":rr<(nearCross?.716:.856)?"stopcon":rr<(nearCross?.945:.94)?"zigzag":"spin360";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -1068,7 +1068,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const flat=Math.abs((farMem?.vx||0)*s.nx+(farMem?.vy||0)*s.ny);
       const ffwd=Math.abs((farMem?.vx||0)*s.ux+(farMem?.vy||0)*s.uy);
       const farCross=flat>ffwd*.72 && flat>.18;
-      const mode=rr<(farCross?.72:.84)?"diagonal":rr<(farCross?.721:.841)?"stopcon":rr<(farCross?.95:.94)?"zigzag":"spin360";
+      const mode=rr<(farCross?.735:.855)?"diagonal":rr<(farCross?.7355:.8555)?"stopcon":rr<(farCross?.955:.945)?"zigzag":"spin360";
       let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -1906,8 +1906,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const predN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
     const avoidN=Math.max(0,Math.min(1,(p.stats.avoidance-72)/27));
     const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
-    const horizon=2.35+predN*.75;
-    const steps=12+Math.round(predN*4);
+    const horizon=3.10+predN*.88; // v4.59.4: look farther down-road before committing to the nominal fastest line
+    const steps=15+Math.round(predN*4);
     const startOff=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
     let minClear=99,risk=0,closingRisk=0,coursePenalty=0,pinchRisk=0;
     for(let k=1;k<=steps;k++){
@@ -1923,7 +1923,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const ox=predictedObserverX(o,t), oy=predictedObserverY(o,t);
         const d=Math.hypot(x-ox,y-oy);
         minClear=Math.min(minClear,d);
-        const safe=2.45+avoidN*.38+predN*.28;
+        const safe=2.62+avoidN*.42+predN*.31;
         if(d<5.2){ nearCount++; nearPressure+=Math.max(0,5.2-d); }
         if(d<safe){
           const q=(safe-d)/safe;
@@ -1937,9 +1937,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(nearCount>=2) pinchRisk += nearPressure*(nearCount-1)*(.20+(1-t/horizon)*.16);
     }
     // Prefer a sustained safety buffer. Small detours are cheap when they buy real space.
-    const targetClear=2.85+avoidN*.38+predN*.32;
+    const targetClear=3.08+avoidN*.44+predN*.36; // v4.59.4 slightly wider sustained margin
     const clearPenalty=minClear<targetClear?(targetClear-minClear)*(4.8+avoidN*2.2):0;
-    const detour=Math.abs(off-p.desiredOffset)*(.022+(1-controlN)*.018);
+    const detour=Math.abs(off-p.desiredOffset)*(.017+(1-controlN)*.014); // v4.59.4 survival buys a little more route distance
     return {score:risk+closingRisk+pinchRisk+coursePenalty+clearPenalty+detour,minClear,coursePenalty,pinchRisk};
   }
 
@@ -2075,7 +2075,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let danger=0,nearest=99,threatId=-1,bestT=99,leftRisk=0,rightRisk=0;
     // Predict only a short human-readable horizon. We use the observer's visible motion,
     // not hidden route knowledge. Higher prediction skill samples a little farther ahead.
-    const horizon=2.05+pred*1.55; // v4.52: read converging paths earlier without reacting to mere proximity
+    const horizon=2.30+pred*1.70; // v4.59.4: earlier forward-corridor read, still trajectory-gated
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
@@ -2090,7 +2090,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const tc=Math.max(0,Math.min(horizon,-(dx*rvx+dy*rvy)/rv2));
         const cx=dx+rvx*tc, cy=dy+rvy*tc;
         const cpa=Math.hypot(cx,cy);
-        const corridor=(2.18+avoid*.72+pred*.38)*(sparseField?1.28:1.08);
+        const corridor=(2.34+avoid*.76+pred*.42)*(sparseField?1.30:1.10); // v4.59.4 wider future-safe corridor
         if(tc>.08 && cpa<corridor){
           const conf=o.confidence==null?1:o.confidence;
           // v4.52: reward a stable closing read. An observer can be far away, but if
@@ -2112,7 +2112,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
         const px=p.x+s.ux*p.speed*t,py=p.y+s.uy*p.speed*t;
         const sep=Math.hypot(px-ox,py-oy);
-        const warn=(2.55+avoid*.62+pred*.22)*(sparseField?1.25:1.06);
+        const warn=(2.72+avoid*.66+pred*.26)*(sparseField?1.27:1.08);
         if(sep<warn){
           const w=(warn-sep)/warn*(1.20-t/horizon*.34);
           danger+=w;
@@ -2149,10 +2149,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
     // v4.43 NO_EVADE/LATE_REACTION fix: a readable converging path should trigger a
     // committed dodge earlier, while non-converging nearby observers still do nothing.
-    const basePredictive=finalDanger>(sparseField?.046:.094) && bestT<(sparseField?4.45:3.92); // v4.59.2 survival-first earlier commit
+    const basePredictive=finalDanger>(sparseField?.040:.086) && bestT<(sparseField?4.75:4.18); // v4.59.4 earlier corridor commitment when collision is genuinely developing
     // v4.59: leader pace remains sacred for weak reads, but a genuine converging
     // multi-observer lane gets avoidance authority before it becomes an emergency.
-    const predictive=basePredictive && (!leaderNow || finalDanger>.105 || bestT<3.55 || clusterNow.frontCount>=2); // v4.59.2 leader gives up a little optimal line to preserve survival
+    const predictive=basePredictive && (!leaderNow || finalDanger>.090 || bestT<3.82 || clusterNow.frontCount>=2); // v4.59.4 leader yields the fast line sooner for a real future collision
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -2240,10 +2240,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         {off:current+openSide*half*.90*evadeWidth,spd:tier===3?.955:.982,side:openSide,kind:'wide'},
         {off:current-openSide*half*.34*evadeWidth,spd:1.00,side:-openSide,kind:'alt'},
         {off:current+openSide*half*.30,spd:.96,side:openSide,kind:'zig'},
-        {off:current+openSide*half*.22,spd:.91,side:openSide,kind:'spin'},
-        {off:current+openSide*half*.08,spd:.10,side:openSide,kind:'stop'}
+        {off:current+openSide*half*.22,spd:.91,side:openSide,kind:'spin'}
       ];
-      if(emergency && bestT<.34 && bothSidesBusy){
+      // v4.59.4: STOP is no longer part of the normal palette. Only a virtually
+      // closed, imminent box may use one tiny stop tap; otherwise keep flowing.
+      if(emergency && bestT<.22 && bothSidesBusy && clusterNow.closeCount>=2){
+        candidates.push({off:current+openSide*half*.08,spd:.10,side:openSide,kind:'stop'});
+      }
+      if(emergency && bestT<.30 && bothSidesBusy){
         candidates.push({off:current+openSide*half*.16,spd:-.075,side:openSide,kind:'back'});
       }
       let best=null;
@@ -2254,7 +2258,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const corridor=scoreEscapeCorridor(p,s,off,c.spd,nearby);
         // v4.53: combine immediate rollout + future path + sustained corridor safety.
         // A direction that looks empty for one instant but closes a moment later loses.
-        let score=r.score + future.score*1.18 + corridor.score*1.34;
+        let score=r.score + future.score*1.14 + corridor.score*1.52; // v4.59.4 sustained 3–4s corridor matters more than raw shortest-line pace
         // v4.59 DEATH AI FINAL: survival beats cleverness. Penalize candidates that
         // are only briefly safe but collapse across the next observer wave.
         const collapseClear=Math.min(r.minClear,future.minClear,corridor.minClear);
@@ -2265,7 +2269,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
         // free road to take a cleaner diagonal, so a low-clearance candidate pays heavily.
         if(sparseField){
-          const sparseClear=3.28+avoid*.42+pred*.32; // v4.59.3: one readable observer gets a visibly clean pass, not a skim
+          const sparseClear=3.48+avoid*.46+pred*.36; // v4.59.4: one observer still gets a generous, obvious pass
           if(future.minClear<sparseClear) score += (sparseClear-future.minClear)*12.5;
           if(r.minClear<sparseClear*.82) score += (sparseClear*.82-r.minClear)*10.0;
           if(c.kind==='diag') score-=.72;
@@ -4446,12 +4450,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const clickDx=mx-p.x, clickDy=my-p.y, clickD=Math.hypot(clickDx,clickDy)||1;
         // v4.35 tiered click reach: safe road stays relaxed, watch uses short
         // corrections, danger/emergency use decisive but still bounded escape clicks.
-        // v4.36 clear-road reach: when the racer currently perceives no observer
+        // v4.59.4 clear-road reach: when the racer currently perceives no observer
         // nearby, allow a longer deliberate race click. As soon as anything enters
         // the personal field, fall back to the shorter v4.31 re-readable cadence.
         const clearForLongClick=!dangerActive && playerPerceivedObservers(p,21.5).length===0;
         const unitClick=unitAI.click||1;
-        const maxClickDist=(!dangerActive ? (clearForLongClick ? (10.0+controlN*1.45) : (8.25+controlN*1.05))
+        const maxClickDist=(!dangerActive ? (clearForLongClick ? (10.35+controlN*1.50) : (8.25+controlN*1.05))
           : dangerTier>=3 ? (6.75+controlN*.85)
           : dangerTier===2 ? (6.35+controlN*.82)
           : (5.75+controlN*.76))*unitClick;
