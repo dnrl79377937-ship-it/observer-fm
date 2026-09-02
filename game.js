@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.92";
+  const BUILD_ID = "v4.93";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4971,31 +4971,61 @@ function packContextOffset(p,si,now){
   // This deliberately ignores an upcoming vertical route joint when that joint is
   // slower than simply continuing across the legal horizontal road.
   // No screenshot coordinates / hand-marked line coordinates are used.
-  function straightCorridorTarget92(p,si){
+  
+  // v4.93 PERSISTENT MACRO-STRAIGHT
+  // Once a long legal horizontal chord is found, KEEP that target even if the logical
+  // route index temporarily advances into a vertical connector. The hold ends only
+  // when the racer physically reaches the far horizontal road or a true emergency occurs.
+  function discoverMacroStraight93(p,si){
     const idx=Math.max(0,Math.min(segs.length-1,si));
-    let hx=p.steerX||segs[idx].ux, hy=p.steerY||segs[idx].uy;
-    let hl=Math.hypot(hx,hy)||1; hx/=hl; hy/=hl;
+    const s=segs[idx];
 
-    // Only activate when actual motion is clearly horizontal.
-    if(Math.abs(hx)<.82 || Math.abs(hx)<Math.abs(hy)*2.0) return null;
-    const dir=Math.sign(hx)||Math.sign(segs[idx].ux)||1;
+    // Use route geometry, NOT current steer. This prevents an already-started bad turn
+    // from disabling the correction.
+    if(Math.abs(s.ux)<.78 || Math.abs(s.ux)<Math.abs(s.uy)*1.75) return null;
+    const dir=Math.sign(s.ux)||1;
 
-    // Search farthest same-Y point that is fully inside the normal survivable route.
-    // Use almost the lethal corridor width so legal one-line edge strips count as road.
-    const extra=Math.max(ROUTE_PLAN_EXTRA,DEATH_EDGE_EXTRA-.35);
+    // Scan much farther than v4.92. The user's long 3->9 / 11->1 corridors span
+    // many route segments, so a short 72-unit probe was insufficient.
+    const extra=DEATH_EDGE_EXTRA-.18;
     let best=null;
-    for(let dist=72;dist>=10;dist-=2){
+    for(let dist=138;dist>=18;dist-=2){
       const x=p.x+dir*dist, y=p.y;
       if(x<2.5 || x>MAP_W-2.5) continue;
       if(lineStaysOnCourse(p.x,p.y,x,y,extra)){
-        best={x,y,dist};
+        best={x,y,dist,dir};
         break;
       }
     }
-    if(!best) return null;
+    return best && best.dist>=24 ? best : null;
+  }
 
-    // It must be meaningfully longer than a tiny local correction.
-    return best.dist>=16 ? best : null;
+  function macroStraightTarget93(p,si,now,emergency=false){
+    // A real observer emergency may break the straight hold immediately.
+    if(emergency){
+      p.macroStraight93Until=0;
+      return null;
+    }
+
+    // Continue an already committed straight until physically near its endpoint.
+    if((p.macroStraight93Until||0)>now && Number.isFinite(p.macroStraight93X)){
+      const dx=p.macroStraight93X-p.x,dy=p.macroStraight93Y-p.y;
+      const ahead=(p.macroStraight93Dir||1)*dx;
+      if(Math.hypot(dx,dy)>3.0 && ahead>1.2){
+        return {x:p.macroStraight93X,y:p.macroStraight93Y,held:true};
+      }
+      p.macroStraight93Until=0;
+    }
+
+    const found=discoverMacroStraight93(p,si);
+    if(!found) return null;
+
+    // Persist across logical vertical connector segments. Timeout is only a fail-safe.
+    p.macroStraight93X=found.x;
+    p.macroStraight93Y=found.y;
+    p.macroStraight93Dir=found.dir;
+    p.macroStraight93Until=now+5200;
+    return {x:found.x,y:found.y,held:true};
   }
 
 function farthestVisibleFastTarget91(p,si){
@@ -5028,13 +5058,17 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function noOrthogonalDrop91(p,si,tx,ty,emergency=false){
-    if(emergency) return {x:tx,y:ty};
+    if(emergency){
+      p.macroStraight93Until=0;
+      return {x:tx,y:ty};
+    }
 
     const idx=Math.max(0,Math.min(segs.length-1,si));
 
-    // v4.92: a long legal horizontal corridor beats any upcoming vertical route joint.
-    const straight92=straightCorridorTarget92(p,idx);
-    if(straight92) return {x:straight92.x,y:straight92.y};
+    // v4.93: once a long legal horizontal macro-line is available, keep it across
+    // any intermediate vertical connector segments instead of reconsidering every frame.
+    const straight93=macroStraightTarget93(p,idx,performance.now(),false);
+    if(straight93) return {x:straight93.x,y:straight93.y};
 
     const vis=farthestVisibleFastTarget91(p,idx);
 
@@ -5067,29 +5101,21 @@ function farthestVisibleFastTarget91(p,si){
   }
 
 
-  function forwardRouteResync92(p){
+  
+  function forwardRouteResync93(p){
     const cur=Math.max(0,Math.min(segs.length-1,p.seg));
-    const cs=segs[cur];
-    const crx=p.x-cs.a[0], cry=p.y-cs.a[1];
-    const ca=Math.max(0,Math.min(cs.L,crx*cs.ux+cry*cs.uy));
-    const cqx=cs.a[0]+cs.ux*ca, cqy=cs.a[1]+cs.uy*ca;
-    const currentD2=(p.x-cqx)*(p.x-cqx)+(p.y-cqy)*(p.y-cqy);
-
-    let best={i:cur,d2:currentD2};
-    const hi=Math.min(segs.length-1,cur+8);
-    for(let i=cur+1;i<=hi;i++){
+    let best=null;
+    // Search well ahead because a macro-straight may bypass several connector segments.
+    const hi=Math.min(segs.length-1,cur+12);
+    for(let i=cur;i<=hi;i++){
       const s=segs[i],rx=p.x-s.a[0],ry=p.y-s.a[1];
       const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
       const qx=s.a[0]+s.ux*along,qy=s.a[1]+s.uy*along;
       const dx=p.x-qx,dy=p.y-qy,d2=dx*dx+dy*dy;
-      const legalR=Math.max(2.0,widths[i]*ROAD_MARGIN)+1.0;
-      if(d2<best.d2 && d2<=legalR*legalR) best={i,d2};
+      const legalR=Math.max(2.0,widths[i]*ROAD_MARGIN)+DEATH_EDGE_EXTRA-.25;
+      if(d2<=legalR*legalR && (!best || d2<best.d2)) best={i,d2};
     }
-
-    // Only jump forward when the future segment is clearly the better physical match.
-    if(best.i>cur && (currentD2>9 ? best.d2<currentD2*.62 : best.d2<2.25)){
-      p.seg=best.i;
-    }
+    if(best && best.i>cur+1) p.seg=best.i;
   }
 
 function updatePlayer(p, now, dt){
@@ -5781,9 +5807,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // v4.92: if a legal straight chord bypassed a slower connector, synchronize the
+    // v4.93: if a committed macro-straight bypassed connector segments, synchronize the
     // logical route segment to the future road the racer physically reached.
-    forwardRouteResync92(p);
+    forwardRouteResync93(p);
 
     // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
     // Death uses the route-derived capsule union, not hand-written red coordinates.
