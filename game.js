@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.96";
+  const BUILD_ID = "v5.00";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1195,8 +1195,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 function courseContainsPoint(x,y,extra=0){
-    // v4.96 absolute red-zone veto: even safeAt/route capsules cannot override this.
-    if(inForbidden96(x,y)) return false;
+    // v5.00: red zones are NOT physical/death geometry. They are only planning vetoes.
     if(safeAt(x,y)) return true;
     for(let i=0;i<segs.length;i++){
       const s=segs[i], rx=x-s.a[0], ry=y-s.a[1];
@@ -1316,10 +1315,8 @@ function courseContainsPoint(x,y,extra=0){
     along=Math.max(0,Math.min(s.L,along+0.72));
     const rescueX96=s.a[0]+s.ux*along+s.nx*actualLateral;
     const rescueY96=s.a[1]+s.uy*along+s.ny*actualLateral;
-    if(!inForbidden96(rescueX96,rescueY96) && !lineHitsForbidden96(p.x,p.y,rescueX96,rescueY96)){
-      p.x=rescueX96;
-      p.y=rescueY96;
-    }
+    p.x=rescueX96;
+    p.y=rescueY96;
     p.controlMode="normal";
     p.controlUntil=0;
     p.avoidPlanUntil=0;
@@ -5789,84 +5786,48 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
-    // v4.95: while a true horizontal run is committed, lateral lane optimization
-    // cannot pull the racer vertically toward an edge row.
-    if((p.horizontal95Until||0)>now && playerPerceivedObservers(p,21.5).length===0){
-      const hs=segs[si];
-      const rx95=p.x-hs.a[0], ry95=p.y-hs.a[1];
-      const currentOff95=rx95*hs.nx+ry95*hs.ny;
-      targetOff=currentOff95;
-    }
-
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
     const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.092,dt*(.00218+steerControl*.00050+steerTurn*.00048));
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
-    // Look ahead to create smoother apex cutting.
+
+    // v5.00 NORMAL RACING TARGET — restore the proven v3-style steering model.
+    // Keep the current segment line, then blend ONLY 24% toward the next segment.
+    // No multi-segment optimized lookahead, no shortcut layer, no horizontal-lock layer,
+    // and no v4.91 re-targeting during calm racing.
     const next=segs[Math.min(segs.length-1,si+1)];
-    const next2=segs[Math.min(segs.length-1,si+2)];
-    const next3=segs[Math.min(segs.length-1,si+3)];
     let tx=s.b[0]+s.nx*p.desiredOffset;
     let ty=s.b[1]+s.ny*p.desiredOffset;
-    const optTarget=optimizedLookAheadTarget(p,si,now);
-    const cornerLook=cornerIntensity(si);
-    // v4.07: opening/5-o'clock section is route-locked. A small lookahead keeps
-    // steering smooth without allowing a direct vertical chord through lethal rows.
-    const optBlend = si<=10 ? Math.min(.72,.50+cornerLook*.28) : Math.min(.84,.68+cornerLook*.28);
-    tx=tx*(1-optBlend)+optTarget.x*optBlend;
-    ty=ty*(1-optBlend)+optTarget.y*optBlend;
 
-    // v3.2 smooth racing arc: aim through the next two segment exits.
-    // This cuts the corner diagonally instead of moving to a joint and turning 90 degrees.
     if(next && si<segs.length-1){
-      const look=si<=10?Math.min(.40,.24+cornerLook*.18):Math.min(.46,.28+cornerLook*.21);
+      const look=0.24;
       const nx=next.b[0]+next.nx*p.desiredOffset;
       const ny=next.b[1]+next.ny*p.desiredOffset;
-      tx=tx*(1-look)+nx*look;
-      ty=ty*(1-look)+ny*look;
-      if(next2 && si<segs.length-2){
-        const look2=si<=10?Math.min(.20,.09+cornerLook*.10):Math.min(.28,.14+cornerLook*.14);
-        const n2x=next2.b[0]+next2.nx*p.desiredOffset;
-        const n2y=next2.b[1]+next2.ny*p.desiredOffset;
-        tx=tx*(1-look2)+n2x*look2;
-        ty=ty*(1-look2)+n2y*look2;
-        if(next3 && si<segs.length-3 && cornerLook>.045){
-          const look3=si<=10?Math.min(.10,.04+cornerLook*.06):Math.min(.17,.07+cornerLook*.10);
-          const n3x=next3.b[0]+next3.nx*p.desiredOffset;
-          const n3y=next3.b[1]+next3.ny*p.desiredOffset;
-          tx=tx*(1-look3)+n3x*look3;
-          ty=ty*(1-look3)+n3y*look3;
-        }
+      const candX=tx*(1-look)+nx*look;
+      const candY=ty*(1-look)+ny*look;
+
+      // Restricted red zones are planning vetoes only. If the 24% look-ahead would
+      // cross one, keep the current-segment target instead of inventing a detour.
+      if(!inForbidden96(candX,candY) && !lineHitsForbidden96(p.x,p.y,candX,candY)){
+        tx=candX; ty=candY;
       }
     }
 
-    // v4.09: validate the complete steering chord against the actual route corridor.
-    // This is what prevents 5-o'clock and other sections from cutting straight through
-    // the user's red/death gaps while still allowing true inside apexes.
-    {
-      const legalTarget=courseAwareTarget(p,si,tx,ty);
-      tx=legalTarget.x; ty=legalTarget.y;
+    // Validate only against the ordinary road corridor + planning red-zone veto.
+    // If the candidate is invalid, stay on the current segment target.
+    if(inForbidden96(tx,ty) || lineHitsForbidden96(p.x,p.y,tx,ty) ||
+       !lineStaysOnCourse(p.x,p.y,tx,ty,ROUTE_PLAN_EXTRA)){
+      const bx=s.b[0]+s.nx*p.desiredOffset;
+      const by=s.b[1]+s.ny*p.desiredOffset;
+      if(!inForbidden96(bx,by) && !lineHitsForbidden96(p.x,p.y,bx,by)){
+        tx=bx; ty=by;
+      }
     }
 
-    // v4.91: ordinary racing uses the farthest legal fast-line chord, eliminating
-    // straight-then-perpendicular drops. True observer emergencies retain full authority.
-    {
-      const emergency91=!!avoid && (
-        avoid.mode==="stop" ||
-        (Number.isFinite(avoid.minClear) && avoid.minClear<1.05) ||
-        now<(p.hardRouteLockUntil||0)
-      );
-      const chord91=noOrthogonalDrop91(p,si,tx,ty,emergency91);
-      tx=chord91.x; ty=chord91.y;
-    }
-
-    // v4.60 HARD ROUTE LOCK + ESCAPE CORRIDOR: while locked, bypass the optimized
-    // racing lookahead entirely. The virtual mouse receives a fresh forward-diagonal
-    // escape point based on the chosen safe corridor, so a memorized route click cannot
-    // silently pull the unit back into an observer.
+    // Observer emergency remains authoritative exactly as before.
     if(now<(p.hardRouteLockUntil||0) && Number.isFinite(p.lockedEscapeOffset)){
       const lockTier=p.dangerTier||0;
-      const escapeAhead=(lockTier>=3?8.9:10.2)+Math.max(0,Math.min(1,(p.stats.control-72)/27))*1.35; // v4.61 more forward progress on safe escape chords
+      const escapeAhead=(lockTier>=3?8.9:10.2)+Math.max(0,Math.min(1,(p.stats.control-72)/27))*1.35;
       let ex=p.x+s.ux*escapeAhead+s.nx*p.lockedEscapeOffset;
       let ey=p.y+s.uy*escapeAhead+s.ny*p.lockedEscapeOffset;
       const legalEscape=courseAwareTarget(p,si,ex,ey);
@@ -5920,10 +5881,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const reach=Math.max(.82,Math.min(1.06,p.mouseReach||1));
         let mx=p.x+(tx-p.x)*reach+(Math.random()-.5)*err;
         let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
-        if(!dangerActive){
-          const safeClick91=noOrthogonalDrop91(p,si,mx,my,false);
-          mx=safeClick91.x; my=safeClick91.y;
-        }
+        // v5.00: calm-racing mouse clicks consume the v3-style planner target directly.
+        // Do not run v4.90~v4.95 re-targeting layers here.
         // v4.31 shorter human clicks: reduce the frequency of long screen-spanning
         // commands. Danger uses especially short re-readable clicks so the racer can
         // react to the next observer without twitching every frame.
@@ -6032,41 +5991,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
 
-    // v4.96 PHYSICAL HARD BARRIER: even if some future AI routine produces a bad target,
-    // the actual racer position can never enter or cross a red restricted rectangle.
-    if(inForbidden96(p.x,p.y) || lineHitsForbidden96(p.simPrevX,p.simPrevY,p.x,p.y)){
-      p.x=p.simPrevX;
-      p.y=p.simPrevY;
-      p.mouseTargetX=p.x;
-      p.mouseTargetY=p.y;
-      p.routeShortcut94Until=0;
-      p.macroStraight93Until=0;
-      p.horizontal95Until=0;
-      const esc96=nearestForbiddenEscape96(p.x,p.y);
-      if(esc96){
-        const dx96=esc96.x-p.x,dy96=esc96.y-p.y,l96=Math.hypot(dx96,dy96)||1;
-        p.steerX=dx96/l96;
-        p.steerY=dy96/l96;
-        p.mouseTargetX=esc96.x;
-        p.mouseTargetY=esc96.y;
-      }
-    }
+    // v5.00 restricted zones are PLANNING-ONLY.
+    // If numerical error or emergency motion happens to enter one, do not teleport,
+    // roll back, freeze, bounce, or otherwise alter the actual movement.
 
-    // v4.93: if a committed macro-straight bypassed connector segments, synchronize the
-    // logical route segment to the future road the racer physically reached.
-    forwardRouteResync93(p);
-    if((p.routeShortcut94Until||0)>now && Number.isFinite(p.routeShortcut94Seg)){
-      const sj=Math.max(p.seg,Math.min(segs.length-1,p.routeShortcut94Seg|0));
-      const ss=segs[sj],rx94=p.x-ss.a[0],ry94=p.y-ss.a[1];
-      const a94=Math.max(0,Math.min(ss.L,rx94*ss.ux+ry94*ss.uy));
-      const qx94=ss.a[0]+ss.ux*a94,qy94=ss.a[1]+ss.uy*a94;
-      const d294=(p.x-qx94)*(p.x-qx94)+(p.y-qy94)*(p.y-qy94);
-      const r94=Math.max(2.0,widths[sj]*ROAD_MARGIN)+1.4;
-      if(d294<=r94*r94 && sj>p.seg){
-        p.seg=sj;
-        p.routeShortcut94Until=0;
-      }
-    }
+    // v5.00: no shortcut-route resync. Segment advancement below is sequential again.
 
     // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
     // Death uses the route-derived capsule union, not hand-written red coordinates.
