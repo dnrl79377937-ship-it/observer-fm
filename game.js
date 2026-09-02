@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.66";
+  const BUILD_ID = "v4.67";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -376,7 +376,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const survivalNorm=Math.max(0,Math.min(1,
         (((stats.avoidance+stats.stability+stats.riskControl+stats.prediction)/4)-72)/27));
       // v4.44 STAT FEEL: widen the real gameplay gap between specialists without adding hidden 1v1/8-player ratings.
-      const wideDetourRace=Math.random()<.02;
+      const wideDetourRace=false; // v4.67: deliberate exterior detours removed
       const wideDetourSide=Math.random()<.5?-1:1;
       // v4.16: all eight racers start from the exact same physical point.
       // Player-player collision is disabled, so overlapping starts are intentional.
@@ -2547,7 +2547,45 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return null;
   }
 
-  function chooseAvoidance(p,s,now){
+  
+  function leaderLineDiscipline67(p,si){
+    const rs=liveRaceSituation(p);
+    const solo=optimalRacingLine2Offset(p,si);
+    const leadBattle=(rs.rank===1 && rs.nearestBehindGap<6.2) ||
+                     (rs.rank===2 && rs.nearestAheadGap<6.2);
+    return {rs,solo,leadBattle};
+  }
+
+  // v4.67 SURVIVAL × RACING UNIFIED POLICY:
+  // Avoidance may leave the fast line only when the predicted threat justifies it.
+  // Leaders/P2 in a close fight pay an extra route-cost penalty, so they make compact
+  // dodges and return to the racing line immediately instead of taking huge arcs.
+  function unifiedLine67(p,si,baseOff,avoid){
+    const info=leaderLineDiscipline67(p,si);
+    if(!avoid) return {off:baseOff,speedMul:1};
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+    const deviation=Math.abs(avoid.targetOff-info.solo);
+    const maxNormal=half*.74;
+    const maxLead=half*.48;
+    const cap=info.leadBattle?maxLead:maxNormal;
+    let off=avoid.targetOff;
+    if(deviation>cap){
+      off=info.solo+Math.sign(avoid.targetOff-info.solo)*cap;
+    }
+    // Only true close-clearance emergencies may use more of the road.
+    // Avoidance risk scores are not normalized, so minimum predicted clearance is
+    // the reliable signal for whether a larger dodge is genuinely necessary.
+    const emergency=(Number.isFinite(avoid.minClear) && avoid.minClear<.90) ||
+                    avoid.mode==="stop";
+    if(emergency){
+      const emergencyCap=info.leadBattle?half*.70:half*.92;
+      const d=avoid.targetOff-info.solo;
+      off=info.solo+Math.sign(d)*Math.min(Math.abs(d),emergencyCap);
+    }
+    return {off,speedMul:avoid.speedMul||1};
+  }
+
+function chooseAvoidance(p,s,now){
     if(safeAt(p.x,p.y)){
       p.avoidPlanUntil=0;
       return null;
@@ -4227,30 +4265,21 @@ function packContextOffset(p,si,now){
 
     let off=baseOff, speedMul=1;
 
-    // v2.55 SAFETY / WIDE-ROUTE TRADEOFF.
-    // Higher avoidance+stability+risk-control+prediction intentionally leaves
-    // more road margin. This lowers observer contact probability but increases
-    // driven distance. Separately, every racer has an 8% per-round wide-detour roll.
+    // v4.67 OPTIMAL-LINE DISCIPLINE:
+    // Never take a deliberately wide route merely for personality/safety.
+    // Wide movement is reserved for a real observer threat handled by avoidance.
     const survival=p.survivalNorm||0;
     const inside=cornerInsideSide(si)||Math.sign(futureInsideBias(si));
-    if(p.wideDetourRace){
-      // v2.60: 8% detour is intentionally sub-optimal, but no longer an extreme wall-hugging lap.
-      const outer=inside!==0?-inside:(p.wideDetourSide||1);
-      off=off*.62 + outer*half*.40;
-    }else if(survival>.12){
-      const outer=inside!==0?-inside:(p.wideDetourSide||1);
-      const safetyWide=Math.max(0,(survival-.12)/.88);
-      off=off*(1-safetyWide*.09) + outer*half*(safetyWide*.12);
-    }
+    p.wideDetourRace=false;
 
     if(p.humanMode===1){
       off+=Math.sin(now*.012+p.humanPhase)*half*(.055+(1-control)*.09);
     }else if(p.humanMode===2){
       speedMul=.945+reaction*.028+prediction*.020;
     }else if(p.humanMode===3){
-      const side=baseOff>=0?1:-1;
-      off+=side*half*(.07+(1-risk)*.08);
-      speedMul=.982;
+      // v4.67: no cosmetic/safety-wide lane. Keep the optimized line.
+      off=baseOff;
+      speedMul=1;
     }
 
     if(now>=p.decisionErrorUntil){
@@ -4714,7 +4743,9 @@ function packContextOffset(p,si,now){
       if(rel65>-1.0 && rel65<10.5){
         const passSkill65=Math.max(0,Math.min(1,
           ((p.stats.aggression+p.stats.prediction+p.stats.routeReading+p.stats.control)/4-72)/27));
-        const authority65=(passPlan.mode===2?.74:passPlan.mode===3?.70:.82)+passSkill65*.08;
+        let authority65=(passPlan.mode===2?.74:passPlan.mode===3?.70:.82)+passSkill65*.08;
+        const leadPass67=leaderLineDiscipline67(p,si);
+        if(leadPass67.leadBattle) authority65=Math.min(authority65,.66);
         targetOff=targetOff*(1-authority65)+passPlan.off*authority65;
       }
     }
@@ -4728,15 +4759,25 @@ function packContextOffset(p,si,now){
     }
     const controlSkill=(p.profile.control-85)/15;
 
-    // Predictive v26 avoidance: compare future lanes and speeds, then hold the
-    // selected plan briefly. This avoids both collisions and left/right twitching.
+    // v4.67 LEAD-BATTLE DISCIPLINE: P1/P2 in a close fight stay almost entirely
+    // on the fast line until an observer threat genuinely requires a dodge.
+    const lead67=leaderLineDiscipline67(p,si);
+    if(clearRoadObs.length===0 && lead67.leadBattle && now>=p.shockAvoidUntil){
+      targetOff=targetOff*.08+lead67.solo*.92;
+    }
+
+    // v4.67 unified survival/racing policy. The avoidance planner still detects danger,
+    // but its route is scored against the optimized racing line and large exterior arcs
+    // are suppressed unless the predicted collision risk is genuinely severe.
     const avoid=chooseAvoidance(p,s,now);
     if(avoid){
       if(avoid.mode==="stop"){
         speedMul*=.72;
       }else{
-        targetOff=targetOff*.12+avoid.targetOff*.88;
-        speedMul*=avoid.speedMul;
+        const unified67=unifiedLine67(p,si,targetOff,avoid);
+        const leadBlend=lead67.leadBattle?.72:.84;
+        targetOff=targetOff*(1-leadBlend)+unified67.off*leadBlend;
+        speedMul*=unified67.speedMul;
       }
     }
     if(!avoid && p.avoidPlanUntil && now>=p.avoidPlanUntil){
@@ -4763,7 +4804,12 @@ function packContextOffset(p,si,now){
       const clearFactor=aheadObs===0?1:(aheadObs===1?.68:.38);
       const cornerFactor=Math.max(.30,1-futureTurn*2.25);
       const smooth=t<.18 ? t*.25 : t<.68 ? .045+(t-.18)*1.28 : .685+(t-.68)*.98;
-      const rejoinAuthority=Math.max(.12,Math.min(1,clearFactor*cornerFactor*(.88+recoveryN*.10+routeReadN*.08)));
+      let rejoinAuthority=Math.max(.12,Math.min(1,clearFactor*cornerFactor*(.88+recoveryN*.10+routeReadN*.08)));
+      const leadRejoin67=leaderLineDiscipline67(p,si);
+      if(leadRejoin67.leadBattle && aheadObs===0){
+        // P1/P2 restore the fast line quickly once the threat is clear.
+        rejoinAuthority=Math.max(rejoinAuthority,.88);
+      }
       const blend=Math.max(0,Math.min(1,smooth*rejoinAuthority));
       // v4.63: rejoin the future optimal macro-line, not merely the nearest local lane.
       const rejoin=optimalRacingLine2Offset(p,si);
