@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.50";
+  const BUILD_ID = "v4.55";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -931,7 +931,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const si=Math.min(p.seg,segs.length-1),s=segs[si];
     let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
     const earlySurvival=currentProgress(p)<routeLength*.56;
-    const closeObs=playerPerceivedObservers(p,earlySurvival?7.35:6.8);
+    const closeObs=playerPerceivedObservers(p,earlySurvival?7.70:6.8);
 
     // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
     if(!closeObs.length){
@@ -949,8 +949,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const o=closeObs[i],dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;if(along<=0)continue;
       const lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<(earlySurvival?3.45:3.15)&&lat<(earlySurvival?2.45:2.25)&&along<immediateAlong){immediate=o;immediateAlong=along;}
-      if(along<(earlySurvival?5.25:4.8)&&lat<(earlySurvival?4.05:3.8)&&along<nearAlong){nearAhead=o;nearAlong=along;}
+      if(along<(earlySurvival?3.60:3.15)&&lat<(earlySurvival?2.58:2.25)&&along<immediateAlong){immediate=o;immediateAlong=along;}
+      if(along<(earlySurvival?5.55:4.8)&&lat<(earlySurvival?4.20:3.8)&&along<nearAlong){nearAhead=o;nearAlong=along;}
     }
 
     if(p.controlMode==="normal"&&p.reactiveControlCooldown<=0){
@@ -1446,12 +1446,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const laneOffsets=[-roadHalf*.96,-roadHalf*.72,-roadHalf*.48,-roadHalf*.24,0,
       roadHalf*.24,roadHalf*.48,roadHalf*.72,roadHalf*.96];
     const laneRisk=laneOffsets.map(()=>0);
-    const horizons=[.42,.95,1.70,2.85];
+    const horizons=[.34,.72,1.18,1.82,2.65,3.35]; // v4.54: denser multi-observer future field
     let frontCount=0, closeCount=0, nearest=999;
 
     for(let hi=0;hi<horizons.length;hi++){
       const t=horizons[hi];
-      const horizonWeight=hi===0?1.45:hi===1?1.0:.68;
+      const horizonWeight=hi===0?1.58:hi===1?1.22:hi===2?.96:hi===3?.76:.58; // v4.54
       const forward=p.speed*t;
       for(let li=0;li<laneOffsets.length;li++){
         const off=lateralNow+(laneOffsets[li]-lateralNow)*Math.min(1,t/.75);
@@ -1468,6 +1468,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
             risk += Math.max(0,9-d)*horizonWeight*(d<3.2?4.1:d<5.2?2.0:.72);
           }
         }
+        // v4.54 MULTI-OBSERVER: a lane with several medium-close observers is more
+        // dangerous than one equally-close observer. Add a pinch/congestion penalty so
+        // AI does not escape observer A into the overlap of B/C.
+        let pinch=0, nearLane=0;
+        for(let oi=0;oi<nearby.length;oi++){
+          const o=nearby[oi];
+          const ox=predictedObserverX(o,t), oy=predictedObserverY(o,t);
+          const d=Math.hypot(ox-px,oy-py);
+          if(d<6.2){ nearLane++; pinch+=Math.max(0,6.2-d); }
+        }
+        if(nearLane>=2) risk += pinch*(nearLane-1)*.36*horizonWeight;
         laneRisk[li]+=risk;
       }
     }
@@ -1684,10 +1695,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Better survival stats value clearance more strongly. The price is that
     // detours are penalized less, so these racers willingly travel farther.
     const progressRatio=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
-    // v4.50: a small survival nudge before the first mid-course shelter. It does not
-    // grant invulnerability or speed; it only makes early AI value predicted clearance a bit more.
-    const preShelterSafety=progressRatio<.56 ? 1.085 : (progressRatio<.64 ? 1.035 : 1);
-    const survivalSafety=(1.20+survival*.72)*identityOf(p).safety*preShelterSafety; // v4.50
+    // v4.51 EARLY SURVIVAL AI: strengthen only the pre-shelter decision window.
+    // No invulnerability/speed rubber-band: racers simply recognize dangerous approach
+    // a little earlier and prefer a slightly larger predicted clearance before shelter 1.
+    const preShelterSafety=progressRatio<.56 ? 1.12 : (progressRatio<.64 ? 1.045 : 1);
+    const survivalSafety=(1.20+survival*.72)*identityOf(p).safety*preShelterSafety; // v4.51
     const timeLoss=(1-speedMul)*(19.0+situationRisk*7.0)/Math.max(.90,safetyBias);
     const detour=Math.abs(targetOff-p.desiredOffset)*0.23*(2-safetyBias)*(1-survival*.66);
     return {score:danger*safetyBias*survivalSafety+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
@@ -1845,16 +1857,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       lateral += (targetOff-lateral)*Math.min(1,steerRate*dt*2.2);
       x += vx*dt + s.nx*(targetOff-lateral)*dt*.38;
       y += vy*dt + s.ny*(targetOff-lateral)*dt*.38;
+      let stepThreats=0, stepPressure=0;
       for(const o of nearby){
         const ox=predictedObserverX(o,t), oy=predictedObserverY(o,t);
         const d=Math.hypot(x-ox,y-oy);
         if(d<minClear) minClear=d;
         const clearance=d-hit;
+        if(d<4.4){ stepThreats++; stepPressure+=Math.max(0,4.4-d); }
         if(clearance<0) danger += 26000+(Math.abs(clearance)+.05)*12000;
         else if(clearance<.62) danger += (0.62-clearance)*1900;
         else if(clearance<1.45) danger += (1.45-clearance)*220;
         else if(clearance<2.8) danger += (2.8-clearance)*16;
       }
+      // v4.54: overlapping threats compound risk instead of being treated independently.
+      if(stepThreats>=2) danger += stepPressure*(stepThreats-1)*(46+avoidN*28+predN*24);
     }
     // reward forward pace; elite racers accept narrower safe windows but never ignore a collision.
     const paceReward=speedMul*(5.8+skill*2.7);
@@ -1862,6 +1878,50 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {score:danger+steerCost-paceReward,minClear};
   }
 
+
+  // v4.53 ESCAPE DIRECTION JUDGMENT: score the whole future corridor on each side,
+  // not just the nearest observer. This makes left/right/diagonal choices prefer the
+  // lane with the widest sustained survival window and reduces wrong-way dodges.
+  function scoreEscapeCorridor(p,s,off,speedMul,nearby){
+    const predN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
+    const avoidN=Math.max(0,Math.min(1,(p.stats.avoidance-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const horizon=2.35+predN*.75;
+    const steps=12+Math.round(predN*4);
+    const startOff=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
+    let minClear=99,risk=0,closingRisk=0,coursePenalty=0,pinchRisk=0;
+    for(let k=1;k<=steps;k++){
+      const t=horizon*k/steps;
+      const blend=1-Math.exp(-t*(2.0+controlN*.55));
+      const simOff=startOff+(off-startOff)*blend;
+      const forward=Math.max(.35,speedMul)*p.speed*t;
+      const x=p.x+s.ux*forward+s.nx*(simOff-startOff);
+      const y=p.y+s.uy*forward+s.ny*(simOff-startOff);
+      if(!courseContainsPoint(x,y,ROUTE_PLAN_EXTRA*.74)) coursePenalty+=5.2;
+      let nearCount=0, nearPressure=0;
+      for(const o of nearby){
+        const ox=predictedObserverX(o,t), oy=predictedObserverY(o,t);
+        const d=Math.hypot(x-ox,y-oy);
+        minClear=Math.min(minClear,d);
+        const safe=2.45+avoidN*.38+predN*.28;
+        if(d<5.2){ nearCount++; nearPressure+=Math.max(0,5.2-d); }
+        if(d<safe){
+          const q=(safe-d)/safe;
+          risk += q*q*(3.8+(1-t/horizon)*4.8);
+        }
+        // Penalize observers whose inferred motion is converging into this corridor.
+        const nowD=Math.hypot(p.x-o.x,p.y-o.y);
+        if(d+0.35<nowD && d<5.8) closingRisk += (5.8-d)*(.12+(1-t/horizon)*.10);
+      }
+      // v4.54: avoid future choke points where two or more observers arrive together.
+      if(nearCount>=2) pinchRisk += nearPressure*(nearCount-1)*(.20+(1-t/horizon)*.16);
+    }
+    // Prefer a sustained safety buffer. Small detours are cheap when they buy real space.
+    const targetClear=2.85+avoidN*.38+predN*.32;
+    const clearPenalty=minClear<targetClear?(targetClear-minClear)*(4.8+avoidN*2.2):0;
+    const detour=Math.abs(off-p.desiredOffset)*(.022+(1-controlN)*.018);
+    return {score:risk+closingRisk+pinchRisk+coursePenalty+clearPenalty+detour,minClear,coursePenalty,pinchRisk};
+  }
 
   function scoreFutureEscapePath(p,s,off,speedMul,nearby){
     // v4.32 ESCAPE DIRECTION AI: compare each lateral escape over the next ~1.9 s.
@@ -1907,9 +1967,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // racer escapes the cluster instead of bouncing inside it.
     const si=Math.min(p.seg,widths.length-1);
     const half=Math.max(3.3,widths[si]*.72);
+    // v4.55 ENCIRCLEMENT BREAKOUT: when boxed, search farther toward the legal
+    // road edges and prefer a corridor that stays open well beyond the first dodge.
     const base=Number.isFinite(raceOff)?raceOff:(Number.isFinite(p.desiredOffset)?p.desiredOffset:0);
     const candidates=[];
-    for(const f of [-.98,-.78,-.58,-.36,-.16,.16,.36,.58,.78,.98]){
+    for(const f of [-1.04,-.92,-.78,-.62,-.44,-.24,-.10,.10,.24,.44,.62,.78,.92,1.04]){
       candidates.push({off:clampRoadOffset(si,f*half,p),spd:f*f>.55?.97:1.01,kind:'breakout'});
     }
     // Keep a near-current option so a real center opening can win.
@@ -1918,9 +1980,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     for(const c of candidates){
       const r=scoreFutureEscapePath(p,s,c.off,c.spd,nearby);
       const short=rolloutActionRisk(p,s,c.off,c.spd,nearby);
-      const ex=p.x+s.ux*8.8+s.nx*c.off, ey=p.y+s.uy*8.8+s.ny*c.off;
-      let score=r.score*1.75+short.score*.72;
-      if(r.minClear<1.35) score+=(1.35-r.minClear)*11;
+      const ex=p.x+s.ux*9.8+s.nx*c.off, ey=p.y+s.uy*9.8+s.ny*c.off;
+      // Long gate: surviving the first observer is not enough. Check that the same
+      // corridor remains usable farther ahead so the racer actually exits the box.
+      const lx=p.x+s.ux*14.2+s.nx*c.off, ly=p.y+s.uy*14.2+s.ny*c.off;
+      let longClear=99, longPressure=0;
+      for(const o of nearby){
+        const ox=predictedObserverX(o,1.85), oy=predictedObserverY(o,1.85);
+        const d=Math.hypot(lx-ox,ly-oy);
+        longClear=Math.min(longClear,d);
+        if(d<7.2) longPressure+=Math.max(0,7.2-d);
+      }
+      let score=r.score*1.62+short.score*.64+longPressure*.82;
+      if(r.minClear<1.48) score+=(1.48-r.minClear)*12.5;
+      if(longClear<2.25) score+=(2.25-longClear)*8.5;
       if(!courseContainsPoint(ex,ey,ROUTE_PLAN_EXTRA*.70) || !lineStaysOnCourse(p.x,p.y,ex,ey,ROUTE_PLAN_EXTRA*.76)) score+=28;
       // In a box, paying some racing-line detour is fine, but prefer the smallest
       // safe detour when survival scores are similar.
@@ -1934,7 +2007,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function humanLiveEvadeController(p,s,now,raceOff){
-    // v4.43 SURVIVAL AI 3: death-cause-driven predictive flow evade
+    // v4.52 APPROACH PREDICTION AI: trajectory-first early evade on genuinely converging observers
     // Read an observer's current travel vector and begin a single broad, committed arc
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
@@ -1950,7 +2023,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // one or two readable observers nearby. In a sparse field there is usually plenty
     // of road, so value clean clearance over clever late skims and commit earlier.
     const sparseField=nearby.length<=2;
-    // v4.32 MULTI-OBSERVER SURVIVAL: evaluate the whole perceived field before
+    // v4.54 MULTI-OBSERVER SURVIVAL: evaluate the whole perceived field before
     // choosing a live dodge. This prevents escaping observer A into B/C.
     const clusterNow=observerClusterPlan(p,s,nearby);
     const react=Math.max(0,Math.min(1,(p.stats.reaction-72)/27));
@@ -1966,7 +2039,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const clusterLeftRisk=(clusterNow.laneRisk?.[0]||0)+(clusterNow.laneRisk?.[1]||0)+(clusterNow.laneRisk?.[2]||0);
     const clusterRightRisk=(clusterNow.laneRisk?.[6]||0)+(clusterNow.laneRisk?.[7]||0)+(clusterNow.laneRisk?.[8]||0);
     // v4.43 SURROUNDED fix: break out before the box fully closes.
-    const boxedNow=clusterNow.frontCount>=2 && clusterNow.closeCount>=1 && clusterLeftRisk>2.65 && clusterRightRisk>2.65;
+    const boxedNow=clusterNow.frontCount>=2 && (clusterNow.closeCount>=1 || clusterNow.density>.48) && clusterLeftRisk>2.12 && clusterRightRisk>2.12; // v4.55 earlier encirclement escape
     if(now<(p.breakoutUntil||0)){
       const bx=p.x+s.ux*7.5+s.nx*p.breakoutOffset, by=p.y+s.uy*7.5+s.ny*p.breakoutOffset;
       if(courseContainsPoint(bx,by,ROUTE_PLAN_EXTRA*.72) && lineStaysOnCourse(p.x,p.y,bx,by,ROUTE_PLAN_EXTRA*.78)){
@@ -1979,12 +2052,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let danger=0,nearest=99,threatId=-1,bestT=99,leftRisk=0,rightRisk=0;
     // Predict only a short human-readable horizon. We use the observer's visible motion,
     // not hidden route knowledge. Higher prediction skill samples a little farther ahead.
-    const horizon=1.72+pred*1.38; // v4.43: earlier reads reduce LATE_REACTION / NO_EVADE deaths
+    const horizon=2.05+pred*1.55; // v4.52: read converging paths earlier without reacting to mere proximity
     for(const o of nearby){
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
       const d=Math.hypot(dx,dy); nearest=Math.min(nearest,d);
-      if(along<-3.0 || along>20.5 || Math.abs(lat)>10.5) continue;
+      if(along<-3.5 || along>24.5 || Math.abs(lat)>12.5) continue;
       // v4.22 trajectory threat: estimate time of closest approach from observed motion.
       // This lets racers bend away early from a crossing path while ignoring observers
       // whose visible trajectory is moving away from them.
@@ -1997,7 +2070,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const corridor=(2.18+avoid*.72+pred*.38)*(sparseField?1.28:1.08);
         if(tc>.08 && cpa<corridor){
           const conf=o.confidence==null?1:o.confidence;
-          const w=(corridor-cpa)/corridor*(1.45-tc/horizon*.42)*(.55+.45*conf);
+          // v4.52: reward a stable closing read. An observer can be far away, but if
+          // its perceived velocity is clearly converging with our future path, begin a
+          // broad diagonal escape before it becomes a last-second sprite dodge.
+          const closing=-(dx*rvx+dy*rvy)/Math.max(.001,d);
+          const closingN=Math.max(0,Math.min(1,(closing-.35)/4.2));
+          const earlyRead=1+closingN*(.22+pred*.22)*(.72+.28*conf);
+          const w=(corridor-cpa)/corridor*(1.48-tc/horizon*.38)*(.55+.45*conf)*earlyRead;
           danger+=w*1.35;
           if(tc<bestT){bestT=tc;threatId=o.id;}
           const crossLat=cx*s.nx+cy*s.ny;
@@ -2043,7 +2122,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
     // v4.43 NO_EVADE/LATE_REACTION fix: a readable converging path should trigger a
     // committed dodge earlier, while non-converging nearby observers still do nothing.
-    const predictive=danger>(sparseField?.072:.135) && bestT<(sparseField?3.65:3.18);
+    const predictive=danger>(sparseField?.066:.122) && bestT<(sparseField?4.05:3.55); // v4.52 trajectory-first earlier commit
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -2091,14 +2170,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           p.breakoutSpeed=bo.spd;
           p.breakoutSide=bo.side;
           p.breakoutScore=bo.score;
-          p.breakoutUntil=now+520+avoid*190+ctrl*120;
+          p.breakoutUntil=now+690+avoid*220+ctrl*145; // v4.55 longer committed exit from the cluster
           p.liveEvadeOffset=bo.off;
           p.liveEvadeSpeed=bo.spd;
           p.liveEvadeSide=bo.side;
           p.liveEvadeAction='breakout';
           p.liveEvadeThreat=threatId;
           p.liveEvadeUntil=p.breakoutUntil;
-          p.liveEvadeNextThink=now+210+Math.random()*90;
+          p.liveEvadeNextThink=now+255+Math.random()*95;
           p.match.avoids++;
           return {off:bo.off,speedMul:bo.spd,danger:Math.max(danger,.72),side:bo.side};
         }
@@ -2139,10 +2218,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const off=clampRoadOffset(Math.min(p.seg,segs.length-1),c.off,p);
         const r=rolloutActionRisk(p,s,off,c.spd,nearby);
         const future=scoreFutureEscapePath(p,s,off,c.spd,nearby);
-        // v4.32: short rollout handles the immediate dodge; the future-path score
-        // decides which side is still safe 1-2 seconds later.
-        let score=r.score + future.score*1.28;
+        const corridor=scoreEscapeCorridor(p,s,off,c.spd,nearby);
+        // v4.53: combine immediate rollout + future path + sustained corridor safety.
+        // A direction that looks empty for one instant but closes a moment later loses.
+        let score=r.score + future.score*1.18 + corridor.score*1.34;
         if(future.minClear<1.20) score += (1.20-future.minClear)*8.0;
+        if(corridor.minClear<1.55) score += (1.55-corridor.minClear)*11.0;
         // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
         // free road to take a cleaner diagonal, so a low-clearance candidate pays heavily.
         if(sparseField){
@@ -2155,9 +2236,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         }
         if(clusterNow.frontCount>=2){
           const clusterDist=Math.abs(off-clusterNow.preferredOffset);
-          score += clusterDist*(.22+clusterNow.confidence*.58);
+          score += clusterDist*(.28+clusterNow.confidence*.78); // v4.54 stronger whole-field corridor guidance
           if(Math.sign(off-current)!==Math.sign(clusterNow.preferredOffset-current) && clusterNow.confidence>.42)
-            score += 2.4*clusterNow.confidence;
+            score += 3.25*clusterNow.confidence; // v4.54 avoid crossing into the pressured half
         }
         // v4.28 survival: never choose an escape click whose chord cuts outside the
         // route-derived legal ribbon. This is geometry-derived, not screenshot coordinates.
@@ -2173,7 +2254,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         if(c.kind==='wide' && bestT<1.95) score-=1.22;
         if(c.kind==='zig') score+=.48;
         if(c.kind==='spin') score+=1.05;
-        if(c.side===preferred) score-=.42;
+        // v4.53: keep commitment only if it remains competitive; safety beats stale side memory.
+        if(c.side===preferred && corridor.minClear>1.75) score-=.28;
         if(c.kind==='stop') score += sparseField ? 18.0 : ((bestT<.48 && danger>1.45 && bothSidesBusy) ? .10 : 8.20);
         if(c.kind==='back') score += sparseField ? 22.0 : ((bestT<.30 && bothSidesBusy) ? 1.15 : 12.0);
         score+=(Math.random()-.5)*(1-skill)*.90;
