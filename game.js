@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.62";
+  const BUILD_ID = "v4.63";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -3765,7 +3765,108 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return bestOff;
   }
 
+
+
+  // v4.63 OPTIMAL RACING LINE 2.0
+  // Build one map-wide reference line from the course geometry itself. The solver
+  // minimizes driven distance AND steering angle over the whole remaining route,
+  // so it naturally uses wide straights, cuts legal apexes and prepares linked
+  // corners instead of greedily reacting to only the current bend.
+  let racingLine2Cache=null;
+  function buildOptimalRacingLine2(){
+    if(racingLine2Cache) return racingLine2Cache;
+    const fracs=[-.985,-.86,-.73,-.60,-.47,-.34,-.22,-.11,0,.11,.22,.34,.47,.60,.73,.86,.985];
+    const K=fracs.length,N=segs.length;
+    const nodes=Array.from({length:N},(_,i)=>{
+      const s=segs[i],half=Math.max(2.0,widths[i]*ROAD_MARGIN*.965);
+      return fracs.map(f=>({off:f*half,x:s.b[0]+s.nx*f*half,y:s.b[1]+s.ny*f*half,frac:f}));
+    });
+    const INF=1e30;
+    // dp for a state (previous candidate, current candidate) at endpoint i.
+    let dp=Array.from({length:K},()=>Array(K).fill(INF));
+    const back=Array.from({length:N},()=>Array.from({length:K},()=>Array(K).fill(-1)));
+    const start={x:route[0][0],y:route[0][1]};
+    // Endpoint 0 has no meaningful previous lateral lane. Duplicate the current
+    // candidate index in the state so later reconstruction stays uniform.
+    for(let b=0;b<K;b++){
+      const q=nodes[0][b];
+      if(!lineStaysOnCourse(start.x,start.y,q.x,q.y,ROUTE_PLAN_EXTRA*.72)) continue;
+      const d=Math.hypot(q.x-start.x,q.y-start.y);
+      const nextSide=cornerInsideSide(1), nextPower=cornerIntensity(1);
+      const apexBonus=nextSide ? -nextSide*q.frac*nextPower*.34 : 0;
+      dp[b][b]=d+apexBonus;
+    }
+    for(let i=1;i<N;i++){
+      const ndp=Array.from({length:K},()=>Array(K).fill(INF));
+      for(let a=0;a<K;a++) for(let b=0;b<K;b++){
+        const base=dp[a][b]; if(base>=INF) continue;
+        const prev=i===1?start:nodes[i-2][a];
+        const cur=nodes[i-1][b];
+        const v1x=cur.x-prev.x,v1y=cur.y-prev.y;
+        const l1=Math.hypot(v1x,v1y)||1;
+        for(let c=0;c<K;c++){
+          const nxt=nodes[i][c];
+          if(!lineStaysOnCourse(cur.x,cur.y,nxt.x,nxt.y,ROUTE_PLAN_EXTRA*.72)) continue;
+          const v2x=nxt.x-cur.x,v2y=nxt.y-cur.y;
+          const l2=Math.hypot(v2x,v2y)||1;
+          const dot=Math.max(-1,Math.min(1,(v1x*v2x+v1y*v2y)/(l1*l2)));
+          const ang=Math.acos(dot);
+          // Angle cost models the time lost by abrupt steering. It is deliberately
+          // strong enough to create outside -> apex -> outside arcs instead of a
+          // sequence of mathematically short but humanly ugly zig-zag chords.
+          let cost=base+l2+ang*ang*4.65;
+          const side=cornerInsideSide(i),power=cornerIntensity(i);
+          if(side && power>.02) cost += -side*cur.frac*power*.58;
+          // Look 2-3 bends ahead. A linked opposite corner rewards exiting toward
+          // the side that becomes the next corner's outside/entry lane.
+          let futureSide=0,futurePower=0;
+          for(let k=1;k<=3;k++){
+            const idx=Math.min(N-1,i+k);
+            const fs=cornerInsideSide(idx),fp=cornerIntensity(idx);
+            if(fs && fp>.025){futureSide=fs;futurePower=fp*(1-(k-1)*.18);break;}
+          }
+          if(futureSide) cost += futureSide*nxt.frac*futurePower*.13;
+          // Avoid gratuitous lane changes on clear straights unless they shorten
+          // the route or are preparing a real future corner.
+          if(power<.02 && futurePower<.025) cost += Math.abs(nxt.frac-cur.frac)*.045;
+          if(cost<ndp[b][c]){ndp[b][c]=cost;back[i][b][c]=a;}
+        }
+      }
+      dp=ndp;
+    }
+    let ba=0,bb=0,best=INF;
+    for(let a=0;a<K;a++) for(let b=0;b<K;b++) if(dp[a][b]<best){best=dp[a][b];ba=a;bb=b;}
+    const chosen=Array(N).fill(0);
+    if(N===1){chosen[0]=bb;}
+    else{
+      chosen[N-2]=ba; chosen[N-1]=bb;
+      for(let i=N-1;i>=2;i--){
+        const a=back[i][chosen[i-1]][chosen[i]];
+        chosen[i-2]=a<0?Math.floor(K/2):a;
+      }
+    }
+    racingLine2Cache=chosen.map((k,i)=>nodes[i][k].off);
+    return racingLine2Cache;
+  }
+
+  function optimalRacingLine2Offset(p,si){
+    const line=buildOptimalRacingLine2();
+    si=Math.max(0,Math.min(line.length-1,si));
+    const base=line[si]||0;
+    // Individuality is execution quality around the SAME fast macro-line. Nobody
+    // receives a deliberately slow outer route merely to look different.
+    const skill=Math.max(0,Math.min(1,((p.stats.cornering+p.stats.insideLine+p.stats.routeReading+p.stats.control)/4-72)/27));
+    const half=Math.max(1.8,widths[si]*ROAD_MARGIN);
+    const signature=Math.sin((si+1)*.61+(p.routeIdentityPhase||0))*half*(.004+(1-skill)*.010);
+    return clampRoadOffset(si,base+signature,p);
+  }
+
   function extremeInsideAdjustment(p,si,now,baseOff){
+    // v4.63: on an observer-free road, never invent a risky/slow personality route.
+    if(playerPerceivedObservers(p,18.0).length===0){
+      p.extremeInsideActive=false; p.extremeInsideFail=false;
+      return baseOff;
+    }
     const side=cornerInsideSide(si);
     const power=cornerIntensity(si);
     if(now>=p.extremeInsideUntil){
@@ -4283,7 +4384,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*.16+p.shockAvoidOffset*.84;
     }
 
-    let speedMul=humanDrive.speedMul*unitAI.pace;
+    // v4.63 CLEAR-ROAD AUTHORITY: with no perceived observer field, the map-wide
+    // Racing Line 2.0 is the macro route. Personality/tactics may add tiny execution
+    // texture, but they may not choose a knowingly slower lane.
+    const clearRoadObs=playerPerceivedObservers(p,26.0);
+    if(clearRoadObs.length===0 && now>=p.shockAvoidUntil){
+      const fastLine=optimalRacingLine2Offset(p,si);
+      const lineSkill=Math.max(0,Math.min(1,((p.stats.cornering+p.stats.insideLine+p.stats.routeReading+p.stats.control)/4-72)/27));
+      const trust=.965+lineSkill*.030;
+      targetOff=targetOff*(1-trust)+fastLine*trust;
+    }
+
+    let speedMul=(clearRoadObs.length===0?1:humanDrive.speedMul)*unitAI.pace;
     if(passPlan) speedMul*=passPlan.speedMul;
     if(clutchPlan) speedMul*=clutchPlan.speedMul;
     if(now<p.startLaunchUntil){
@@ -4316,7 +4428,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!avoid && now<p.avoidRecoverUntil){
       const duration=Math.max(430,p.avoidRecoverUntil-(p.avoidRecoverStart||now));
       const t=Math.max(0,Math.min(1,(now-(p.avoidRecoverStart||now))/duration));
-      // v4.62 SAFE REJOIN 2.0: recover toward the optimized line only as quickly as
+      // v4.63 SAFE REJOIN 3.0: recover toward the optimized line only as quickly as
       // the road ahead permits. Clear straights rejoin quickly; an approaching corner
       // or visible observer chain keeps the current safe line until the geometry settles.
       const recoveryN=Math.max(0,Math.min(1,(p.stats.recovery-72)/27));
@@ -4329,7 +4441,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const smooth=t<.18 ? t*.25 : t<.68 ? .045+(t-.18)*1.28 : .685+(t-.68)*.98;
       const rejoinAuthority=Math.max(.12,Math.min(1,clearFactor*cornerFactor*(.88+recoveryN*.10+routeReadN*.08)));
       const blend=Math.max(0,Math.min(1,smooth*rejoinAuthority));
-      const rejoin=plannedRacingOffset(p,si,now);
+      // v4.63: rejoin the future optimal macro-line, not merely the nearest local lane.
+      const rejoin=optimalRacingLine2Offset(p,si);
       const from=p.avoidRecoverOffset;
       targetOff=from*(1-blend)+rejoin*blend;
       // If the road is completely clear and nearly straight, don't carry a slow
