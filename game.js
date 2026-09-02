@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.89";
+  const BUILD_ID = "v4.90";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4953,6 +4953,60 @@ function packContextOffset(p,si,now){
     return clampRoadOffset(idx,targetOff,p);
   }
 
+
+  // v4.90 RACE AI 5.1 — CONTINUOUS STEERING
+  // Do not hard-code screenshot coordinates. Every route segment uses the same rule:
+  // preserve forward direction, blend into the next tangent gradually, and cap how
+  // sharply the virtual-mouse target can rotate during ordinary racing.
+  function continuousSteeringTarget90(p,si,tx,ty,emergency=false){
+    if(emergency) return {x:tx,y:ty};
+
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const next=segs[Math.min(segs.length-1,idx+1)];
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const phase=s.L ? along/s.L : 1;
+
+    // Start rotating toward the next route tangent progressively instead of reaching
+    // a joint and then snapping toward it. Stronger corners begin the blend earlier.
+    const turn=Math.abs(s.ux*next.uy-s.uy*next.ux);
+    const blendStart=Math.max(.48,.72-turn*.48);
+    const tangentBlend=Math.max(0,Math.min(1,(phase-blendStart)/Math.max(.12,1-blendStart)));
+    let rdx=s.ux*(1-tangentBlend)+next.ux*tangentBlend;
+    let rdy=s.uy*(1-tangentBlend)+next.uy*tangentBlend;
+    let rl=Math.hypot(rdx,rdy)||1;
+    rdx/=rl; rdy/=rl;
+
+    let dx=tx-p.x, dy=ty-p.y;
+    let dist=Math.hypot(dx,dy);
+    if(dist<.01) return {x:tx,y:ty};
+    dx/=dist; dy/=dist;
+
+    // Signed angular difference between the smooth route tangent and requested target.
+    let dot=Math.max(-1,Math.min(1,rdx*dx+rdy*dy));
+    let cross=rdx*dy-rdy*dx;
+    let angle=Math.atan2(cross,dot);
+
+    // Straight corridors stay almost straight. Real corners progressively earn more
+    // steering angle; this removes the horizontal -> sudden vertical "L-turn".
+    const cornerPower=Math.max(cornerIntensity(idx),cornerIntensity(Math.min(segs.length-1,idx+1))*.78);
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const maxDeg=10.5 + Math.min(31,cornerPower*66) + tangentBlend*7 + controlN*2.5;
+    const maxRad=maxDeg*Math.PI/180;
+    angle=Math.max(-maxRad,Math.min(maxRad,angle));
+
+    const ca=Math.cos(angle), sa=Math.sin(angle);
+    const ndx=rdx*ca-rdy*sa, ndy=rdx*sa+rdy*ca;
+
+    // Keep a useful look distance so the target remains a long, natural line rather
+    // than a tiny succession of right-angle correction clicks.
+    const look=Math.max(8.5,Math.min(22,dist));
+    let x=p.x+ndx*look, y=p.y+ndy*look;
+    const legal=courseAwareTarget(p,idx,x,y);
+    return {x:legal.x,y:legal.y};
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -5409,7 +5463,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
-    const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.120,dt*(.00258+steerControl*.00057+steerTurn*.00058));
+    const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.092,dt*(.00218+steerControl*.00050+steerTurn*.00048));
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
@@ -5456,6 +5510,18 @@ targetOff=clampRoadOffset(si,targetOff,p);
     {
       const legalTarget=courseAwareTarget(p,si,tx,ty);
       tx=legalTarget.x; ty=legalTarget.y;
+    }
+
+    // v4.90: ordinary racing target is direction-continuous. Observer emergencies
+    // still retain full escape authority below through the hard-route-lock override.
+    {
+      const emergency90=!!avoid && (
+        avoid.mode==="stop" ||
+        (Number.isFinite(avoid.minClear) && avoid.minClear<1.05) ||
+        now<(p.hardRouteLockUntil||0)
+      );
+      const smooth90=continuousSteeringTarget90(p,si,tx,ty,emergency90);
+      tx=smooth90.x; ty=smooth90.y;
     }
 
     // v4.60 HARD ROUTE LOCK + ESCAPE CORRIDOR: while locked, bypass the optimized
