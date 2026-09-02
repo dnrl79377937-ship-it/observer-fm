@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.01";
+  const BUILD_ID = "v5.02";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5828,15 +5828,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let ty=s.b[1]+s.ny*routeOff501;
 
     if(next && si<segs.length-1){
-      const look=0.24;
+      const legacyHorizontal502=Math.abs(s.ux)>=.88;
+      const look=legacyHorizontal502?0:0.24;
       const nx=next.b[0]+next.nx*routeOff501;
       const ny=next.b[1]+next.ny*routeOff501;
       let candX=tx*(1-look)+nx*look;
       let candY=ty*(1-look)+ny*look;
-      if(centerTarget501 && Math.abs(next.ux)<.80){
-        candX=tx;
-        candY=ty;
-      }
 
       // Restricted red zones are planning vetoes only. If the 24% look-ahead would
       // cross one, keep the current-segment target instead of inventing a detour.
@@ -5973,15 +5970,36 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
 
+    // v5.02 LEGACY DIRECT-SEGMENT MOTION
+    // Calm racing now uses the old proven generation's actual movement model:
+    // current segment target -> direct normalized movement every simulation step.
+    // No virtual-mouse heading inertia or steer smoothing is allowed to bend the path.
     let dx=tx-p.x, dy=ty-p.y;
     const d=Math.hypot(dx,dy) || 1;
-    const ndx=dx/d, ndy=dy/d;
-    const steerBlend=(p.mouseMode==="race")
-      ? Math.min(.13,(.075+((p.stats.control-72)/27)*.035+cornerIntensity(si)*.025)*(unitAI.steer||1))
-      : Math.min(.25,(.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06)*(unitAI.steer||1));
-    p.steerX += (ndx-p.steerX)*steerBlend;
-    p.steerY += (ndy-p.steerY)*steerBlend;
-    const steerLen=Math.hypot(p.steerX,p.steerY)||1;
+    const legacyCalm502 =
+      !liveEvade &&
+      now>=(p.hardRouteLockUntil||0) &&
+      now>=(p.routeBreakCombatUntil||0) &&
+      p.controlMode==="normal";
+
+    let moveDirX,moveDirY;
+    if(legacyCalm502){
+      moveDirX=dx/d;
+      moveDirY=dy/d;
+      p.steerX=moveDirX;
+      p.steerY=moveDirY;
+      // Old builds did not carry a stale mouse heading into the next straight.
+      p.mouseTargetX=tx;
+      p.mouseTargetY=ty;
+    }else{
+      const ndx=dx/d, ndy=dy/d;
+      const steerBlend=Math.min(.25,(.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06)*(unitAI.steer||1));
+      p.steerX += (ndx-p.steerX)*steerBlend;
+      p.steerY += (ndy-p.steerY)*steerBlend;
+      const steerLen=Math.hypot(p.steerX,p.steerY)||1;
+      moveDirX=p.steerX/steerLen;
+      moveDirY=p.steerY/steerLen;
+    }
 
     // v2.54 CONTINUOUS-RUN ACCELERATION:
     // uninterrupted forward running ramps to +3% effective pace over 2.6 s.
@@ -6023,8 +6041,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const step=p.speed*speedMul*dt/1000;
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
-    p.x += p.steerX/steerLen*move;
-    p.y += p.steerY/steerLen*move;
+    p.x += moveDirX*move;
+    p.y += moveDirY*move;
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
