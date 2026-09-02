@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.69";
+  const BUILD_ID = "v4.74";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2590,7 +2590,71 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   // v4.68 DRIVER STYLE 2.0:
   // Styles no longer choose intentionally slow macro routes. They change how precisely
   // and how boldly each racer executes the same shortest inside line.
-  function driverStyle68Line(p,si,baseOff,passActive=false){
+  
+  // v4.70-v4.74 INTEGRATED FAST-RACE AI
+  // 4.70 inside-line 3.0 / 4.71 turn-in timing 3.0 / 4.72 linked corners 3.0
+  // 4.73 straight driving 2.0 / 4.74 leader AI 3.0.
+  function linkedCornerPlan74(si,maxLook=4){
+    const out=[];
+    for(let k=0;k<=maxLook;k++){
+      const sj=Math.min(segs.length-1,si+k);
+      const power=cornerIntensity(sj),side=cornerInsideSide(sj);
+      if(side && power>.028) out.push({sj,gap:k,power,side});
+    }
+    return out;
+  }
+
+  function integratedFastLine74(p,si,baseOff){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx],half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    const rx=p.x-s.a[0],ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const phase=s.L?along/s.L:1;
+    const corners=linkedCornerPlan74(idx,4);
+    const insideN=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+    const cornerN=Math.max(0,Math.min(1,(p.stats.cornering-72)/27));
+    const readN=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const precision=insideN*.34+cornerN*.29+readN*.22+controlN*.15;
+    let target=baseOff,authority=.82;
+
+    if(corners.length){
+      const c=corners[0];
+      // 4.71: turn in only when the inside line is geometrically useful; no early exterior setup.
+      const approach=Math.max(0,Math.min(1,(4.15-c.gap)/4.15));
+      const edge=Math.min(.998,.925+precision*.068);
+      const insideTarget=c.side*half*edge;
+      if(c.gap===0){
+        const turnIn=Math.max(0,Math.min(1,(phase+.10)/.28));
+        target=baseOff*(1-turnIn)+insideTarget*turnIn;
+        authority=.91+precision*.06;
+      }else{
+        target=insideTarget;
+        authority=Math.min(.94,.42+approach*.43+readN*.07);
+      }
+
+      // 4.72: linked corners are one sequence. Stay on current inside for same-direction
+      // bends; cross toward the next inside only late enough for an opposite S-bend.
+      const next=corners.find(x=>x.sj>c.sj);
+      if(next && c.gap===0){
+        if(next.side===c.side){
+          target=insideTarget;
+          authority=Math.max(authority,.94);
+        }else if(phase>.76){
+          const t=Math.min(1,(phase-.76)/.24);
+          const nextInside=next.side*half*(.78+readN*.15);
+          target=insideTarget*(1-t*.52)+nextInside*(t*.52);
+        }
+      }
+    }else{
+      // 4.73: straight = shortest stable continuation. No decorative lane weaving.
+      target=baseOff;
+      authority=.94;
+    }
+    return clampRoadOffset(idx,baseOff*(1-authority)+target*authority,p);
+  }
+
+function driverStyle68Line(p,si,baseOff,passActive=false){
     if(passActive) return baseOff; // a genuine pass may temporarily need another corridor
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
@@ -2627,9 +2691,10 @@ function leaderLineDiscipline67(p,si){
     const rs=liveRaceSituation(p);
     const macro=optimalRacingLine2Offset(p,si);
     // v4.68: leader discipline follows the shortest-inside refined route as well.
-    const solo=cornerPhysics64Target(p,si,macro).off;
-    const leadBattle=(rs.rank===1 && rs.nearestBehindGap<6.2) ||
-                     (rs.rank===2 && rs.nearestAheadGap<6.2);
+    const soloBase=cornerPhysics64Target(p,si,macro).off;
+    const solo=integratedFastLine74(p,si,soloBase);
+    const leadBattle=(rs.rank===1 && rs.nearestBehindGap<7.5) ||
+                     (rs.rank===2 && rs.nearestAheadGap<7.5);
     return {rs,solo,leadBattle};
   }
 
@@ -4827,7 +4892,7 @@ function packContextOffset(p,si,now){
           ((p.stats.aggression+p.stats.prediction+p.stats.routeReading+p.stats.control)/4-72)/27));
         let authority65=(passPlan.mode===2?.74:passPlan.mode===3?.70:.82)+passSkill65*.08;
         const leadPass67=leaderLineDiscipline67(p,si);
-        if(leadPass67.leadBattle) authority65=Math.min(authority65,.66);
+        if(leadPass67.leadBattle) authority65=Math.min(authority65,.52);
         targetOff=targetOff*(1-authority65)+passPlan.off*authority65;
       }
     }
@@ -4838,9 +4903,10 @@ function packContextOffset(p,si,now){
     if(clearRoadObs.length===0 && now>=p.shockAvoidUntil){
       targetOff=driverStyle68Line(p,si,targetOff,!!passPlan);
       if(!passPlan){
-        // v4.69 BALANCE PASS: normal racing should look decisively optimized.
+        // v4.70-v4.73 integrated fastest-line authority.
         const fast69=cornerPhysics64Target(p,si,optimalRacingLine2Offset(p,si)).off;
-        targetOff=targetOff*.18+fast69*.82;
+        const fast74=integratedFastLine74(p,si,fast69);
+        targetOff=targetOff*.08+fast74*.92;
       }
     }
 
@@ -4857,7 +4923,7 @@ function packContextOffset(p,si,now){
     // on the fast line until an observer threat genuinely requires a dodge.
     const lead67=leaderLineDiscipline67(p,si);
     if(clearRoadObs.length===0 && lead67.leadBattle && now>=p.shockAvoidUntil){
-      targetOff=targetOff*.08+lead67.solo*.92;
+      targetOff=targetOff*.03+lead67.solo*.97;
     }
 
     // v4.67 unified survival/racing policy. The avoidance planner still detects danger,
