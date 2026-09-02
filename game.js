@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.2";
+  const BUILD_ID = "v4.59.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -100,6 +100,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   ];
 
   // v2.21: stronger behavioral identity; never changes raw base speed.
+  // v4.59.3 PRECISION SURVIVAL: early certain dodge, persistent side commitment, slower safe rejoin, less pointless over-avoid.
   // v4.46 RACE-SITUATION AI: leader/chaser/clutch behavior uses Aggression, Risk Control and Pressure.
   // v4.45 PERSONALITY AI 2.0: persistent styles now alter line commitment, safety margin,
   // click rhythm and rejoin patience. They never create random deaths or hidden speed boosts.
@@ -1718,9 +1719,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // No invulnerability/speed rubber-band: racers simply recognize dangerous approach
     // a little earlier and prefer a slightly larger predicted clearance before shelter 1.
     const preShelterSafety=progressRatio<.56 ? 1.12 : (progressRatio<.64 ? 1.045 : 1);
-    const survivalSafety=(1.34+survival*.82)*identityOf(p).safety*preShelterSafety; // v4.59.2 survival-first: accept a little more distance for reliable clearance
+    const survivalSafety=(1.36+survival*.84)*identityOf(p).safety*preShelterSafety; // v4.59.3: keep reliable clearance slightly ahead of raw lap distance
     const timeLoss=(1-speedMul)*(19.0+situationRisk*7.0)/Math.max(.90,safetyBias);
-    const detour=Math.abs(targetOff-p.desiredOffset)*0.155*(2-safetyBias)*(1-survival*.72); // v4.59.2 cheaper safe detours
+    const detour=Math.abs(targetOff-p.desiredOffset)*0.165*(2-safetyBias)*(1-survival*.70); // v4.59.3: safe detours remain cheap, but pointless wandering costs a little more
     return {score:danger*safetyBias*survivalSafety+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
   }
 
@@ -2264,7 +2265,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
         // free road to take a cleaner diagonal, so a low-clearance candidate pays heavily.
         if(sparseField){
-          const sparseClear=3.05+avoid*.38+pred*.28; // v4.59.2 lone-observer: prefer visibly generous clearance
+          const sparseClear=3.28+avoid*.42+pred*.32; // v4.59.3: one readable observer gets a visibly clean pass, not a skim
           if(future.minClear<sparseClear) score += (sparseClear-future.minClear)*12.5;
           if(r.minClear<sparseClear*.82) score += (sparseClear*.82-r.minClear)*10.0;
           if(c.kind==='diag') score-=.72;
@@ -2327,7 +2328,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // This prevents dodge-one-observer -> instant apex rejoin -> hit-next-observer deaths.
         if(best.kind!=='stop' && best.kind!=='back'){
           p.survivalRecoverStart=now+hold;
-          p.survivalRecoverUntil=p.survivalRecoverStart+(sparseField?520:260)+avoid*(sparseField?210:150)+pred*(sparseField?160:110);
+          p.survivalRecoverUntil=p.survivalRecoverStart+(sparseField?650:300)+avoid*(sparseField?230:160)+pred*(sparseField?190:120); // v4.59.3 hold the cleared lane a little longer
           p.survivalRecoverOffset=best.off;
         }
         // v4.26: a stop is a tiny human tap, not a long decision lock. Re-read the
@@ -2372,7 +2373,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const leaderRejoin=liveRaceSituation(p).rank===1;
       // Leaders may return a little sooner when the corridor is genuinely clear, but
       // never cut through a closing observer just to protect first place.
-      const minNeed=leaderRejoin?1.86:1.99; // v4.59 final integrated death-safety floor
+      const minNeed=leaderRejoin?2.02:2.14; // v4.59.3: no early cut-back through a marginal gap
       const scoreSlack=leaderRejoin?.64:.54;
       const joinBad=rejoinObs.length && (joinMin<minNeed || joinScore>holdRisk.score+scoreSlack || (nextThreatClosing && joinMin<2.35));
       p.survivalRejoinLastRisk=joinScore||0;
@@ -2385,7 +2386,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         return {off:held,speedMul:1.012,danger:Math.max(p.liveEvadeDanger*.30,.16),side:p.liveEvadeSide};
       }
       if(!p.survivalRejoinClearSince) p.survivalRejoinClearSince=now;
-      const clearNeed=(leaderRejoin?150:180)+(1-avoid)*70+(1-pred)*60;
+      const clearNeed=(leaderRejoin?175:210)+(1-avoid)*75+(1-pred)*65; // v4.59.3 continuous safe-window confirmation
       if(now-p.survivalRejoinClearSince<clearNeed){
         p.liveEvadeAction='recover-check';
         return {off:held,speedMul:1.008,danger:p.liveEvadeDanger*.25,side:p.liveEvadeSide};
@@ -2461,11 +2462,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const rv2=rvx*rvx+rvy*rvy;
         let tc=99,cpa=99;
         if(rv2>.01){
-          tc=Math.max(0,Math.min(3.65,-(dx*rvx+dy*rvy)/rv2));
+          tc=Math.max(0,Math.min(4.10,-(dx*rvx+dy*rvy)/rv2));
           cpa=Math.hypot(dx+rvx*tc,dy+rvy*tc);
         }
-        const direct=Math.abs(lat)<3.65 && along<16.8;
-        if((tc<3.45 && cpa<3.85) || direct) loneFront.push({o,along,lat,tc,cpa});
+        const closingDot=dx*rvx+dy*rvy;
+        // v4.59.3 PRECISION SURVIVAL: do not flee merely because one observer is visually ahead.
+        // Commit early only when closest-approach predicts collision, or when a stationary/slow
+        // obstacle truly occupies the forward lane. This trims cowardly over-avoidance.
+        const direct=Math.abs(lat)<3.85 && along<18.6 && (closingDot<0 || Math.hypot(o.vx||0,o.vy||0)<.35);
+        if((tc<3.82 && cpa<4.18) || direct) loneFront.push({o,along,lat,tc,cpa});
       }
     }
     if(loneFront.length===1){
@@ -2474,7 +2479,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const leadT=Math.max(.72,Math.min(2.9,th.tc<90?th.tc:th.along/Math.max(4.8,p.speed)));
       const predX=predictedObserverX(th.o,leadT), predY=predictedObserverY(th.o,leadT);
       const predLat=(predX-p.x)*s.nx+(predY-p.y)*s.ny;
-      const clearance=4.05+skill*.72;
+      const clearance=4.38+skill*.78; // v4.59.3 survival-first: sacrifice a little optimal line for a clean pass
       const leftTarget=clampRoadOffset(Math.min(p.seg,widths.length-1),predLat-clearance,p);
       const rightTarget=clampRoadOffset(Math.min(p.seg,widths.length-1),predLat+clearance,p);
       const leftRisk=candidateAvoidanceRisk(p,s,leftTarget,.998,nearby);
@@ -2482,19 +2487,22 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       let chosen=leftRisk.score<=rightRisk.score?{off:leftTarget,r:leftRisk}:{off:rightTarget,r:rightRisk};
       // If both candidate scores are close, use a persistent per-racer side signature so
       // eight overlapping racers do not all choose the exact same dodge arc.
-      if(Math.abs(leftRisk.score-rightRisk.score)<1.35){
-        const sig=((p.index||0)%2===0)?-1:1;
+      if(Math.abs(leftRisk.score-rightRisk.score)<1.55){
+        // Persistent racer signature rather than per-frame randomness. routeBand/style make
+        // an overlapping pack split naturally without turning the dodge into random noise.
+        const signature=(p.routeBand||0)+(p.openingLineBias||0)*.65+(p.index%2?.18:-.18);
+        const sig=signature===0?((p.index||0)%2?-1:1):Math.sign(signature);
         chosen=sig<0?{off:leftTarget,r:leftRisk}:{off:rightTarget,r:rightRisk};
       }
-      if(chosen.r.minClear>.82){
+      if(chosen.r.minClear>.96){
         p.avoidPlanOffset=chosen.off;
         p.avoidPlanSpeedMul=.998;
         p.avoidPlanRisk=chosen.r.score;
-        p.avoidPlanUntil=now+Math.max(820,Math.min(1420,th.along*86));
+        p.avoidPlanUntil=now+Math.max(980,Math.min(1580,th.along*92)); // v4.59.3 commit to the safe side; less left-right wobble
         p.avoidLastSide=Math.sign(chosen.off-p.desiredOffset)||p.avoidLastSide||1;
         p.avoidExitSide=p.avoidLastSide;
-        p.avoidExitUntil=p.avoidPlanUntil+760;
-        p.avoidSideLockUntil=p.avoidPlanUntil;
+        p.avoidExitUntil=p.avoidPlanUntil+900;
+        p.avoidSideLockUntil=p.avoidPlanUntil+180; // v4.59.3 keep chosen side unless new danger clearly invalidates it
         p.match.avoids++; p.match.simpleDodges=(p.match.simpleDodges||0)+1;
         return {mode:"planned",targetOff:chosen.off,speedMul:.998,risk:chosen.r.score,minClear:chosen.r.minClear,loneObserverHotfix:true};
       }
