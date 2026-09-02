@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.06";
+  const BUILD_ID = "v5.07";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1218,44 +1218,6 @@ function courseContainsPoint(x,y,extra=0){
       if(!courseContainsPoint(x1+(x2-x1)*t,y1+(y2-y1)*t,extra)) return false;
     }
     return true;
-  }
-
-
-  // v5.05 HORIZONTAL TARGET PRESERVER
-  // On calm horizontal travel, never let courseAwareTarget's desiredOffset fallback
-  // replace a center/forward target with a vertical lane target.
-  function horizontalTarget505(p,si,tx,ty){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-    if(Math.abs(s.ux)<.88) return null;
-
-    // Prefer the requested forward target when its endpoint is ordinary road.
-    // Red zones remain a planning veto; if they reject the chord, fall back ONLY
-    // to the current segment center endpoint, never to p.desiredOffset.
-    if(!inForbidden96(tx,ty) &&
-       !lineHitsForbidden96(p.x,p.y,tx,ty) &&
-       lineStaysOnCourse(p.x,p.y,tx,ty,ROUTE_PLAN_EXTRA)){
-      return {x:tx,y:ty};
-    }
-
-    const cx=s.b[0], cy=s.b[1];
-    if(!inForbidden96(cx,cy) &&
-       !lineHitsForbidden96(p.x,p.y,cx,cy) &&
-       lineStaysOnCourse(p.x,p.y,cx,cy,ROUTE_PLAN_EXTRA)){
-      return {x:cx,y:cy};
-    }
-
-    // If the red-zone planner itself is what blocks an otherwise normal road chord,
-    // keep moving forward along the current horizontal segment rather than dropping.
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const ahead=Math.min(s.L,along+Math.max(4.5,Math.min(11.0,s.L-along)));
-    const fx=s.a[0]+s.ux*ahead;
-    const fy=s.a[1]+s.uy*ahead;
-    if(courseContainsPoint(fx,fy,ROUTE_PLAN_EXTRA)){
-      return {x:fx,y:fy};
-    }
-    return {x:tx,y:ty};
   }
 
   function courseAwareTarget(p,si,tx,ty){
@@ -5383,7 +5345,9 @@ function farthestVisibleFastTarget91(p,si){
       (p.liveEvadeDanger||0)>.18 ||
       !!p.liveEvadeThreat;
     if(!horizontal || !nextCompatible || emergency) return false;
-    return playerPerceivedObservers(p,10.5).length===0;
+    // v5.07: simply seeing an observer nearby no longer disables broad-road center travel.
+    // Only a real live-evade/emergency may override it.
+    return true;
   }
 
 
@@ -5400,12 +5364,13 @@ function farthestVisibleFastTarget91(p,si){
   }
 
 
-  // v5.06 DIRECT CORRIDOR ENGINE
-  // Calm racing does not follow route waypoints one-by-one. It searches forward
-  // for the farthest point reachable by one legal straight chord inside the road.
-  function lineStaysOnCourse506(x1,y1,x2,y2,extra=ROUTE_PLAN_EXTRA){
+  // v5.07 BROAD-ROAD CORRIDOR ENGINE
+  // Edge rows remain legal drivable road, but they are NOT the default reference line.
+  // On broad road, calm racing prefers a center/shortest visible chord through the
+  // whole road surface. Edge lines are reserved for real tactical/avoidance use.
+  function roadChordLegal507(x1,y1,x2,y2,extra=ROUTE_PLAN_EXTRA){
     const dist=Math.hypot(x2-x1,y2-y1);
-    const n=Math.max(2,Math.ceil(dist/.55));
+    const n=Math.max(3,Math.ceil(dist/.50));
     for(let k=1;k<=n;k++){
       const t=k/n;
       if(!courseContainsPoint(x1+(x2-x1)*t,y1+(y2-y1)*t,extra)) return false;
@@ -5413,9 +5378,10 @@ function farthestVisibleFastTarget91(p,si){
     return true;
   }
 
-  function directCorridorTarget506(p,si,now){
+  function broadRoadTarget507(p,si,now){
     const start=Math.max(0,Math.min(segs.length-1,si));
-    const current=segs[start];
+    const s=segs[start];
+
     const emergency=
       now<(p.hardRouteLockUntil||0) ||
       now<(p.routeBreakCombatUntil||0) ||
@@ -5424,26 +5390,51 @@ function farthestVisibleFastTarget91(p,si){
       p.controlMode!=="normal";
     if(emergency) return null;
 
-    let best=null, bestProgress=-1;
-    const maxAhead=Math.min(segs.length-1,start+12);
+    // Broad-road detection: use actual route width, but avoid forcing narrow connectors.
+    const broad = widths[start] >= 7.8;
+    if(!broad) return null;
+
+    // Search forward for the farthest route-centered point that is directly visible
+    // through legal road. Candidate lateral offset is intentionally ZERO by default:
+    // edge rows are allowed but never the preferred baseline.
+    let best=null;
+    let bestScore=-1e9;
+    const maxAhead=Math.min(segs.length-1,start+10);
+
     for(let j=start;j<=maxAhead;j++){
       const sj=segs[j];
-      const samples=(j===start)?[.72,.86,1.0]:[.35,.58,.78,1.0];
+      const samples=(j===start)?[.72,.88,1.0]:[.38,.62,.82,1.0];
+
       for(const t of samples){
+        // centerline candidate of future segment
         const x=sj.a[0]+(sj.b[0]-sj.a[0])*t;
         const y=sj.a[1]+(sj.b[1]-sj.a[1])*t;
-        const fx=x-p.x, fy=y-p.y;
-        if(fx*current.ux+fy*current.uy<2.0 && j<=start+1) continue;
-        if(!lineStaysOnCourse506(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) continue;
-        const progress=j+t, chord=Math.hypot(fx,fy);
-        if(progress>bestProgress+1e-6 ||
-           (Math.abs(progress-bestProgress)<1e-6 && best && chord<best.d)){
-          best={x,y,d:chord,j,t};
-          bestProgress=progress;
+
+        const dx=x-p.x, dy=y-p.y;
+        const d=Math.hypot(dx,dy);
+        if(d<3.5) continue;
+
+        // must be reasonably forward from current heading
+        const forward=(dx*s.ux+dy*s.uy);
+        if(forward<1.2 && j<=start+1) continue;
+
+        if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) continue;
+
+        // Favor farther progress and straighter motion. Penalize large lateral deviation
+        // from the current segment direction, which is what makes edge/L doglegs unattractive.
+        const progress=(j-start)+t;
+        const lat=Math.abs(dx*s.nx+dy*s.ny);
+        const straightness=Math.max(0,forward)/(d||1);
+        const score=progress*12 + straightness*7 - lat*.42;
+
+        if(score>bestScore){
+          bestScore=score;
+          best={x,y,d,j,t};
         }
       }
     }
-    return best && best.d>=4.0 ? best : null;
+
+    return best;
   }
 
 function updatePlayer(p, now, dt){
@@ -5910,7 +5901,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
     const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.092,dt*(.00218+steerControl*.00050+steerTurn*.00048));
-    if(!centerLock501 && !horizontalHold503(p,si)){
+    if(!centerLock501){
       p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
     }
 
@@ -5962,17 +5953,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=legalEscape.x; ty=legalEscape.y;
     }
 
-    // v5.05 compatibility preservation.
-    if(horizontalHold503Active && !liveEvade && now>=(p.hardRouteLockUntil||0)){
-      const kept505=horizontalTarget505(p,si,tx,ty);
-      if(kept505){ tx=kept505.x; ty=kept505.y; }
-    }
-
-    // v5.06 FINAL CALM-ROAD AUTHORITY:
-    // This replaces accumulated waypoint/offset output with one farthest legal chord.
-    const corridor506=directCorridorTarget506(p,si,now);
-    if(corridor506 && !liveEvade){
-      tx=corridor506.x; ty=corridor506.y;
+    // v5.07 FINAL BROAD-ROAD AUTHORITY:
+    // On calm broad road, replace edge-biased/offset-biased targets with the farthest
+    // legal center/shortest chord through the road surface.
+    const broad507=broadRoadTarget507(p,si,now);
+    if(broad507 && !liveEvade){
+      tx=broad507.x;
+      ty=broad507.y;
     }
 
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
@@ -6043,15 +6030,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===2 ? (6.35+controlN*.82)
           : (5.75+controlN*.76))*unitClick;
         if(clickD>maxClickDist){ mx=p.x+clickDx/clickD*maxClickDist; my=p.y+clickDy/clickD*maxClickDist; }
-        let legalMouse;
-        if(!dangerActive && corridor506){
-          legalMouse={x:mx,y:my};
-        }else{
-          const horizontalMouse505=(!dangerActive && horizontalHold503Active)
-            ? horizontalTarget505(p,si,mx,my)
-            : null;
-          legalMouse=horizontalMouse505 || courseAwareTarget(p,si,mx,my);
-        }
+        const legalMouse=(!dangerActive && broad507)
+          ? {x:mx,y:my}
+          : courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
         const prevMouseX=p.mouseTargetX??p.x, prevMouseY=p.mouseTargetY??p.y;
         const nextMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : (now<(p.hardRouteLockUntil||0)?'route-lock':'race');
@@ -6090,13 +6071,17 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
 
-    // v5.06: calm movement consumes the corridor target directly every frame.
-    if(corridor506 && !liveEvade &&
+    // v5.07 direct broad-road movement:
+    // do not allow stale mouse/edge commands to turn a valid broad-road straight chord
+    // into a one-tile edge-following L path.
+    if(broad507 && !liveEvade &&
        now>=(p.hardRouteLockUntil||0) &&
        now>=(p.routeBreakCombatUntil||0) &&
        p.controlMode==="normal"){
-      tx=corridor506.x; ty=corridor506.y;
-      p.mouseTargetX=tx; p.mouseTargetY=ty;
+      tx=broad507.x;
+      ty=broad507.y;
+      p.mouseTargetX=tx;
+      p.mouseTargetY=ty;
     }
 
     // v5.02 LEGACY DIRECT-SEGMENT MOTION
@@ -6116,7 +6101,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         // The road itself is horizontal here; do not carry any stale vertical heading.
         const dir=Math.sign(s.ux)||1;
         const centerErr=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-        if(Math.abs(centerErr)<1.15){
+        if(Math.abs(centerErr)<0.55){
           moveDirX=dir;
           moveDirY=0;
         }
@@ -6178,22 +6163,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
     p.x += moveDirX*move;
     p.y += moveDirY*move;
-
-    // v5.06 forward-only logical resync after a waypoint-skipping straight chord.
-    // Never jump backward; never teleport the racer itself.
-    if(corridor506 && Number.isFinite(corridor506.j) && corridor506.j>p.seg){
-      let bestSeg=p.seg;
-      const maxSeg=Math.min(corridor506.j,segs.length-1);
-      for(let j=p.seg;j<=maxSeg;j++){
-        const sj=segs[j];
-        const rx=p.x-sj.a[0], ry=p.y-sj.a[1];
-        const along=rx*sj.ux+ry*sj.uy;
-        const lateral=Math.abs(rx*sj.nx+ry*sj.ny);
-        const roadHalf=Math.max(2.0,widths[j]*ROAD_MARGIN+ROUTE_PLAN_EXTRA);
-        if(along>=-.8 && along<=sj.L+1.2 && lateral<=roadHalf) bestSeg=j;
-      }
-      if(bestSeg>p.seg) p.seg=bestSeg;
-    }
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
