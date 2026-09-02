@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.95";
+  const BUILD_ID = "v4.96";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1139,7 +1139,64 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   // as coordinate rectangles. Every route segment is treated as a rounded corridor
   // (capsule), so bends join naturally, all normal/inside lines are drivable, and the
   // large gaps between unrelated roads remain lethal. Yellow zones use safeAt().
-  function courseContainsPoint(x,y,extra=0){
+  
+  // v4.96 HARD RESTRICTED AREAS
+  // These seven rectangles are the exact red boxes marked by the user on the full-map
+  // screenshot, transformed into game coordinates. They are absolute no-entry zones.
+  const FORBIDDEN96=[
+    {x1:0.00,y1:0.80,x2:86.99,y2:11.72},
+    {x1:0.18,y1:11.46,x2:10.22,y2:78.34},
+    {x1:55.78,y1:35.17,x2:88.78,y2:45.83},
+    {x1:76.94,y1:58.62,x2:88.60,y2:75.14},
+    {x1:33.00,y1:109.25,x2:112.10,y2:121.78},
+    {x1:148.86,y1:56.49,x2:165.36,y2:157.22},
+    {x1:61.34,y1:156.95,x2:165.36,y2:170.54}
+  ];
+  const FORBIDDEN96_PAD=.18;
+
+  function inForbidden96(x,y,pad=FORBIDDEN96_PAD){
+    for(const z of FORBIDDEN96){
+      if(x>=z.x1-pad && x<=z.x2+pad && y>=z.y1-pad && y<=z.y2+pad) return true;
+    }
+    return false;
+  }
+
+  function lineHitsForbidden96(x1,y1,x2,y2,pad=FORBIDDEN96_PAD){
+    const dist=Math.hypot(x2-x1,y2-y1);
+    const n=Math.max(2,Math.ceil(dist/.28));
+    for(let k=0;k<=n;k++){
+      const t=k/n;
+      if(inForbidden96(x1+(x2-x1)*t,y1+(y2-y1)*t,pad)) return true;
+    }
+    return false;
+  }
+
+  function nearestForbiddenEscape96(x,y){
+    let best=null,bestD=1e30;
+    for(const z of FORBIDDEN96){
+      const left=Math.abs(x-(z.x1-FORBIDDEN96_PAD-.55));
+      const right=Math.abs(x-(z.x2+FORBIDDEN96_PAD+.55));
+      const top=Math.abs(y-(z.y1-FORBIDDEN96_PAD-.55));
+      const bottom=Math.abs(y-(z.y2+FORBIDDEN96_PAD+.55));
+      const candidates=[
+        {x:z.x1-FORBIDDEN96_PAD-.55,y},
+        {x:z.x2+FORBIDDEN96_PAD+.55,y},
+        {x,y:z.y1-FORBIDDEN96_PAD-.55},
+        {x,y:z.y2+FORBIDDEN96_PAD+.55}
+      ];
+      const ds=[left,right,top,bottom];
+      for(let i=0;i<4;i++){
+        const c=candidates[i];
+        if(c.x<1||c.x>MAP_W-1||c.y<1||c.y>MAP_H-1||inForbidden96(c.x,c.y)) continue;
+        if(ds[i]<bestD){bestD=ds[i];best=c;}
+      }
+    }
+    return best;
+  }
+
+function courseContainsPoint(x,y,extra=0){
+    // v4.96 absolute red-zone veto: even safeAt/route capsules cannot override this.
+    if(inForbidden96(x,y)) return false;
     if(safeAt(x,y)) return true;
     for(let i=0;i<segs.length;i++){
       const s=segs[i], rx=x-s.a[0], ry=y-s.a[1];
@@ -1153,6 +1210,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function lineStaysOnCourse(x1,y1,x2,y2,extra=ROUTE_PLAN_EXTRA){
+    // v4.96: no target/path chord may cross a red restricted area.
+    if(lineHitsForbidden96(x1,y1,x2,y2)) return false;
     const dist=Math.hypot(x2-x1,y2-y1);
     const n=Math.max(2,Math.ceil(dist/.70));
     for(let k=1;k<=n;k++){
@@ -1255,8 +1314,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     let along=rx*s.ux+ry*s.uy;
     const actualLateral=rx*s.nx+ry*s.ny;
     along=Math.max(0,Math.min(s.L,along+0.72));
-    p.x=s.a[0]+s.ux*along+s.nx*actualLateral;
-    p.y=s.a[1]+s.uy*along+s.ny*actualLateral;
+    const rescueX96=s.a[0]+s.ux*along+s.nx*actualLateral;
+    const rescueY96=s.a[1]+s.uy*along+s.ny*actualLateral;
+    if(!inForbidden96(rescueX96,rescueY96) && !lineHitsForbidden96(p.x,p.y,rescueX96,rescueY96)){
+      p.x=rescueX96;
+      p.y=rescueY96;
+    }
     p.controlMode="normal";
     p.controlUntil=0;
     p.avoidPlanUntil=0;
@@ -5968,6 +6031,26 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
     p.x += p.steerX/steerLen*move;
     p.y += p.steerY/steerLen*move;
+
+    // v4.96 PHYSICAL HARD BARRIER: even if some future AI routine produces a bad target,
+    // the actual racer position can never enter or cross a red restricted rectangle.
+    if(inForbidden96(p.x,p.y) || lineHitsForbidden96(p.simPrevX,p.simPrevY,p.x,p.y)){
+      p.x=p.simPrevX;
+      p.y=p.simPrevY;
+      p.mouseTargetX=p.x;
+      p.mouseTargetY=p.y;
+      p.routeShortcut94Until=0;
+      p.macroStraight93Until=0;
+      p.horizontal95Until=0;
+      const esc96=nearestForbiddenEscape96(p.x,p.y);
+      if(esc96){
+        const dx96=esc96.x-p.x,dy96=esc96.y-p.y,l96=Math.hypot(dx96,dy96)||1;
+        p.steerX=dx96/l96;
+        p.steerY=dy96/l96;
+        p.mouseTargetX=esc96.x;
+        p.mouseTargetY=esc96.y;
+      }
+    }
 
     // v4.93: if a committed macro-straight bypassed connector segments, synchronize the
     // logical route segment to the future road the racer physically reached.
