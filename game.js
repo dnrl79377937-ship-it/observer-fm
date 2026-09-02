@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.05";
+  const BUILD_ID = "v5.06";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5399,6 +5399,53 @@ function farthestVisibleFastTarget91(p,si){
     return along < s.L*.985;
   }
 
+
+  // v5.06 DIRECT CORRIDOR ENGINE
+  // Calm racing does not follow route waypoints one-by-one. It searches forward
+  // for the farthest point reachable by one legal straight chord inside the road.
+  function lineStaysOnCourse506(x1,y1,x2,y2,extra=ROUTE_PLAN_EXTRA){
+    const dist=Math.hypot(x2-x1,y2-y1);
+    const n=Math.max(2,Math.ceil(dist/.55));
+    for(let k=1;k<=n;k++){
+      const t=k/n;
+      if(!courseContainsPoint(x1+(x2-x1)*t,y1+(y2-y1)*t,extra)) return false;
+    }
+    return true;
+  }
+
+  function directCorridorTarget506(p,si,now){
+    const start=Math.max(0,Math.min(segs.length-1,si));
+    const current=segs[start];
+    const emergency=
+      now<(p.hardRouteLockUntil||0) ||
+      now<(p.routeBreakCombatUntil||0) ||
+      (p.liveEvadeDanger||0)>.18 ||
+      !!p.liveEvadeThreat ||
+      p.controlMode!=="normal";
+    if(emergency) return null;
+
+    let best=null, bestProgress=-1;
+    const maxAhead=Math.min(segs.length-1,start+12);
+    for(let j=start;j<=maxAhead;j++){
+      const sj=segs[j];
+      const samples=(j===start)?[.72,.86,1.0]:[.35,.58,.78,1.0];
+      for(const t of samples){
+        const x=sj.a[0]+(sj.b[0]-sj.a[0])*t;
+        const y=sj.a[1]+(sj.b[1]-sj.a[1])*t;
+        const fx=x-p.x, fy=y-p.y;
+        if(fx*current.ux+fy*current.uy<2.0 && j<=start+1) continue;
+        if(!lineStaysOnCourse506(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) continue;
+        const progress=j+t, chord=Math.hypot(fx,fy);
+        if(progress>bestProgress+1e-6 ||
+           (Math.abs(progress-bestProgress)<1e-6 && best && chord<best.d)){
+          best={x,y,d:chord,j,t};
+          bestProgress=progress;
+        }
+      }
+    }
+    return best && best.d>=4.0 ? best : null;
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -5915,11 +5962,17 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=legalEscape.x; ty=legalEscape.y;
     }
 
-    // v5.05: after all planner validation, horizontal calm travel gets one last
-    // geometry-only preservation pass before virtual mouse logic can consume it.
+    // v5.05 compatibility preservation.
     if(horizontalHold503Active && !liveEvade && now>=(p.hardRouteLockUntil||0)){
       const kept505=horizontalTarget505(p,si,tx,ty);
       if(kept505){ tx=kept505.x; ty=kept505.y; }
+    }
+
+    // v5.06 FINAL CALM-ROAD AUTHORITY:
+    // This replaces accumulated waypoint/offset output with one farthest legal chord.
+    const corridor506=directCorridorTarget506(p,si,now);
+    if(corridor506 && !liveEvade){
+      tx=corridor506.x; ty=corridor506.y;
     }
 
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
@@ -5990,10 +6043,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===2 ? (6.35+controlN*.82)
           : (5.75+controlN*.76))*unitClick;
         if(clickD>maxClickDist){ mx=p.x+clickDx/clickD*maxClickDist; my=p.y+clickDy/clickD*maxClickDist; }
-        const horizontalMouse505=(!dangerActive && horizontalHold503Active)
-          ? horizontalTarget505(p,si,mx,my)
-          : null;
-        const legalMouse=horizontalMouse505 || courseAwareTarget(p,si,mx,my);
+        let legalMouse;
+        if(!dangerActive && corridor506){
+          legalMouse={x:mx,y:my};
+        }else{
+          const horizontalMouse505=(!dangerActive && horizontalHold503Active)
+            ? horizontalTarget505(p,si,mx,my)
+            : null;
+          legalMouse=horizontalMouse505 || courseAwareTarget(p,si,mx,my);
+        }
         mx=legalMouse.x; my=legalMouse.y;
         const prevMouseX=p.mouseTargetX??p.x, prevMouseY=p.mouseTargetY??p.y;
         const nextMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : (now<(p.hardRouteLockUntil||0)?'route-lock':'race');
@@ -6032,10 +6090,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
 
+    // v5.06: calm movement consumes the corridor target directly every frame.
+    if(corridor506 && !liveEvade &&
+       now>=(p.hardRouteLockUntil||0) &&
+       now>=(p.routeBreakCombatUntil||0) &&
+       p.controlMode==="normal"){
+      tx=corridor506.x; ty=corridor506.y;
+      p.mouseTargetX=tx; p.mouseTargetY=ty;
+    }
+
     // v5.02 LEGACY DIRECT-SEGMENT MOTION
-    // Calm racing now uses the old proven generation's actual movement model:
-    // current segment target -> direct normalized movement every simulation step.
-    // No virtual-mouse heading inertia or steer smoothing is allowed to bend the path.
     let dx=tx-p.x, dy=ty-p.y;
     const d=Math.hypot(dx,dy) || 1;
     const legacyCalm502 =
@@ -6114,6 +6178,22 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
     p.x += moveDirX*move;
     p.y += moveDirY*move;
+
+    // v5.06 forward-only logical resync after a waypoint-skipping straight chord.
+    // Never jump backward; never teleport the racer itself.
+    if(corridor506 && Number.isFinite(corridor506.j) && corridor506.j>p.seg){
+      let bestSeg=p.seg;
+      const maxSeg=Math.min(corridor506.j,segs.length-1);
+      for(let j=p.seg;j<=maxSeg;j++){
+        const sj=segs[j];
+        const rx=p.x-sj.a[0], ry=p.y-sj.a[1];
+        const along=rx*sj.ux+ry*sj.uy;
+        const lateral=Math.abs(rx*sj.nx+ry*sj.ny);
+        const roadHalf=Math.max(2.0,widths[j]*ROAD_MARGIN+ROUTE_PLAN_EXTRA);
+        if(along>=-.8 && along<=sj.L+1.2 && lateral<=roadHalf) bestSeg=j;
+      }
+      if(bestSeg>p.seg) p.seg=bestSeg;
+    }
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
