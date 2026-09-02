@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59";
+  const BUILD_ID = "v4.59.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -385,7 +385,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
         visionRadius:Math.max(26,Math.min(37,
-          27+((stats.prediction-72)/27)*6.0+((stats.reaction-72)/27)*2.8+((stats.focus-72)/27)*2.3)),
+          28.5+((stats.prediction-72)/27)*6.5+((stats.reaction-72)/27)*3.2+((stats.focus-72)/27)*2.6)),
         // v2.34: persistent route personality. Negative = safer/wider, positive = tighter inside.
         linePersonality:(
           drivingStyle.style==="apexHunter" ? .92 :
@@ -1718,9 +1718,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // No invulnerability/speed rubber-band: racers simply recognize dangerous approach
     // a little earlier and prefer a slightly larger predicted clearance before shelter 1.
     const preShelterSafety=progressRatio<.56 ? 1.12 : (progressRatio<.64 ? 1.045 : 1);
-    const survivalSafety=(1.20+survival*.72)*identityOf(p).safety*preShelterSafety; // v4.51
+    const survivalSafety=(1.34+survival*.82)*identityOf(p).safety*preShelterSafety; // v4.59.2 survival-first: accept a little more distance for reliable clearance
     const timeLoss=(1-speedMul)*(19.0+situationRisk*7.0)/Math.max(.90,safetyBias);
-    const detour=Math.abs(targetOff-p.desiredOffset)*0.23*(2-safetyBias)*(1-survival*.66);
+    const detour=Math.abs(targetOff-p.desiredOffset)*0.155*(2-safetyBias)*(1-survival*.72); // v4.59.2 cheaper safe detours
     return {score:danger*safetyBias*survivalSafety+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
   }
 
@@ -2030,7 +2030,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Read an observer's current travel vector and begin a single broad, committed arc
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
-    const vision=Math.min(30,p.visionRadius||30);
+    const vision=Math.min(33,p.visionRadius||33); // v4.59.2 earlier readable threat window
     const raw=playerPerceivedObservers(p,vision);
     if(!raw.length){
       p.liveEvadeDanger=0;
@@ -2079,7 +2079,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
       const d=Math.hypot(dx,dy); nearest=Math.min(nearest,d);
-      if(along<-3.5 || along>24.5 || Math.abs(lat)>12.5) continue;
+      if(along<-3.5 || along>30.5 || Math.abs(lat)>14.5) continue; // v4.59.1 lone-observer early read
       // v4.22 trajectory threat: estimate time of closest approach from observed motion.
       // This lets racers bend away early from a crossing path while ignoring observers
       // whose visible trajectory is moving away from them.
@@ -2148,10 +2148,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
     // v4.43 NO_EVADE/LATE_REACTION fix: a readable converging path should trigger a
     // committed dodge earlier, while non-converging nearby observers still do nothing.
-    const basePredictive=finalDanger>(sparseField?.064:.116) && bestT<(sparseField?4.08:3.62);
+    const basePredictive=finalDanger>(sparseField?.046:.094) && bestT<(sparseField?4.45:3.92); // v4.59.2 survival-first earlier commit
     // v4.59: leader pace remains sacred for weak reads, but a genuine converging
     // multi-observer lane gets avoidance authority before it becomes an emergency.
-    const predictive=basePredictive && (!leaderNow || finalDanger>.33 || bestT<2.10 || clusterNow.frontCount>=2); // v4.57 leader: straight until meaningful convergence
+    const predictive=basePredictive && (!leaderNow || finalDanger>.105 || bestT<3.55 || clusterNow.frontCount>=2); // v4.59.2 leader gives up a little optimal line to preserve survival
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -2264,7 +2264,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
         // free road to take a cleaner diagonal, so a low-clearance candidate pays heavily.
         if(sparseField){
-          const sparseClear=2.70+avoid*.32+pred*.24;
+          const sparseClear=3.05+avoid*.38+pred*.28; // v4.59.2 lone-observer: prefer visibly generous clearance
           if(future.minClear<sparseClear) score += (sparseClear-future.minClear)*12.5;
           if(r.minClear<sparseClear*.82) score += (sparseClear*.82-r.minClear)*10.0;
           if(c.kind==='diag') score-=.72;
@@ -2447,6 +2447,58 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // stays essentially unchanged; dense packs keep up to nine meaningful threats.
     const threatLimit=pack.mates>=3?20:pack.mates>=2?17:14;
     const nearby=nearestThreats(sharedRaw,p,threatLimit);
+
+    // v4.59.1 LONE-OBSERVER SURVIVAL HOTFIX:
+    // One readable observer on the racing corridor is a mandatory fundamentals dodge,
+    // even when all 8 racers overlap. Do not let pack state or leader pace suppress it.
+    const loneFront=[];
+    const loneRoadHalf=Math.max(2.4,widths[Math.min(p.seg,widths.length-1)]*ROAD_MARGIN);
+    for(const o of nearby){
+      const dx=o.x-p.x,dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy, lat=dx*s.nx+dy*s.ny;
+      if(along>-.35 && along<20.5 && Math.abs(lat)<Math.min(8.8,loneRoadHalf*1.18)){
+        const rvx=(o.vx||0)-s.ux*p.speed, rvy=(o.vy||0)-s.uy*p.speed;
+        const rv2=rvx*rvx+rvy*rvy;
+        let tc=99,cpa=99;
+        if(rv2>.01){
+          tc=Math.max(0,Math.min(3.65,-(dx*rvx+dy*rvy)/rv2));
+          cpa=Math.hypot(dx+rvx*tc,dy+rvy*tc);
+        }
+        const direct=Math.abs(lat)<3.65 && along<16.8;
+        if((tc<3.45 && cpa<3.85) || direct) loneFront.push({o,along,lat,tc,cpa});
+      }
+    }
+    if(loneFront.length===1){
+      const th=loneFront[0];
+      const skill=Math.max(0,Math.min(1,(((p.stats.avoidance+p.stats.reaction+p.stats.prediction+p.stats.control)/4)-72)/27));
+      const leadT=Math.max(.72,Math.min(2.9,th.tc<90?th.tc:th.along/Math.max(4.8,p.speed)));
+      const predX=predictedObserverX(th.o,leadT), predY=predictedObserverY(th.o,leadT);
+      const predLat=(predX-p.x)*s.nx+(predY-p.y)*s.ny;
+      const clearance=4.05+skill*.72;
+      const leftTarget=clampRoadOffset(Math.min(p.seg,widths.length-1),predLat-clearance,p);
+      const rightTarget=clampRoadOffset(Math.min(p.seg,widths.length-1),predLat+clearance,p);
+      const leftRisk=candidateAvoidanceRisk(p,s,leftTarget,.998,nearby);
+      const rightRisk=candidateAvoidanceRisk(p,s,rightTarget,.998,nearby);
+      let chosen=leftRisk.score<=rightRisk.score?{off:leftTarget,r:leftRisk}:{off:rightTarget,r:rightRisk};
+      // If both candidate scores are close, use a persistent per-racer side signature so
+      // eight overlapping racers do not all choose the exact same dodge arc.
+      if(Math.abs(leftRisk.score-rightRisk.score)<1.35){
+        const sig=((p.index||0)%2===0)?-1:1;
+        chosen=sig<0?{off:leftTarget,r:leftRisk}:{off:rightTarget,r:rightRisk};
+      }
+      if(chosen.r.minClear>.82){
+        p.avoidPlanOffset=chosen.off;
+        p.avoidPlanSpeedMul=.998;
+        p.avoidPlanRisk=chosen.r.score;
+        p.avoidPlanUntil=now+Math.max(820,Math.min(1420,th.along*86));
+        p.avoidLastSide=Math.sign(chosen.off-p.desiredOffset)||p.avoidLastSide||1;
+        p.avoidExitSide=p.avoidLastSide;
+        p.avoidExitUntil=p.avoidPlanUntil+760;
+        p.avoidSideLockUntil=p.avoidPlanUntil;
+        p.match.avoids++; p.match.simpleDodges=(p.match.simpleDodges||0)+1;
+        return {mode:"planned",targetOff:chosen.off,speedMul:.998,risk:chosen.r.score,minClear:chosen.r.minClear,loneObserverHotfix:true};
+      }
+    }
 
     // v3.6 SIMPLE READ DODGE:
     // If exactly one observer is the only meaningful front threat and there is
