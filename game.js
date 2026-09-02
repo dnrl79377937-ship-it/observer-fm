@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.6";
+  const BUILD_ID = "v4.59.7";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -385,8 +385,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return {
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
-        visionRadius:Math.max(31,Math.min(44,
-          33.0+((stats.prediction-72)/27)*7.2+((stats.reaction-72)/27)*3.8+((stats.focus-72)/27)*3.3)),
+        visionRadius:Math.max(50,Math.min(64,
+          52.0+((stats.prediction-72)/27)*6.0+((stats.reaction-72)/27)*3.5+((stats.focus-72)/27)*3.5)),
         // v2.34: persistent route personality. Negative = safer/wider, positive = tighter inside.
         linePersonality:(
           drivingStyle.style==="apexHunter" ? .92 :
@@ -1315,16 +1315,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const perceptionSkill=focusN*.42+reactionN*.25+predictionN*.25+consistencyN*.08;
     // v4.59.6 DYNAMIC VISION: racers look much farther down the road than sideways.
     // The larger forward read is still personal/stat-driven and uses perceived motion only.
-    const visionScale=.84+focusN*.22+reactionN*.10;
+    const visionScale=.98+focusN*.12+reactionN*.06;
     const maxR=Math.min(r,(p.visionRadius||r)*visionScale);
     const raw=playerNearbyObservers(p,maxR);
     let hx=p.steerX||0, hy=p.steerY||0;
     let hl=Math.hypot(hx,hy);
     if(hl<.15){ const seg=segs[Math.min(p.seg,segs.length-1)]; hx=seg.ux; hy=seg.uy; hl=1; }
     hx/=hl; hy/=hl;
-    const halfFov=(67+focusN*18)*Math.PI/180; // v4.59.6 wider forward awareness
+    const halfFov=(78+focusN*10)*Math.PI/180; // v4.59.7 very wide forward combat vision // v4.59.6 wider forward awareness
     const cosFov=Math.cos(halfFov);
-    const peripheral=2.65+reactionN*1.15;
+    const peripheral=4.20+reactionN*1.60;
     const memoryMs=350+predictionN*430+focusN*220;
     for(const o of raw){
       const dx=o.x-p.x,dy=o.y-p.y,d=Math.hypot(dx,dy);
@@ -2033,7 +2033,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Read an observer's current travel vector and begin a single broad, committed arc
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
-    const vision=Math.min(42,p.visionRadius||42); // v4.59.6 long forward sight: break route fixation before contact
+    const vision=Math.min(62,p.visionRadius||62); // v4.59.7 large observer-combat sight // v4.59.6 long forward sight: break route fixation before contact
     const raw=playerPerceivedObservers(p,vision);
     if(!raw.length){
       p.liveEvadeDanger=0;
@@ -2066,22 +2066,25 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     for(const o of raw){
       const dx=o.x-p.x, dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy, lat=dx*s.nx+dy*s.ny;
-      if(along<1.0 || along>28.5) continue;
-      const laneWindow=half+4.8+pred*1.8;
+      if(along<.15 || along>42.0) continue;
+      const laneWindow=half+10.5+pred*3.0;
       if(Math.abs(lat)>laneWindow) continue;
-      const forwardN=1-Math.min(1,along/30);
+      const forwardN=1-Math.min(1,along/44);
       const laneN=1-Math.min(1,Math.abs(lat)/Math.max(1,laneWindow));
       const conf=o.confidence==null?1:o.confidence;
       const score=(forwardN*.55+laneN*.45)*(.72+.28*conf);
       if(score>routeBreakScore){ routeBreakScore=score; routeBreakObserver=o; }
     }
-    const visualRouteBreak=!!routeBreakObserver && routeBreakScore>.22;
+    const visualRouteBreak=!!routeBreakObserver && routeBreakScore>.075;
     if(visualRouteBreak){
       const rid=routeBreakObserver.id;
       if(p.routeBreakThreat!==rid || now>(p.routeBreakRefreshAt||0)){
         p.routeBreakThreat=rid;
         p.routeBreakForceClick=true;
-        p.routeBreakRefreshAt=now+360+(1-react)*170;
+        p.routeBreakRefreshAt=now+125+(1-react)*70;
+        p.routeBreakCombatUntil=now+1050+pred*320+avoid*240;
+        p.mouseNextThink=Math.min(p.mouseNextThink||now,now+18);
+        p.mouseCommandUntil=Math.min(p.mouseCommandUntil||now,now+18);
       }
     }
 
@@ -2163,6 +2166,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // still uncertain, create a low watch-level threat and bias away from the seen lane
     // instead of continuing to click the memorized racing line.
     if(visualRouteBreak && routeBreakObserver){
+      danger=Math.max(danger,.62+routeBreakScore*.55);
       const rdx=routeBreakObserver.x-p.x, rdy=routeBreakObserver.y-p.y;
       const rlat=rdx*s.nx+rdy*s.ny;
       const visualW=.10+routeBreakScore*.20;
@@ -2261,7 +2265,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const current=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
       const tier=p.dangerTier||0;
       // Watch = small flowing correction, Danger = decisive diagonal, Emergency = wider escape.
-      const evadeWidth=tier===3?1.16:tier===2?1.04:tier===1?.94:(visualRouteBreak?.90:.78);
+      const evadeWidth=visualRouteBreak ? (tier>=2?1.58:1.42) : (tier===3?1.24:tier===2?1.10:tier===1?1.00:.82);
       const openSide=leftRisk<=rightRisk?-1:1;
       const preferred=p.liveEvadeSide||openSide;
       // v4.24 HUMAN DODGE: choose one coherent human action, then commit to it.
@@ -2272,9 +2276,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // v4.41 FUNDAMENTALS SURVIVAL: with only 1-2 readable observers, use
       // boring, high-clearance movement. Do not throw away an easy dodge with a feint/stop.
       const candidates=sparseField ? [
-        {off:current+openSide*half*.78*evadeWidth,spd:1.005,side:openSide,kind:'diag'},
-        {off:current+openSide*half*1.02*evadeWidth,spd:.985,side:openSide,kind:'wide'},
-        {off:current-openSide*half*.52*evadeWidth,spd:.995,side:-openSide,kind:'alt'}
+        {off:current+openSide*half*(visualRouteBreak?1.02:.82)*evadeWidth,spd:1.005,side:openSide,kind:'diag'},
+        {off:current+openSide*half*(visualRouteBreak?1.28:1.04)*evadeWidth,spd:.985,side:openSide,kind:'wide'},
+        {off:current-openSide*half*(visualRouteBreak?.76:.54)*evadeWidth,spd:.995,side:-openSide,kind:'alt'}
       ] : [
         {off:current+openSide*half*.60*evadeWidth,spd:tier===3?.995:1.012,side:openSide,kind:'diag'},
         {off:current+openSide*half*.90*evadeWidth,spd:tier===3?.955:.982,side:openSide,kind:'wide'},
@@ -2338,7 +2342,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.25: corner line and observer escape are one decision. Prefer candidates
         // that preserve useful progress toward the current racing/apex line.
         const raceDeviation=Math.abs(off-current)/Math.max(1,half);
-        score += raceDeviation*(bestT>1.15?.48:.20);
+        score += raceDeviation*(visualRouteBreak?.035:(bestT>1.15?.48:.20));
         if(c.kind==='wide' && bestT<1.95) score-=1.22;
         if(c.kind==='zig') score += (bothSidesBusy || clusterNow.frontCount>=2) ? -.18 : .72;
         if(c.kind==='spin') score += (!bothSidesBusy && bestT<1.05 && Math.abs(leftRisk-rightRisk)>.42) ? .18 : 1.38;
@@ -4373,7 +4377,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const liveEvade=humanLiveEvadeController(p,s,now,targetOff);
     if(liveEvade){
       const emergency=Math.max(0,Math.min(1,(liveEvade.danger-.25)/1.55));
-      const authority=.66+emergency*.28;
+      const observerCombat=now<(p.routeBreakCombatUntil||0);
+      const authority=observerCombat ? .985 : (.72+emergency*.26);
       targetOff=targetOff*(1-authority)+liveEvade.off*authority;
       speedMul=liveEvade.speedMul<0 ? liveEvade.speedMul : speedMul*(1-authority*.35)+liveEvade.speedMul*(authority*.35);
       // Human controller is allowed to reverse briefly even though ordinary anti-freeze
@@ -4394,7 +4399,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
-    const steerEase=Math.min(.120,dt*(.00258+steerControl*.00057+steerTurn*.00058));
+    const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
+    const steerEase=observerCombatSteer ? Math.min(.42,dt*(.0105+steerControl*.0018)) : Math.min(.120,dt*(.00258+steerControl*.00057+steerTurn*.00058));
     p.desiredOffset += (targetOff-p.desiredOffset)*steerEase;
 
     // Look ahead to create smoother apex cutting.
@@ -4477,7 +4483,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       // v4.43 LATE_REACTION fix: tier-2 remains an immediate interrupt; a very short
       // predicted time-to-contact can also interrupt the tail of the human delay.
       const imminentRead=dangerActive && (p.liveEvadeDanger||0)>.48 && (p.dangerTier||0)>=1;
-      const emergencyReaction=dangerActive && ((p.dangerTier||0)>=2 || (p.liveEvadeDanger||0)>.72 || imminentRead);
+      const emergencyReaction=dangerActive && (now<(p.routeBreakCombatUntil||0) || (p.dangerTier||0)>=2 || (p.liveEvadeDanger||0)>.72 || imminentRead);
       const reactionReady=!dangerActive || emergencyReaction || now>=(p.mouseReactionReadyAt||0);
       if(needsClick && reactionReady){
         // Human-like imperfect click placement. Better control means less pointer error.
@@ -4530,6 +4536,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===1 ? Math.max(72,dangerMs*1.02)
           : calmMs)*unitThink;
         // v4.59.5: keep v4.59.4 click reach, but hold a clean-road command slightly longer.
+        if(now<(p.routeBreakCombatUntil||0)) cadence=Math.min(cadence,52+Math.random()*24);
         if(dangerTier===0 && playerPerceivedObservers(p,21.5).length===0) cadence*=1.10;
         if(p.mouseMode==='stop') cadence=Math.min(cadence,48+Math.random()*22);
         p.mouseNextThink=now+cadence;
