@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.02";
+  const BUILD_ID = "v5.03";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5348,6 +5348,19 @@ function farthestVisibleFastTarget91(p,si){
     return playerPerceivedObservers(p,10.5).length===0;
   }
 
+
+  // v5.03 HORIZONTAL SEGMENT HOLD
+  // Preserve the current horizontal segment until its endpoint is genuinely reached.
+  // This prevents early segment switching from pulling the target vertically.
+  function horizontalHold503(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    if(Math.abs(s.ux)<.88) return false;
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=rx*s.ux+ry*s.uy;
+    return along < s.L*.985;
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -5805,9 +5818,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v5.01 FINAL AUTHORITY: calm horizontal road = route centerline.
     const centerLock501=horizontalCenterLock501(p,si,now);
-    if(centerLock501){
+    if(centerLock501 || horizontalHold503(p,si)){
       targetOff=0;
-      p.desiredOffset += (0-p.desiredOffset)*Math.min(1,dt*.020);
+      p.desiredOffset += (0-p.desiredOffset)*Math.min(1,dt*.032);
     }
 
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
@@ -5823,13 +5836,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // and no v4.91 re-targeting during calm racing.
     const next=segs[Math.min(segs.length-1,si+1)];
     const centerTarget501=horizontalCenterLock501(p,si,now);
-    const routeOff501=centerTarget501?0:p.desiredOffset;
+    const horizontalHold503Active=horizontalHold503(p,si);
+    const routeOff501=(centerTarget501||horizontalHold503Active)?0:p.desiredOffset;
     let tx=s.b[0]+s.nx*routeOff501;
     let ty=s.b[1]+s.ny*routeOff501;
 
     if(next && si<segs.length-1){
       const legacyHorizontal502=Math.abs(s.ux)>=.88;
-      const look=legacyHorizontal502?0:0.24;
+      const look=(legacyHorizontal502||horizontalHold503Active)?0:0.24;
       const nx=next.b[0]+next.nx*routeOff501;
       const ny=next.b[1]+next.ny*routeOff501;
       let candX=tx*(1-look)+nx*look;
@@ -5986,6 +6000,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(legacyCalm502){
       moveDirX=dx/d;
       moveDirY=dy/d;
+      if(horizontalHold503Active){
+        // The road itself is horizontal here; do not carry any stale vertical heading.
+        const dir=Math.sign(s.ux)||1;
+        const centerErr=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+        if(Math.abs(centerErr)<0.55){
+          moveDirX=dir;
+          moveDirY=0;
+        }
+      }
       p.steerX=moveDirX;
       p.steerY=moveDirY;
       // Old builds did not carry a stale mouse heading into the next straight.
@@ -6090,7 +6113,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const alongPx=rx*cs.ux+ry*cs.uy;
       const endDx=p.x-cs.b[0], endDy=p.y-cs.b[1];
       const nearEnd=endDx*endDx+endDy*endDy<11.56;
-      if(alongPx>=cs.L*0.91 || nearEnd){
+      const horizontal503=Math.abs(cs.ux)>=.88;
+      const advanceFrac503=horizontal503?0.985:0.91;
+      const nearEndAllowed503=horizontal503
+        ? (endDx*endDx+endDy*endDy<2.25)
+        : nearEnd;
+      if(alongPx>=cs.L*advanceFrac503 || nearEndAllowed503){
         p.seg++;
         advances++;
       } else break;
