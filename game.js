@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.67";
+  const BUILD_ID = "v4.69";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -450,6 +450,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
         hitFxUntil:0, visualAngle:0, prevX:20.5, prevY:154.8 + startLane*7.6, simPrevX:20.5, simPrevY:154.8 + startLane*7.6,
+        // v4.69: brief tolerance for borderline upper-left corner exits.
+        outsideGrace69Since:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
         humanMode:0, humanModeUntil:0, humanPhase:Math.random()*Math.PI*2,
         decisionErrorUntil:0, textWidth:0,
@@ -1179,11 +1181,47 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {x:baseX,y:baseY};
   }
 
-  function lethalOutsideRoad(p){
-    // No wall, push, bounce, or slowdown. A racer dies only after leaving the
-    // route-derived corridor by a generous margin. Because every segment is checked,
-    // a legitimate bend/adjacent route can never be misclassified by a stale p.seg.
-    return !courseContainsPoint(p.x,p.y,DEATH_EDGE_EXTRA);
+  function segmentRangeContains69(x,y,lo,hi,extra){
+    lo=Math.max(0,lo); hi=Math.min(segs.length-1,hi);
+    for(let i=lo;i<=hi;i++){
+      const s=segs[i],rx=x-s.a[0],ry=y-s.a[1];
+      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+      const qx=s.a[0]+s.ux*along,qy=s.a[1]+s.uy*along;
+      const r=Math.max(2.0,widths[i]*ROAD_MARGIN)+extra;
+      const dx=x-qx,dy=y-qy;
+      if(dx*dx+dy*dy<=r*r) return true;
+    }
+    return false;
+  }
+
+  function lethalOutsideRoad(p,now){
+    // Standard whole-map lethal corridor.
+    if(courseContainsPoint(p.x,p.y,DEATH_EDGE_EXTRA)){
+      p.outsideGrace69Since=0;
+      return false;
+    }
+
+    // v4.69 11-O'CLOCK CORNER GRACE:
+    // The climb from 9 o'clock through the upper-left kink (route segments ~20-26)
+    // used to kill borderline legal-looking inside cuts because the rounded segment
+    // capsules met too tightly. Give that LOCAL transition a small geometric cushion.
+    // This does not open a global shortcut and does not change driving physics.
+    const inUpperLeft=p.seg>=19 && p.seg<=27;
+    if(inUpperLeft && segmentRangeContains69(p.x,p.y,20,26,DEATH_EDGE_EXTRA+2.05)){
+      p.outsideGrace69Since=0;
+      return false;
+    }
+
+    // One-frame / tiny steering overshoots near that same corner get a short grace.
+    // A genuinely early cut remains outside the soft envelope and dies immediately;
+    // lingering outside also dies after the brief tolerance expires.
+    if(inUpperLeft && segmentRangeContains69(p.x,p.y,20,26,DEATH_EDGE_EXTRA+3.05)){
+      if(!p.outsideGrace69Since) p.outsideGrace69Since=now||1;
+      if((now||0)-p.outsideGrace69Since<=170) return false;
+    }else{
+      p.outsideGrace69Since=0;
+    }
+    return true;
   }
 
 
@@ -2548,9 +2586,48 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   
-  function leaderLineDiscipline67(p,si){
+  
+  // v4.68 DRIVER STYLE 2.0:
+  // Styles no longer choose intentionally slow macro routes. They change how precisely
+  // and how boldly each racer executes the same shortest inside line.
+  function driverStyle68Line(p,si,baseOff,passActive=false){
+    if(passActive) return baseOff; // a genuine pass may temporarily need another corridor
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    const side=cornerInsideSide(idx);
+    const insideN=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+    const cornerN=Math.max(0,Math.min(1,(p.stats.cornering-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const readN=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const id=identityOf(p);
+    const styleTight=Math.max(-.025,Math.min(.030,(id.apex-1)*.12));
+    const precision=insideN*.34+cornerN*.28+controlN*.20+readN*.18;
+
+    if(side && cornerIntensity(idx)>.028){
+      const commit=Math.min(.998,.900+precision*.078+styleTight);
+      const target=side*half*commit;
+      const authority=Math.min(.96,.82+precision*.11);
+      return clampRoadOffset(idx,baseOff*(1-authority)+target*authority,p);
+    }
+
+    // On the approach straight, attach to the upcoming inside early rather than
+    // preparing from the outside. This reproduces the short-path Observer Dodge feel.
+    const future=nextMeaningfulCorner64(idx,4);
+    if(future){
+      const commit=Math.min(.965,.72+insideN*.12+readN*.10+styleTight);
+      const target=future.side*half*commit;
+      const proximity=Math.max(0,1-(future.gap-1)/4);
+      const authority=Math.min(.90,.42+proximity*.38+readN*.08);
+      return clampRoadOffset(idx,baseOff*(1-authority)+target*authority,p);
+    }
+    return baseOff;
+  }
+
+function leaderLineDiscipline67(p,si){
     const rs=liveRaceSituation(p);
-    const solo=optimalRacingLine2Offset(p,si);
+    const macro=optimalRacingLine2Offset(p,si);
+    // v4.68: leader discipline follows the shortest-inside refined route as well.
+    const solo=cornerPhysics64Target(p,si,macro).off;
     const leadBattle=(rs.rank===1 && rs.nearestBehindGap<6.2) ||
                      (rs.rank===2 && rs.nearestAheadGap<6.2);
     return {rs,solo,leadBattle};
@@ -3334,7 +3411,7 @@ function chooseAvoidance(p,s,now){
     // commitment only after a genuinely useful pass lane has been found.
     const laneCandidates=[
       Math.max(-half*.96,Math.min(half*.96,baseLine)),
-      -half*.78, half*.78, -half*.48, half*.48
+      -half*.68, half*.68, -half*.42, half*.42
     ];
     let bestOff=baseLine,bestScore=1e9;
     for(const off of laneCandidates){
@@ -3419,7 +3496,7 @@ function chooseAvoidance(p,s,now){
   function multiCarCandidateScore66(p,si,off,traffic,soloLine){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
     // Never abandon the fast line without a traffic benefit.
-    let score=Math.abs(off-soloLine)*.085;
+    let score=Math.abs(off-soloLine)*.135; // v4.69: stronger fast-line cost
 
     for(const t of traffic){
       const dg=Math.abs(t.gap);
@@ -3489,9 +3566,9 @@ function chooseAvoidance(p,s,now){
 
     const candidates=[
       Math.max(-half*.97,Math.min(half*.97,soloLine)),
-      -half*.82, half*.82,
-      -half*.54, half*.54,
-      -half*.28, half*.28
+      -half*.70, half*.70,
+      -half*.46, half*.46,
+      -half*.24, half*.24
     ];
     let bestOff=soloLine;
     let bestScore=multiCarCandidateScore66(p,si,soloLine,traffic,soloLine);
@@ -3780,6 +3857,8 @@ function packContextOffset(p,si,now){
     const progress=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.54);
     const danger=playerPerceivedObservers(p,18).length, lp=p.linePersonality||0;
+    // v4.68: on clear road, creativity means execution style, not a slower/wider route.
+    if(danger===0) return baseOff;
     // Dense fields temporarily raise the creative-route allowance and reduce
     // the trigger threshold. Normal sections remain close to the v2.41 70/30 mix.
     const denseBoost=danger>=8?.16:danger>=5?.11:danger>=3?.055:0;
@@ -4130,57 +4209,58 @@ function packContextOffset(p,si,now){
     const readN=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
     const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
     const brakingN=Math.max(0,Math.min(1,(p.stats.braking-72)/27));
-    const skill=cornerN*.34+insideN*.22+readN*.21+controlN*.15+brakingN*.08;
+    const skill=cornerN*.32+insideN*.28+readN*.20+controlN*.14+brakingN*.06;
     let target=baseOff,weight=0,speedMul=1;
 
-    if(side && cls.power>=.055){
-      // Entry -> apex -> exit. Sharp corners get a wider entry and later apex;
-      // sweepers stay closer to the globally shortest line.
-      const entryEnd=cls.name==="hairpin"?.30:cls.name==="sharp"?.27:.23;
-      const apexEnd=cls.name==="hairpin"?.69:cls.name==="sharp"?.66:.63;
-      if(phase<entryEnd){
-        const t=phase/entryEnd;
-        const outside=-side*half*(cls.entry*(.93+.06*skill));
-        target=outside*(1-t)+side*half*(.20+.15*skill)*t;
-        weight=.42+cls.power*.70;
-      }else if(phase<apexEnd){
-        const t=(phase-entryEnd)/(apexEnd-entryEnd);
-        const apex=side*half*Math.min(.995,cls.apex*(.96+.04*insideN));
-        target=baseOff*(1-t)+apex*t;
-        weight=.58+cls.power*.80;
+    // v4.68 SHORTEST-INSIDE CORNERING:
+    // This game rewards path length, not car-tyre realism. Do not swing outside first.
+    // Attach to the legal inside edge early, skim it through the bend, and only release
+    // as much as the next route geometry actually requires.
+    if(side && cls.power>=.035){
+      const edgeCommit=Math.min(.998,.925+insideN*.050+cornerN*.018);
+      const insideEdge=side*half*edgeCommit;
+      if(phase<.22){
+        // Early entry: already move strongly toward the inside instead of opening wide.
+        const t=phase/.22;
+        const early=side*half*(.76+insideN*.17+readN*.04);
+        target=baseOff*(1-t)+early*t;
+        weight=.78+cls.power*.40;
+      }else if(phase<.82){
+        // Hold the shortest legal arc for most of the corner.
+        target=insideEdge;
+        weight=.88+Math.min(.10,cls.power*.22);
       }else{
-        const t=(phase-apexEnd)/Math.max(.01,1-apexEnd);
         const future=nextMeaningfulCorner64(idx,3);
-        let exit=-side*half*cls.exit;
-        if(future){
-          // In an S-bend, the current outside exit is also the next bend's outside
-          // entry when geometry agrees; otherwise cross only as much as required.
-          const nextEntry=-future.side*half*(future.gap===1?.82:.66);
-          exit=exit*(future.gap===1?.42:.68)+nextEntry*(future.gap===1?.58:.32);
+        if(future && future.side!==side){
+          // S-bend: cross only when the next inside line actually becomes useful.
+          const t=(phase-.82)/.18;
+          const nextInside=future.side*half*(.70+readN*.20);
+          target=insideEdge*(1-t*.46)+nextInside*(t*.46);
+          weight=.82;
+        }else{
+          // Same-direction / clear exit: keep hugging inside; no decorative outside exit.
+          target=insideEdge;
+          weight=.90;
         }
-        const apex=side*half*Math.min(.995,cls.apex);
-        target=apex*(1-t)+exit*t;
-        weight=.50+cls.power*.65;
       }
+
       const minSpeed=cls.speed;
-      const skillSave=(1-minSpeed)*Math.min(.88,skill*.72+cornerN*.16);
+      const skillSave=(1-minSpeed)*Math.min(.92,skill*.78+cornerN*.14);
       speedMul=Math.min(1,minSpeed+skillSave);
-      // Do not apply full corner-speed loss at entry/exit; most of the loss belongs
-      // near the actual apex where steering angle is highest.
-      const apexLoad=Math.max(0,1-Math.abs(phase-.52)/.48);
+      const apexLoad=Math.max(0,1-Math.abs(phase-.52)/.52);
       speedMul=1-(1-speedMul)*apexLoad;
     }else{
-      // Straight: begin an outside setup only for a nearby meaningful bend.
+      // Straight: if a meaningful bend is coming soon, prepare on its INSIDE side early.
       const future=nextMeaningfulCorner64(idx,4);
       if(future){
         const proximity=Math.max(0,1-(future.gap-1)/4);
-        const outside=-future.side*half*(future.cls.entry*(.88+.08*readN));
-        weight=(.12+.30*proximity)*(.78+.22*readN);
-        target=baseOff*(1-weight)+outside*weight;
-        weight=.72; // target already contains the setup blend
+        const earlyInside=future.side*half*(.72+insideN*.14+readN*.08);
+        const w=Math.min(.88,(.30+.50*proximity)*(.86+.14*readN));
+        target=baseOff*(1-w)+earlyInside*w;
+        weight=.92;
       }
     }
-    return {off:clampRoadOffset(idx,baseOff*(1-Math.min(.94,weight))+target*Math.min(.94,weight),p),speedMul,type:cls.name};
+    return {off:clampRoadOffset(idx,baseOff*(1-Math.min(.98,weight))+target*Math.min(.98,weight),p),speedMul,type:cls.name};
   }
 
   function extremeInsideAdjustment(p,si,now,baseOff){
@@ -4292,14 +4372,16 @@ function packContextOffset(p,si,now){
     }
     // v2.45: persistent individual route identity keeps racers from stacking
     // on the same optimized line even when no observer forces a deviation.
-    const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*.10 + (p.laneSignatureWave||0)*half;
-    const identityBias=(p.routeIdentityBias||0)*half*.24;
+    const clearIdentity68=playerPerceivedObservers(p,18).length===0;
+    const identityWave=Math.sin(now*.00115+p.routeIdentityPhase)*half*(clearIdentity68?.012:.10) +
+      (p.laneSignatureWave||0)*half*(clearIdentity68?.04:1);
+    const identityBias=(p.routeIdentityBias||0)*half*(clearIdentity68?.025:.24);
     const approachInside=openingInsideBias(si);
     const openingFast=openingFastLineTarget(p,si);
-    const identityKeep=openingFast!=null ? .88 : (Math.abs(approachInside)>.08 ? .92 : .79);
-    const identityScale=openingFast!=null ? .42 : (Math.abs(approachInside)>.08 ? .34 : 1);
+    const identityKeep=clearIdentity68?.985:(openingFast!=null ? .88 : (Math.abs(approachInside)>.08 ? .92 : .79));
+    const identityScale=clearIdentity68?.08:(openingFast!=null ? .42 : (Math.abs(approachInside)>.08 ? .34 : 1));
     off=off*identityKeep + (identityBias + identityWave)*identityScale;
-    if(openingFast!=null) off=off*.28+openingFast*.72;
+    if(openingFast!=null) off=off*.18+openingFast*.82;
     off=creativeRouteAdjustment(p,si,now,off);
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
@@ -4747,6 +4829,18 @@ function packContextOffset(p,si,now){
         const leadPass67=leaderLineDiscipline67(p,si);
         if(leadPass67.leadBattle) authority65=Math.min(authority65,.66);
         targetOff=targetOff*(1-authority65)+passPlan.off*authority65;
+      }
+    }
+
+    // v4.68 FINAL SHORTEST-LINE AUTHORITY:
+    // On clear road, normal racing is pulled back toward the inside-shortest route.
+    // A real active overtake is the only racer-traffic exception.
+    if(clearRoadObs.length===0 && now>=p.shockAvoidUntil){
+      targetOff=driverStyle68Line(p,si,targetOff,!!passPlan);
+      if(!passPlan){
+        // v4.69 BALANCE PASS: normal racing should look decisively optimized.
+        const fast69=cornerPhysics64Target(p,si,optimalRacingLine2Offset(p,si)).off;
+        targetOff=targetOff*.18+fast69*.82;
       }
     }
 
@@ -5213,7 +5307,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
     // Death uses the route-derived capsule union, not hand-written red coordinates.
-    if(lethalOutsideRoad(p)){
+    if(lethalOutsideRoad(p,now)){
       p.dead=true;
       p.match.collisions++;
       p.match.deathPoints.push({round:currentRound,t:Math.max(0,now-raceStart),progressPct:+(100*Math.max(0,Math.min(1,currentProgress(p)/routeLength))).toFixed(1),x:+p.x.toFixed(2),y:+p.y.toFixed(2),...deathCauseSnapshot(p,now,null,"OUTSIDE")});
