@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.08";
+  const BUILD_ID = "v5.09";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -3476,7 +3476,7 @@ function chooseAvoidanceLegacy84(p,s,now){
       if(side && c>.025){ future=side*Math.max(c,.06)*(1-k*.16); break; }
     }
     if(future){
-      const cornerTarget=Math.sign(future)*half*.76;
+      const cornerTarget=Math.sign(future)*half*.56;
       score+=Math.abs(off-cornerTarget)*Math.min(.16,.055+Math.abs(future)*.42);
     }
     return score;
@@ -5398,7 +5398,7 @@ function farthestVisibleFastTarget91(p,si){
 
     // Route direction here is right->left. Positive/negative normal sign can vary
     // by segment, so choose the candidate with smaller world Y = visually upper.
-    const c1={x:s.b[0]+s.nx*half*.78,y:s.b[1]+s.ny*half*.78};
+    const c1={x:s.b[0]+s.nx*half*.58,y:s.b[1]+s.ny*half*.58};
     const c2={x:s.b[0]-s.nx*half*.78,y:s.b[1]-s.ny*half*.78};
     const upper=c1.y<c2.y?c1:c2;
 
@@ -5409,10 +5409,10 @@ function farthestVisibleFastTarget91(p,si){
     // If the far endpoint is too aggressive, use a forward point on the same upper lane.
     const rx=p.x-s.a[0], ry=p.y-s.a[1];
     const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const ahead=Math.min(s.L,along+Math.max(5.0,Math.min(12.0,s.L-along)));
+    const ahead=Math.min(s.L,along+Math.max(4.0,Math.min(8.0,s.L-along)));
     const ax=s.a[0]+s.ux*ahead;
     const ay=s.a[1]+s.uy*ahead;
-    const u1={x:ax+s.nx*half*.76,y:ay+s.ny*half*.76};
+    const u1={x:ax+s.nx*half*.56,y:ay+s.ny*half*.76};
     const u2={x:ax-s.nx*half*.76,y:ay-s.ny*half*.76};
     const upperAhead=u1.y<u2.y?u1:u2;
     return roadChordLegal507(p.x,p.y,upperAhead.x,upperAhead.y,ROUTE_PLAN_EXTRA)
@@ -5442,7 +5442,7 @@ function farthestVisibleFastTarget91(p,si){
       return {x:finishX,y};
     }
 
-    const maxStep=14.0;
+    const maxStep=8.0;
     for(let d=maxStep;d>=4.0;d-=1.0){
       const x=p.x+dir*d;
       if(roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
@@ -5480,11 +5480,11 @@ function farthestVisibleFastTarget91(p,si){
     // edge rows are allowed but never the preferred baseline.
     let best=null;
     let bestScore=-1e9;
-    const maxAhead=Math.min(segs.length-1,start+10);
+    const maxAhead=Math.min(segs.length-1,start+4);
 
     for(let j=start;j<=maxAhead;j++){
       const sj=segs[j];
-      const samples=(j===start)?[.72,.88,1.0]:[.38,.62,.82,1.0];
+      const samples=(j===start)?[.58,.72,.84]:[.28,.46,.62,.76];
 
       for(const t of samples){
         // centerline candidate of future segment
@@ -5515,6 +5515,22 @@ function farthestVisibleFastTarget91(p,si){
       }
     }
 
+    if(!best) return null;
+
+    // v5.09 MOVEMENT-RADIUS LIMIT:
+    // Never let calm broad-road planning send a racer far across the map in one decision.
+    // Keep targets local so race position changes come from actual driving, not giant line swaps.
+    const dx=best.x-p.x, dy=best.y-p.y;
+    const d=Math.hypot(dx,dy);
+    const maxTargetDist=11.0;
+    if(d>maxTargetDist){
+      const k=maxTargetDist/d;
+      const lx=p.x+dx*k;
+      const ly=p.y+dy*k;
+      if(roadChordLegal507(p.x,p.y,lx,ly,ROUTE_PLAN_EXTRA)){
+        best={...best,x:lx,y:ly,d:maxTargetDist};
+      }
+    }
     return best;
   }
 
@@ -5983,7 +5999,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const centerLock501=horizontalCenterLock501(p,si,now);
     if(centerLock501 || horizontalHold503(p,si)){
       targetOff=0;
-      p.desiredOffset += (0-p.desiredOffset)*Math.min(1,dt*.032);
+      p.desiredOffset += (0-p.desiredOffset)*Math.min(1,dt*.018);
     }
 
     const observerCombatSteer=now<(p.routeBreakCombatUntil||0);
@@ -6171,8 +6187,21 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.mouseTargetY=ty;
     }
 
-    // v5.02 LEGACY DIRECT-SEGMENT MOTION
+    // v5.09 LOCAL STEERING CLAMP:
+    // Even if a planner target changes abruptly, only allow a modest lateral correction.
+    // This prevents a leader from sweeping across the whole road and losing many places instantly.
     let dx=tx-p.x, dy=ty-p.y;
+    const localSeg=segs[Math.min(si,segs.length-1)];
+    if(localSeg){
+      const forward=dx*localSeg.ux+dy*localSeg.uy;
+      let lateral=dx*localSeg.nx+dy*localSeg.ny;
+      const maxLat=Math.max(1.15,Math.min(2.35,widths[si]*.22));
+      lateral=Math.max(-maxLat,Math.min(maxLat,lateral));
+      dx=localSeg.ux*forward+localSeg.nx*lateral;
+      dy=localSeg.uy*forward+localSeg.ny*lateral;
+      tx=p.x+dx;
+      ty=p.y+dy;
+    }
     const d=Math.hypot(dx,dy) || 1;
     const legacyCalm502 =
       !liveEvade &&
