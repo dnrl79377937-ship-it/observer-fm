@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.55";
+  const BUILD_ID = "v4.59";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -975,7 +975,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const packControlCalm=controlPack.mates>=3?.52:controlPack.mates>=2?.72:1;
         // v4.03: all reactive trick-control tendencies +20% around observers,
         // but the live leader protects position and uses them much less often.
-        const leaderControlCalm=liveRaceSituation(p).rank===1?.55:1;
+        const leaderControlCalm=liveRaceSituation(p).rank===1?.12:1; // v4.57 leader pace: suppress showy controls
         // v3.51: only when an observer is immediately ahead, increase both
         // zigzag and backcon selection weights by 20% relative to v3.50.
         // v4.191: nearby danger uses a varied human control palette. Reverse is rare;
@@ -988,11 +988,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.50 CONTROL DIVERSITY: keep the racer moving. Seeing an immediate observer
         // normally produces a forward diagonal escape; zigzag and 360 are visible alternatives.
         // Stop is nearly eliminated because repeated braking reads as stutter. Reverse stays rare.
-        const stopWeight=.006*leaderControlCalm;
-        const spinWeight=.052*packControlCalm*leaderControlCalm;
-        const diagonalWeight=1.16*packControlCalm;
-        const backWeight=((!sideEscapeOpen && immediateAlong<1.32) ? .010 : .00055)*leaderControlCalm;
-        const zigWeight=.145*leaderControlCalm;
+        // v4.56 CONTROL DIVERSITY 2: pick the trick from the actual threat geometry.
+        // Diagonal = default early escape. Zigzag = crossing/uncertain lanes. 360 = close
+        // one-sided feint with room to curl. Back = almost impossible unless boxed point-blank.
+        const mem=p.perceivedObservers&&p.perceivedObservers.get(immediate.id);
+        const ovx=mem?.vx||0, ovy=mem?.vy||0;
+        const obsForward=ovx*s.ux+ovy*s.uy, obsLateral=Math.abs(ovx*s.nx+ovy*s.ny);
+        const crossing=obsLateral>Math.abs(obsForward)*.72 && obsLateral>.18;
+        const oneSidePressure=Math.abs(leftBlock-rightBlock)>=1;
+        const stopWeight=.0012*leaderControlCalm; // v4.56 nearly invisible: no stuttery stop spam
+        const spinWeight=(oneSidePressure && sideEscapeOpen ? .082 : .030)*packControlCalm*leaderControlCalm;
+        const diagonalWeight=(crossing?.98:1.30)*packControlCalm;
+        const backWeight=((!sideEscapeOpen && immediateAlong<.92 && leftBlock>0 && rightBlock>0) ? .0065 : .00008)*leaderControlCalm;
+        const zigWeight=(crossing?.245:.105)*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         let cut=marseilleWeight;
@@ -1030,11 +1038,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
 
       if(nearAhead){
-        const nearLeaderCalm=liveRaceSituation(p).rank===1?.55:1;
+        const nearLeaderCalm=liveRaceSituation(p).rank===1?.10:1; // v4.57 leader pace
         const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
         if(Math.random()<zigChance){
           const rr=Math.random();
-          const nearMode=rr<.80?"diagonal":rr<.805?"stopcon":rr<.925?"zigzag":"spin360";
+          const nearMem=p.perceivedObservers&&p.perceivedObservers.get(nearAhead.id);
+          const nlat=Math.abs((nearMem?.vx||0)*s.nx+(nearMem?.vy||0)*s.ny);
+          const nfwd=Math.abs((nearMem?.vx||0)*s.ux+(nearMem?.vy||0)*s.uy);
+          const nearCross=nlat>nfwd*.72 && nlat>.18;
+          const nearMode=rr<(nearCross?.70:.84)?"diagonal":rr<(nearCross?.705:.842)?"stopcon":rr<(nearCross?.94:.935)?"zigzag":"spin360";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -1045,10 +1057,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Nearby observers exist but are not directly threatening: occasional moving
     // controls only. Never stop on this branch.
     if(nearAhead && p.controlMode==="normal"&&p.controlCooldown<=0){
+      // v4.57 LEADER PACE: no decorative controls while leading; actual danger
+      // is still handled by the immediate and predictive avoidance branches.
+      if(liveRaceSituation(p).rank===1) return;
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
       // v4.191: nearby-but-not-urgent threats stay forward-moving. No backcon here.
       const rr=Math.random();
-      const mode=rr<.78?"diagonal":rr<.783?"stopcon":rr<.925?"zigzag":"spin360";
+      const farMem=p.perceivedObservers&&p.perceivedObservers.get(nearAhead.id);
+      const flat=Math.abs((farMem?.vx||0)*s.nx+(farMem?.vy||0)*s.ny);
+      const ffwd=Math.abs((farMem?.vx||0)*s.ux+(farMem?.vy||0)*s.uy);
+      const farCross=flat>ffwd*.72 && flat>.18;
+      const mode=rr<(farCross?.72:.84)?"diagonal":rr<(farCross?.721:.841)?"stopcon":rr<(farCross?.95:.94)?"zigzag":"spin360";
       let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -2031,6 +2050,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const ctrl=Math.max(0,Math.min(1,(p.stats.control-72)/27));
     const avoid=Math.max(0,Math.min(1,(p.stats.avoidance-72)/27));
     const skill=(react+pred+ctrl+avoid)/4;
+    // v4.57 LEADER PACE: weak watch-level threats do not make the leader weave.
+    // Real converging danger still has full avoidance authority.
+    const leaderNow=liveRaceSituation(p).rank===1;
     const half=Math.max(3.3,widths[Math.min(p.seg,widths.length-1)]*.72);
 
     // v4.34: detect a genuine moving box (front plus both lateral exits pressured).
@@ -2111,9 +2133,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v4.35 RISK LADDER: convert continuous threat into a stable human-readable
     // safety tier. The tier changes how far/wide/often the virtual mouse acts.
     // 0=safe, 1=watch, 2=danger, 3=emergency. Hysteresis prevents rapid tier flicker.
-    const rawTier = (nearest<2.35 || bestT<.38 || danger>1.55) ? 3
-      : (bestT<1.05 || danger>.72) ? 2
-      : (bestT<2.65 || danger>.22) ? 1 : 0;
+    // v4.59 DEATH AI FINAL: one unified risk ladder. Dense/boxed fields escalate earlier,
+    // while a lone non-converging observer still does not trigger decorative movement.
+    const fieldPressure=(clusterNow.frontCount>=2?clusterNow.confidence*(.22+clusterNow.density*.28):0)+(boxedNow?.32:0);
+    const finalDanger=danger+fieldPressure;
+    const rawTier = (nearest<2.35 || bestT<.38 || finalDanger>1.48 || boxedNow) ? 3
+      : (bestT<1.12 || finalDanger>.68) ? 2
+      : (bestT<2.72 || finalDanger>.21) ? 1 : 0;
     const prevTier=p.dangerTier||0;
     if(rawTier>prevTier){ p.dangerTier=rawTier; p.dangerTierUntil=now+260; }
     else if(rawTier<prevTier && now<(p.dangerTierUntil||0)) p.dangerTier=prevTier;
@@ -2122,7 +2148,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
     // v4.43 NO_EVADE/LATE_REACTION fix: a readable converging path should trigger a
     // committed dodge earlier, while non-converging nearby observers still do nothing.
-    const predictive=danger>(sparseField?.066:.122) && bestT<(sparseField?4.05:3.55); // v4.52 trajectory-first earlier commit
+    const basePredictive=finalDanger>(sparseField?.064:.116) && bestT<(sparseField?4.08:3.62);
+    // v4.59: leader pace remains sacred for weak reads, but a genuine converging
+    // multi-observer lane gets avoidance authority before it becomes an emergency.
+    const predictive=basePredictive && (!leaderNow || finalDanger>.33 || bestT<2.10 || clusterNow.frontCount>=2); // v4.57 leader: straight until meaningful convergence
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -2184,7 +2213,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
       // Commit for a visibly smooth interval. Replanning is slower than v4.194 so the
       // unit draws one natural diagonal curve instead of several tiny left/right taps.
-      p.liveEvadeNextThink=now+(390-react*55-ctrl*35+Math.random()*85);
+      const chainActive=now<(p.evadeChainUntil||0);
+      // v4.57 EVADE CHAIN: re-read sooner during an ongoing dodge so a second
+      // threat becomes a flowing follow-up move rather than a fresh panic input.
+      p.liveEvadeNextThink=now+(chainActive?235:390)-react*55-ctrl*35+Math.random()*(chainActive?55:85);
       const current=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
       const tier=p.dangerTier||0;
       // Watch = small flowing correction, Danger = decisive diagonal, Emergency = wider escape.
@@ -2222,6 +2254,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // v4.53: combine immediate rollout + future path + sustained corridor safety.
         // A direction that looks empty for one instant but closes a moment later loses.
         let score=r.score + future.score*1.18 + corridor.score*1.34;
+        // v4.59 DEATH AI FINAL: survival beats cleverness. Penalize candidates that
+        // are only briefly safe but collapse across the next observer wave.
+        const collapseClear=Math.min(r.minClear,future.minClear,corridor.minClear);
+        if(collapseClear<1.42) score+=(1.42-collapseClear)*13.5;
+        if(clusterNow.frontCount>=2 && corridor.minClear<1.90) score+=(1.90-corridor.minClear)*7.5;
         if(future.minClear<1.20) score += (1.20-future.minClear)*8.0;
         if(corridor.minClear<1.55) score += (1.55-corridor.minClear)*11.0;
         // v4.39: with just 1-2 observers, reject needless skim-lines. There is enough
@@ -2246,18 +2283,24 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         if(!courseContainsPoint(ex,ey,ROUTE_PLAN_EXTRA*.72) || !lineStaysOnCourse(p.x,p.y,ex,ey,ROUTE_PLAN_EXTRA*.78)) score+=18.0;
         // v4.24 action priors: natural diagonal > stop when a crossing lane will clear
         // > wide arc > occasional feint. Back is punished heavily unless truly boxed in.
-        if(c.kind==='diag') score-=2.32+avoid*.60;
+        if(c.kind==='diag') score-=2.32+avoid*.60+(leaderNow?.52:0);
+        // v4.57: if the leader must evade, prefer one clean forward diagonal arc.
+        if(leaderNow && c.kind==='wide') score+=.34;
+        if(leaderNow && c.kind==='zig') score+=1.65;
+        if(leaderNow && c.kind==='spin') score+=2.10;
+        if(leaderNow && c.kind==='stop') score+=9.0;
+        if(leaderNow && c.kind==='back') score+=9.5;
         // v4.25: corner line and observer escape are one decision. Prefer candidates
         // that preserve useful progress toward the current racing/apex line.
         const raceDeviation=Math.abs(off-current)/Math.max(1,half);
         score += raceDeviation*(bestT>1.15?.48:.20);
         if(c.kind==='wide' && bestT<1.95) score-=1.22;
-        if(c.kind==='zig') score+=.48;
-        if(c.kind==='spin') score+=1.05;
+        if(c.kind==='zig') score += (bothSidesBusy || clusterNow.frontCount>=2) ? -.18 : .72;
+        if(c.kind==='spin') score += (!bothSidesBusy && bestT<1.05 && Math.abs(leftRisk-rightRisk)>.42) ? .18 : 1.38;
         // v4.53: keep commitment only if it remains competitive; safety beats stale side memory.
         if(c.side===preferred && corridor.minClear>1.75) score-=.28;
-        if(c.kind==='stop') score += sparseField ? 18.0 : ((bestT<.48 && danger>1.45 && bothSidesBusy) ? .10 : 8.20);
-        if(c.kind==='back') score += sparseField ? 22.0 : ((bestT<.30 && bothSidesBusy) ? 1.15 : 12.0);
+        if(c.kind==='stop') score += sparseField ? 28.0 : ((bestT<.25 && danger>1.85 && bothSidesBusy) ? 5.8 : 16.5);
+        if(c.kind==='back') score += sparseField ? 30.0 : ((bestT<.24 && bothSidesBusy && clusterNow.frontCount>=2) ? .75 : 17.0);
         score+=(Math.random()-.5)*(1-skill)*.90;
         if(!best||score<best.score) best={...c,off,score};
       }
@@ -2274,6 +2317,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           : best.kind==='spin' ? 300+Math.random()*120
           : (sparseField?820:560)+Math.random()*(sparseField?260:230);
         p.liveEvadeUntil=now+hold;
+        // v4.57 EVADE CHAIN: keep context from first dodge through the next threat
+        // and recovery. This gives detect -> dodge -> re-read -> optional second dodge
+        // -> rejoin one continuous human-looking control sequence.
+        p.evadeChainUntil=now+hold+520+pred*220+avoid*160;
+        p.evadeChainSide=best.side||p.liveEvadeSide||openSide;
+        p.evadeChainThreat=threatId;
         // v4.28: after a real dodge, keep the cleared lane briefly and rejoin gradually.
         // This prevents dodge-one-observer -> instant apex rejoin -> hit-next-observer deaths.
         if(best.kind!=='stop' && best.kind!=='back'){
@@ -2306,26 +2355,47 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const pacedT=Math.pow(rawT,1.12/rejoinBias);
       const eased=pacedT*pacedT*(3-2*pacedT);
       const proposed=clampRoadOffset(Math.min(p.seg,segs.length-1),held*(1-eased)+back*eased,p);
+      // v4.58 SAFE REJOIN AI: judge the whole return chord, not only the immediate
+      // destination. A lane is considered safe only when it stays open across short,
+      // medium and long horizons. This prevents dodge -> instant rejoin -> second hit.
       const holdRisk=scoreFutureEscapePath(p,s,held,1.0,rejoinObs);
-      const joinRisk=scoreFutureEscapePath(p,s,proposed,1.0,rejoinObs);
-      // v4.43 EARLY_REJOIN fix: demand a visibly safer corridor before curling back.
-      const joinBad=rejoinObs.length && (joinRisk.minClear<1.72 || joinRisk.score>holdRisk.score+.72);
-      p.survivalRejoinLastRisk=joinRisk.score||0;
+      const joinRiskNear=scoreFutureEscapePath(p,s,proposed,.82,rejoinObs);
+      const joinRiskMid=scoreFutureEscapePath(p,s,proposed,1.28,rejoinObs);
+      const joinRiskFar=scoreFutureEscapePath(p,s,proposed,1.72,rejoinObs);
+      const joinMin=Math.min(joinRiskNear.minClear,joinRiskMid.minClear,joinRiskFar.minClear);
+      const joinScore=Math.max(joinRiskNear.score,joinRiskMid.score*.96,joinRiskFar.score*.90);
+      const nextThreatClosing=rejoinObs.some(o=>{
+        const rx=o.x-p.x, ry=o.y-p.y;
+        const rvx=(o.vx||0)-(p.vx||0), rvy=(o.vy||0)-(p.vy||0);
+        return rx*rvx+ry*rvy<0 && Math.hypot(rx,ry)<11.8;
+      });
+      const leaderRejoin=liveRaceSituation(p).rank===1;
+      // Leaders may return a little sooner when the corridor is genuinely clear, but
+      // never cut through a closing observer just to protect first place.
+      const minNeed=leaderRejoin?1.86:1.99; // v4.59 final integrated death-safety floor
+      const scoreSlack=leaderRejoin?.64:.54;
+      const joinBad=rejoinObs.length && (joinMin<minNeed || joinScore>holdRisk.score+scoreSlack || (nextThreatClosing && joinMin<2.35));
+      p.survivalRejoinLastRisk=joinScore||0;
       if(joinBad){
         p.survivalRejoinClearSince=0;
-        p.survivalRejoinHoldUntil=Math.max(p.survivalRejoinHoldUntil||0,now+230);
-        p.survivalRecoverUntil=Math.max(p.survivalRecoverUntil||0,now+260);
+        const extra=nextThreatClosing?340:285;
+        p.survivalRejoinHoldUntil=Math.max(p.survivalRejoinHoldUntil||0,now+extra);
+        p.survivalRecoverUntil=Math.max(p.survivalRecoverUntil||0,now+extra+45);
         p.liveEvadeAction='recover-hold';
-        return {off:held,speedMul:1.01,danger:Math.max(p.liveEvadeDanger*.30,.16),side:p.liveEvadeSide};
+        return {off:held,speedMul:1.012,danger:Math.max(p.liveEvadeDanger*.30,.16),side:p.liveEvadeSide};
       }
       if(!p.survivalRejoinClearSince) p.survivalRejoinClearSince=now;
-      const clearNeed=145+(1-avoid)*65+(1-pred)*55; // v4.43: continuous safe-window confirmation
+      const clearNeed=(leaderRejoin?150:180)+(1-avoid)*70+(1-pred)*60;
       if(now-p.survivalRejoinClearSince<clearNeed){
         p.liveEvadeAction='recover-check';
-        return {off:held,speedMul:1.005,danger:p.liveEvadeDanger*.25,side:p.liveEvadeSide};
+        return {off:held,speedMul:1.008,danger:p.liveEvadeDanger*.25,side:p.liveEvadeSide};
       }
+      // Blend back more gently. Even after confirmation, never snap straight to apex.
+      const blendCap=leaderRejoin?.68:.54;
+      const safeBlend=Math.min(blendCap,.28+rawT*.46);
+      const safeProposed=clampRoadOffset(Math.min(p.seg,segs.length-1),held*(1-safeBlend)+proposed*safeBlend,p);
       p.liveEvadeAction='recover';
-      return {off:proposed,speedMul:1.0,danger:p.liveEvadeDanger*.22,side:p.liveEvadeSide};
+      return {off:safeProposed,speedMul:1.005,danger:p.liveEvadeDanger*.22,side:p.liveEvadeSide};
     }
     p.survivalRejoinClearSince=0;
     p.survivalRejoinHoldUntil=0;
