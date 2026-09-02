@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.9";
+  const BUILD_ID = "v4.60";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -2039,6 +2039,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const raw=playerPerceivedObservers(p,vision);
     if(!raw.length){
       p.liveEvadeDanger=0;
+      // v4.60 HARD ROUTE LOCK: do not snap straight back to the memorized racing line
+      // the instant an observer leaves vision. Hold the last escape corridor for a short
+      // verified-safe grace window, then release route authority.
+      if(now<(p.hardRouteLockUntil||0) && Number.isFinite(p.lockedEscapeOffset)){
+        p.liveEvadeAction='lock-hold';
+        p.liveEvadeOffset=p.lockedEscapeOffset;
+        p.liveEvadeSpeed=Math.max(.97,p.lockedEscapeSpeed||.995);
+        p.liveEvadeUntil=Math.max(p.liveEvadeUntil||0,p.hardRouteLockUntil);
+        return {off:p.lockedEscapeOffset,speedMul:p.liveEvadeSpeed,danger:.18,side:p.lockedEscapeSide||0,routeLock:true};
+      }
+      p.hardRouteLockUntil=0;
+      p.lockedEscapeOffset=undefined;
       if(now>=p.liveEvadeUntil){ p.liveEvadeAction='none'; p.liveEvadeSpeed=1; }
       return null;
     }
@@ -2084,13 +2096,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // but it must NOT keep cancelling a good escape every ~125ms. While a chosen
       // corridor is committed, hold that mouse command unless a true emergency appears.
       const committed=now<(p.committedEscapeUntil||0);
+      // v4.60: visual contact is a hard state transition, not a weak bias. Route AI
+      // is locked out until the escape corridor has remained safe for a grace window.
+      p.hardRouteLockUntil=Math.max(p.hardRouteLockUntil||0,now+1380+pred*260+avoid*220);
       if(!committed && (p.routeBreakThreat!==rid || now>(p.routeBreakRefreshAt||0))){
         p.routeBreakThreat=rid;
         p.routeBreakForceClick=true;
-        p.routeBreakRefreshAt=now+420+(1-react)*90;
-        p.routeBreakCombatUntil=now+1180+pred*300+avoid*220;
-        p.mouseNextThink=Math.min(p.mouseNextThink||now,now+18);
-        p.mouseCommandUntil=Math.min(p.mouseCommandUntil||now,now+18);
+        p.routeBreakRefreshAt=now+360+(1-react)*70;
+        p.routeBreakCombatUntil=now+1380+pred*320+avoid*240;
+        p.mouseNextThink=Math.min(p.mouseNextThink||now,now+8);
+        p.mouseCommandUntil=Math.min(p.mouseCommandUntil||now,now+8);
       }
     }
 
@@ -2293,7 +2308,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const current=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
       const tier=p.dangerTier||0;
       // Watch = small flowing correction, Danger = decisive diagonal, Emergency = wider escape.
-      const evadeWidth=visualRouteBreak ? (tier>=2?1.58:1.42) : (tier===3?1.24:tier===2?1.10:tier===1?1.00:.82);
+      const evadeWidth=visualRouteBreak ? (tier>=2?1.82:1.62) : (tier===3?1.34:tier===2?1.18:tier===1?1.06:.88); // v4.60 larger escape corridor, not faster twitching
       const openSide=leftRisk<=rightRisk?-1:1;
       const preferred=p.liveEvadeSide||openSide;
       // v4.24 HUMAN DODGE: choose one coherent human action, then commit to it.
@@ -2304,9 +2319,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // v4.41 FUNDAMENTALS SURVIVAL: with only 1-2 readable observers, use
       // boring, high-clearance movement. Do not throw away an easy dodge with a feint/stop.
       const candidates=sparseField ? [
-        {off:current+openSide*half*(visualRouteBreak?1.02:.82)*evadeWidth,spd:1.005,side:openSide,kind:'diag'},
-        {off:current+openSide*half*(visualRouteBreak?1.28:1.04)*evadeWidth,spd:.985,side:openSide,kind:'wide'},
-        {off:current-openSide*half*(visualRouteBreak?.76:.54)*evadeWidth,spd:.995,side:-openSide,kind:'alt'}
+        {off:current+openSide*half*(visualRouteBreak?1.14:.88)*evadeWidth,spd:1.005,side:openSide,kind:'diag'},
+        {off:current+openSide*half*(visualRouteBreak?1.42:1.10)*evadeWidth,spd:.985,side:openSide,kind:'wide'},
+        {off:current-openSide*half*(visualRouteBreak?.88:.60)*evadeWidth,spd:.995,side:-openSide,kind:'alt'}
       ] : [
         {off:current+openSide*half*.60*evadeWidth,spd:tier===3?.995:1.012,side:openSide,kind:'diag'},
         {off:current+openSide*half*.90*evadeWidth,spd:tier===3?.955:.982,side:openSide,kind:'wide'},
@@ -2388,6 +2403,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         p.liveEvadeThreat=threatId;
         p.liveEvadePhase++;
         p.liveEvadeAction=best.kind;
+        // v4.60 HARD ROUTE LOCK: preserve the selected empty corridor as the sole
+        // steering reference while observer danger is active. The normal racing line
+        // cannot overwrite this offset during the lock.
+        if(best.kind!=='stop' && best.kind!=='back'){
+          p.lockedEscapeOffset=best.off;
+          p.lockedEscapeSide=best.side||openSide;
+          p.lockedEscapeSpeed=Math.max(.97,best.spd);
+          p.hardRouteLockUntil=Math.max(p.hardRouteLockUntil||0,now+1100+pred*260+avoid*220);
+        }
         const hold=best.kind==='stop' ? 48+Math.random()*34
           : best.kind==='back' ? 72+Math.random()*28
           : best.kind==='zig' ? 330+Math.random()*150
@@ -4419,8 +4443,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(liveEvade){
       const emergency=Math.max(0,Math.min(1,(liveEvade.danger-.25)/1.55));
       const observerCombat=now<(p.routeBreakCombatUntil||0);
-      const authority=observerCombat ? .985 : (.72+emergency*.26);
-      targetOff=targetOff*(1-authority)+liveEvade.off*authority;
+      const hardRouteLock=now<(p.hardRouteLockUntil||0) || !!liveEvade.routeLock;
+      const authority=hardRouteLock ? 1.0 : (observerCombat ? .992 : (.72+emergency*.26));
+      targetOff=hardRouteLock ? liveEvade.off : targetOff*(1-authority)+liveEvade.off*authority;
       speedMul=liveEvade.speedMul<0 ? liveEvade.speedMul : speedMul*(1-authority*.35)+liveEvade.speedMul*(authority*.35);
       // Human controller is allowed to reverse briefly even though ordinary anti-freeze
       // logic forbids accidental backward movement.
@@ -4490,6 +4515,18 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=legalTarget.x; ty=legalTarget.y;
     }
 
+    // v4.60 HARD ROUTE LOCK + ESCAPE CORRIDOR: while locked, bypass the optimized
+    // racing lookahead entirely. The virtual mouse receives a fresh forward-diagonal
+    // escape point based on the chosen safe corridor, so a memorized route click cannot
+    // silently pull the unit back into an observer.
+    if(now<(p.hardRouteLockUntil||0) && Number.isFinite(p.lockedEscapeOffset)){
+      const escapeAhead=8.8+Math.max(0,Math.min(1,(p.stats.control-72)/27))*1.25;
+      let ex=p.x+s.ux*escapeAhead+s.nx*p.lockedEscapeOffset;
+      let ey=p.y+s.uy*escapeAhead+s.ny*p.lockedEscapeOffset;
+      const legalEscape=courseAwareTarget(p,si,ex,ey);
+      tx=legalEscape.x; ty=legalEscape.y;
+    }
+
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
     // the virtual mouse consumes the planner output. Diagnostic only; no steering changes.
     recordAiBlackboxSample(p,now,tx,ty);
@@ -4505,7 +4542,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const dangerN=Math.max(0,Math.min(1,p.liveEvadeDanger||0));
       const dangerTier=p.dangerTier||0;
       const threatId=liveEvade ? (p.liveEvadeThreat??-1) : -1;
-      const dangerActive=!!liveEvade;
+      const dangerActive=!!liveEvade || now<(p.hardRouteLockUntil||0); // v4.60 route lock forbids race-mode clicks
       // A newly recognized threat does not instantly become a mouse input. The racer
       // spends a short player-specific judgment/hand delay while continuing the last command.
       if(dangerActive && (!p.reactionDangerActive || threatId!==p.reactionThreatId)){
@@ -4556,7 +4593,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const legalMouse=courseAwareTarget(p,si,mx,my);
         mx=legalMouse.x; my=legalMouse.y;
         const prevMouseX=p.mouseTargetX??p.x, prevMouseY=p.mouseTargetY??p.y;
-        const nextMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : 'race';
+        const nextMode=liveEvade ? (p.liveEvadeAction==='back'?'back':p.liveEvadeAction==='stop'?'stop':p.liveEvadeAction||'evade') : (now<(p.hardRouteLockUntil||0)?'route-lock':'race');
         if(Math.hypot(mx-prevMouseX,my-prevMouseY)<.38 && nextMode===(p.mouseMode||'race')) p.aiDiagRedundantClicks=(p.aiDiagRedundantClicks||0)+1;
         if(nextMode!==(p.aiDiagLastMode||'race')){ p.aiDiagModeChanges=(p.aiDiagModeChanges||0)+1; p.aiDiagLastMode=nextMode; }
         p.mouseTargetX=mx; p.mouseTargetY=my;
@@ -4581,8 +4618,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===1 ? Math.max(72,dangerMs*1.02)
           : calmMs)*unitThink;
         // v4.59.5: keep v4.59.4 click reach, but hold a clean-road command slightly longer.
-        if(now<(p.committedEscapeUntil||0)) cadence=Math.max(cadence,185+Math.random()*70);
-        else if(now<(p.routeBreakCombatUntil||0)) cadence=Math.min(cadence,105+Math.random()*45);
+        if(now<(p.committedEscapeUntil||0)) cadence=Math.max(cadence,205+Math.random()*75);
+        else if(now<(p.hardRouteLockUntil||0)) cadence=Math.max(cadence,175+Math.random()*65);
+        else if(now<(p.routeBreakCombatUntil||0)) cadence=Math.max(cadence,145+Math.random()*55);
         if(dangerTier===0 && playerPerceivedObservers(p,21.5).length===0) cadence*=1.10;
         if(p.mouseMode==='stop') cadence=Math.min(cadence,48+Math.random()*22);
         p.mouseNextThink=now+cadence;
@@ -4789,7 +4827,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       perceived28:seen.length,close7,front12,
       reactionPending:!!p.reactionDangerActive && (p.mouseReactionReadyAt||0)>now,
       routeBreak:!!p.routeBreakForceClick,combat:now<(p.routeBreakCombatUntil||0),
-      committed:now<(p.committedEscapeUntil||0),commitSide:p.committedEscapeSide||0
+      committed:now<(p.committedEscapeUntil||0),commitSide:p.committedEscapeSide||0,hardRouteLock:now<(p.hardRouteLockUntil||0),lockedOffset:Number.isFinite(p.lockedEscapeOffset)?+p.lockedEscapeOffset.toFixed(2):null
     });
     const cutoff=now-5500;
     while(p.aiBlackbox.length && p.aiBlackbox[0].t<cutoff) p.aiBlackbox.shift();
