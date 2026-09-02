@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.63";
+  const BUILD_ID = "v4.66";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -533,6 +533,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         situationDecisionOffset:0,
         packPlanOffset:0,
         packPlanUntil:0,
+        // v4.66 MULTI-CAR RACING LINE 2.0: short commitment prevents pack weaving.
+        multiCarLineOffset:0,
+        multiCarLineUntil:0,
+        multiCarLineMode:"solo",
         passPlanMode:0,       // 0 none, 1 inside attack, 2 outside setup, 3 wait-and-cut
         passPlanUntil:0,
         passPlanCooldown:700+Math.random()*900,
@@ -587,7 +591,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
             stopcon:{attempts:0,successes:0},
             wide:{attempts:0,successes:0}
           },
-          passPlans:{inside:0,outside:0,waitCut:0},
+          passPlans:{inside:0,outside:0,waitCut:0,straight:0},
           lineSamples:0,insideHits:0,extremeInsideHits:0,
           trace:[],lastTraceAt:0,
           maxRankGain:0,maxRankLoss:0,startRank:i+1,bestRank:i+1,worstRank:i+1,
@@ -3190,11 +3194,69 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   // v2.13: dedicated overtake/comeback planner.
   // It never gives a trailing racer extra base speed. It only changes line choice,
   // timing, and risk according to the next corner and observer layout.
+  function racerLateralOffsetOnSeg(q,si){
+    const s=segs[Math.min(si,segs.length-1)];
+    return (q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny;
+  }
+
+  function passTraffic65(p,si,myProg){
+    const out=[];
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done || q.dead) continue;
+      const prog=currentProgress(q);
+      const gap=prog-myProg;
+      if(gap>-.8 && gap<13.5){
+        out.push({q,gap,off:racerLateralOffsetOnSeg(q,si),prog});
+      }
+    }
+    out.sort((a,b)=>a.gap-b.gap);
+    return out;
+  }
+
+  function passLaneScore65(p,si,off,traffic,baseLine){
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+    let score=Math.abs(off-baseLine)*.060;
+    for(const t of traffic){
+      if(t.gap<0) continue;
+      const dg=Math.max(.18,t.gap);
+      const lat=Math.abs(off-t.off);
+      const longitudinal=Math.max(0,1-dg/10.5);
+      const block=Math.max(0,1-lat/1.70);
+      score+=block*longitudinal*4.8;
+      if(dg<3.1 && lat<1.05) score+=(3.1-dg)*1.35;
+    }
+    const inside=cornerInsideSide(si);
+    let future=0;
+    for(let k=0;k<=3;k++){
+      const sj=Math.min(segs.length-1,si+k);
+      const c=cornerIntensity(sj);
+      const side=cornerInsideSide(sj);
+      if(side && c>.025){ future=side*Math.max(c,.06)*(1-k*.16); break; }
+    }
+    if(future){
+      const cornerTarget=Math.sign(future)*half*.76;
+      score+=Math.abs(off-cornerTarget)*Math.min(.16,.055+Math.abs(future)*.42);
+    }
+    return score;
+  }
+
+  // v4.65 OVERTAKE AI 1.0:
+  // Read the actual racer ahead, compare open left/right lanes and the next 2-3
+  // corners, then commit to a pass corridor. Racers remain non-solid; this is
+  // tactical route choice, not collision physics or rubber-band speed.
   function overtakePlan(p,si,now){
     const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
 
     if(now<p.passPlanUntil && p.passPlanMode){
-      return {off:p.passPlanOffset,speedMul:p.passPlanSpeedMul,mode:p.passPlanMode};
+      const target=players[p.passTargetId];
+      if(target && !target.done && !target.dead){
+        const rel=currentProgress(target)-currentProgress(p);
+        // Keep the move committed while side-by-side; once clearly ahead, release
+        // quickly back toward the optimal racing line.
+        if(rel>-.75) return {off:p.passPlanOffset,speedMul:p.passPlanSpeedMul,mode:p.passPlanMode};
+      }
+      p.passPlanUntil=Math.min(p.passPlanUntil,now+90);
     }
     if(p.passPlanMode && now>=p.passPlanUntil){
       p.passPlanMode=0;
@@ -3204,103 +3266,240 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(now<p.passPlanCooldown) return null;
 
     const myProg=currentProgress(p);
-    let target=null, gap=999;
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p || q.done) continue;
-      const g=currentProgress(q)-myProg;
-      if(g>0 && g<8.2 && g<gap){ target=q; gap=g; }
-    }
-    if(!target){
-      p.passPlanCooldown=now+420+Math.random()*360;
+    const traffic=passTraffic65(p,si,myProg);
+    const ahead=traffic.filter(t=>t.gap>.12 && t.gap<9.6);
+    if(!ahead.length){
+      p.passPlanCooldown=now+260+Math.random()*240;
       return null;
     }
 
-    const rs=liveRaceSituation(p);
-    const progressRatio=Math.max(0,Math.min(1,myProg/routeLength));
-    const inside=cornerInsideSide(si);
-    const future=futureInsideBias(si);
+    // Prefer the racer that is both close and actually occupying our intended line.
+    const baseLine=optimalRacingLine2Offset(p,si);
+    let chosen=null,bestTarget=1e9;
+    for(const t of ahead){
+      const laneOverlap=Math.abs(t.off-baseLine);
+      const v=t.gap + Math.min(3.0,laneOverlap)*.72;
+      if(v<bestTarget){ bestTarget=v; chosen=t; }
+    }
+    const target=chosen.q, gap=chosen.gap;
+
+    const aggression=Math.max(0,Math.min(1,(p.stats.aggression-72)/27));
+    const prediction=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
+    const routeRead=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const pressure=Math.max(0,Math.min(1,(p.stats.pressure-72)/27));
+    const control=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const riskControl=Math.max(0,Math.min(1,(p.stats.riskControl-72)/27));
+    const passSkill=Math.max(0,Math.min(1,
+      aggression*.25+prediction*.22+routeRead*.22+control*.17+pressure*.14));
+
+    // No artificial slow-path personality. Personality changes willingness and
+    // commitment only after a genuinely useful pass lane has been found.
+    const laneCandidates=[
+      Math.max(-half*.96,Math.min(half*.96,baseLine)),
+      -half*.78, half*.78, -half*.48, half*.48
+    ];
+    let bestOff=baseLine,bestScore=1e9;
+    for(const off of laneCandidates){
+      const score=passLaneScore65(p,si,off,traffic,baseLine);
+      if(score<bestScore){bestScore=score;bestOff=off;}
+    }
+    const baseScore=passLaneScore65(p,si,baseLine,traffic,baseLine);
+    const gain=baseScore-bestScore;
+    const blocked=Math.abs(chosen.off-baseLine)<1.55 && gap<6.8;
+    if(!blocked && gain<.32){
+      p.passPlanCooldown=now+300+Math.random()*360;
+      return null;
+    }
+
     const corner=cornerIntensity(si);
-    const aggression=(p.stats.aggression-72)/27;
-    const prediction=(p.stats.prediction-72)/27;
-    const routeRead=(p.stats.routeReading-72)/27;
-    const pressure=(p.stats.pressure-72)/27;
-    const control=(p.stats.control-72)/27;
-    const riskControl=(p.stats.riskControl-72)/27;
-
-    // Estimate which side has more observer room over the immediate approach.
-    const nearby=playerPerceivedObservers(p,15.0);
-    let leftRisk=0,rightRisk=0,frontRisk=0;
-    const s=segs[Math.min(si,segs.length-1)];
-    for(let i=0;i<nearby.length;i++){
-      const o=nearby[i], dx=o.x-p.x, dy=o.y-p.y;
-      const along=dx*s.ux+dy*s.uy;
-      if(along<-.5 || along>12.5) continue;
-      const lat=dx*s.nx+dy*s.ny;
-      const w=Math.max(.2,1-along/14);
-      if(Math.abs(lat)<2.0) frontRisk+=w;
-      if(lat<1.2) leftRisk+=w; else rightRisk+=w;
+    let futureCorner=corner, futureSide=cornerInsideSide(si);
+    for(let k=1;k<=3;k++){
+      const sj=Math.min(segs.length-1,si+k);
+      const c=cornerIntensity(sj);
+      if(c>futureCorner*.82){ futureCorner=c; futureSide=cornerInsideSide(sj)||futureSide; }
     }
 
-    const trailingNeed=Math.max(0,(rs.rank-2)/6);
-    const late=Math.max(0,(progressRatio-.55)/.45);
-    const id=identityOf(p);
-    const attack=(.18+aggression*.18+prediction*.10+routeRead*.09+pressure*.10+
-      trailingNeed*(.16+late*.18)+(p.raceForm-1)*.24)*(id.pass||1);
-    if(Math.random()>Math.min(.76,attack)){
-      p.passPlanCooldown=now+(520+Math.random()*620)*(id.patience||1);
+    // Avoid choosing the same corridor as another racer already making the move.
+    for(const t of traffic){
+      const q=t.q;
+      if(q.passPlanMode && q.passTargetId===target.index && Math.abs(q.passPlanOffset-bestOff)<1.15){
+        const alt=-Math.sign(bestOff||1)*Math.min(half*.88,Math.max(half*.50,Math.abs(bestOff)));
+        if(passLaneScore65(p,si,alt,traffic,baseLine)<=bestScore+.55) bestOff=alt;
+      }
+    }
+
+    let mode=4; // straight / generic open-lane pass
+    if(futureSide && Math.sign(bestOff)===futureSide && futureCorner>.045) mode=1; // inside attack
+    else if(futureSide && Math.sign(bestOff)===-futureSide && futureCorner>.055) mode=2; // outside setup
+    else if(gap<2.6 && Math.abs(chosen.off-bestOff)<1.25) mode=3; // patient cut
+
+    // Stronger racers decide earlier, but nobody gets free acceleration.
+    const need=Math.max(0,Math.min(1,(6.5-gap)/6.5));
+    const useful=Math.max(0,Math.min(1,gain/2.4));
+    const commitChance=Math.min(.96,.34+passSkill*.40+need*.14+useful*.16);
+    if(Math.random()>commitChance){
+      p.passPlanCooldown=now+300+(1-passSkill)*420+Math.random()*300;
       return null;
     }
 
-    let mode=0, off=0, speedMul=1;
-    const cornerSide=inside!==0?inside:(Math.abs(future)>.12?Math.sign(future):0);
-    const saferSide=leftRisk<=rightRisk?-1:1;
-
-    // 1) Immediate inside attack: best when a corner is arriving and the apex is usable.
-    const insideRisk=cornerSide<0?leftRisk:rightRisk;
-    if(cornerSide!==0 && (corner>.04 || Math.abs(future)>.15) &&
-       insideRisk<2.15 && (aggression+control+routeRead)>.75){
-      mode=1;
-      const commit=Math.min(.995,.78+aggression*.08+control*.07+routeRead*.07+late*.04);
-      off=cornerSide*half*commit;
-      speedMul=.995;
-    }
-    // 2) Outside setup: go wide now to obtain a cleaner entry/cut on the next corner.
-    else if(cornerSide!==0 && frontRisk>1.0 && (prediction+routeRead+riskControl)>.95){
-      mode=2;
-      off=-cornerSide*half*Math.min(.88,.58+prediction*.10+routeRead*.10);
-      speedMul=.965+control*.018;
-    }
-    // 3) Wait-and-cut: when the lane directly ahead is crowded, lose a tiny amount
-    // of momentum for a moment and attack the clearer side. This creates passes
-    // through timing, not rubber-band acceleration.
-    else if(frontRisk>.72 && Math.min(leftRisk,rightRisk)<frontRisk*.86){
-      mode=3;
-      off=saferSide*half*Math.min(.93,.62+prediction*.12+pressure*.08);
-      speedMul=.91+control*.025;
-    }
-    else {
-      // Open straight: commit to the clearer side to set up a conventional pass.
-      mode=1;
-      off=saferSide*half*Math.min(.82,.50+aggression*.10+prediction*.08);
-      speedMul=.99;
-    }
+    const commit=.78+passSkill*.17;
+    bestOff=Math.max(-half*.97,Math.min(half*.97,bestOff*commit+baseLine*(1-commit)));
+    let speedMul=1;
+    if(mode===2) speedMul=.992;       // tiny setup cost, paid for better next-corner geometry
+    else if(mode===3) speedMul=.985;  // timing move, never a large artificial brake
+    else speedMul=.998;
 
     p.passPlanMode=mode;
-    p.passPlanOffset=off;
+    p.passPlanOffset=bestOff;
     p.passPlanSpeedMul=speedMul;
+    p.passTargetId=target.index;
+    p.passPlanUntil=now+(mode===2?650:mode===3?360:520)+Math.random()*260;
+    p.passPlanCooldown=now+720+(1-passSkill)*620+Math.random()*600;
     if(p.match && p.match.passPlans){
       if(mode===1) p.match.passPlans.inside++;
       else if(mode===2) p.match.passPlans.outside++;
       else if(mode===3) p.match.passPlans.waitCut++;
+      else p.match.passPlans.straight=(p.match.passPlans.straight||0)+1;
     }
-    p.passTargetId=target.index;
-    p.passPlanUntil=now+(mode===3?260:420)+Math.random()*(mode===2?360:260);
-    p.passPlanCooldown=now+900+Math.random()*1250;
-    return {off,speedMul,mode};
+    return {off:bestOff,speedMul,mode};
   }
 
-  function packContextOffset(p,si,now){
+  
+  function multiCarTraffic66(p,si,myProg){
+    const out=[];
+    for(let i=0;i<players.length;i++){
+      const q=players[i];
+      if(q===p || q.done || q.dead) continue;
+      const gap=currentProgress(q)-myProg;
+      if(gap>-2.4 && gap<12.8){
+        out.push({q,gap,off:racerLateralOffsetOnSeg(q,si)});
+      }
+    }
+    return out;
+  }
+
+  function multiCarCandidateScore66(p,si,off,traffic,soloLine){
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+    // Never abandon the fast line without a traffic benefit.
+    let score=Math.abs(off-soloLine)*.085;
+
+    for(const t of traffic){
+      const dg=Math.abs(t.gap);
+      const lat=Math.abs(off-t.off);
+      if(t.gap>=-.45){
+        const longW=Math.max(0,1-Math.max(0,t.gap)/9.5);
+        const laneW=Math.max(0,1-lat/1.62);
+        score+=laneW*longW*4.25;
+        if(Math.abs(t.gap)<1.45 && lat<1.05) score+=(1.45-Math.abs(t.gap))*.95+1.0;
+      } else if(dg<1.5 && lat<1.0){
+        // Side-by-side racer slightly behind: do not cut across their held corridor.
+        score+=(1.5-dg)*.82;
+      }
+    }
+
+    // Preserve 4.64 corner quality: among similarly open lanes, prefer the lane
+    // that hands the car to the next 2-3 corners cleanly.
+    let bestFutureSide=0,bestFuturePower=0;
+    for(let k=0;k<=3;k++){
+      const sj=Math.min(segs.length-1,si+k);
+      const c=cornerIntensity(sj);
+      const side=cornerInsideSide(sj);
+      const weighted=c*(1-k*.15);
+      if(side && weighted>bestFuturePower){
+        bestFuturePower=weighted;
+        bestFutureSide=side;
+      }
+    }
+    if(bestFutureSide && bestFuturePower>.025){
+      const useful=bestFutureSide*half*Math.min(.88,.60+bestFuturePower*1.6);
+      score+=Math.abs(off-useful)*Math.min(.13,.035+bestFuturePower*.38);
+    }
+    return score;
+  }
+
+  // v4.66 MULTI-CAR RACING LINE 2.0
+  // Solo/leader: keep the globally optimal 4.64 line.
+  // Chaser/pack: only leave it when another racer really occupies the useful corridor.
+  // Side-by-side: hold distinct corridors briefly instead of repeatedly crossing.
+  // Racers are still non-solid; there is no push, contact slowdown or rubber-banding.
+  function multiCarRacingLine66(p,si,now,soloLine){
+    if(now<p.multiCarLineUntil && p.multiCarLineMode!=="solo"){
+      return {off:p.multiCarLineOffset,mode:p.multiCarLineMode,authority:.76};
+    }
+
+    const myProg=currentProgress(p);
+    const traffic=multiCarTraffic66(p,si,myProg);
+    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
+    if(!traffic.length){
+      p.multiCarLineMode="solo";
+      p.multiCarLineOffset=soloLine;
+      p.multiCarLineUntil=now+180;
+      return {off:soloLine,mode:"solo",authority:0};
+    }
+
+    const ahead=traffic.filter(t=>t.gap>.10);
+    const sideBySide=traffic.filter(t=>Math.abs(t.gap)<=1.35);
+    const optimalBlocked=ahead.some(t=>t.gap<6.8 && Math.abs(t.off-soloLine)<1.45);
+
+    // Leading/open-air cars must not weave simply because somebody exists behind.
+    if(!optimalBlocked && sideBySide.length===0){
+      p.multiCarLineMode="leader";
+      p.multiCarLineOffset=soloLine;
+      p.multiCarLineUntil=now+200;
+      return {off:soloLine,mode:"leader",authority:0};
+    }
+
+    const candidates=[
+      Math.max(-half*.97,Math.min(half*.97,soloLine)),
+      -half*.82, half*.82,
+      -half*.54, half*.54,
+      -half*.28, half*.28
+    ];
+    let bestOff=soloLine;
+    let bestScore=multiCarCandidateScore66(p,si,soloLine,traffic,soloLine);
+    const baseScore=bestScore;
+    for(const off of candidates){
+      const score=multiCarCandidateScore66(p,si,off,traffic,soloLine);
+      if(score<bestScore){bestScore=score;bestOff=off;}
+    }
+
+    // No deliberately slow personality routes: if leaving the solo line does not
+    // materially solve traffic, remain on the fast line.
+    const trafficGain=baseScore-bestScore;
+    if(trafficGain<.24 && !sideBySide.length){
+      p.multiCarLineMode="leader";
+      p.multiCarLineOffset=soloLine;
+      p.multiCarLineUntil=now+190;
+      return {off:soloLine,mode:"leader",authority:0};
+    }
+
+    let mode=sideBySide.length?"side-by-side":"pack";
+    if(optimalBlocked && !sideBySide.length) mode="chaser";
+
+    // If parallel with somebody, prefer staying on the side already occupied by p
+    // unless that lane is clearly worse. This stops left-right lane swapping.
+    if(sideBySide.length){
+      const myOff=racerLateralOffsetOnSeg(p,si);
+      const sameSideCandidates=candidates.filter(x=>Math.sign(x||myOff||1)===Math.sign(myOff||1));
+      let holdOff=bestOff,holdScore=bestScore;
+      for(const off of sameSideCandidates){
+        const score=multiCarCandidateScore66(p,si,off,traffic,soloLine);
+        if(score<=holdScore+.34){holdScore=score;holdOff=off;}
+      }
+      bestOff=holdOff;
+    }
+
+    const read=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const control=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const authority=Math.min(.90,.66+read*.11+control*.08+(sideBySide.length?.05:0));
+
+    p.multiCarLineMode=mode;
+    p.multiCarLineOffset=bestOff;
+    p.multiCarLineUntil=now+(sideBySide.length?430:320)+Math.random()*180;
+    return {off:bestOff,mode,authority};
+  }
+
+function packContextOffset(p,si,now){
     const s=segs[Math.min(si,segs.length-1)];
     const half=Math.max(1.8,widths[si]*0.56);
 
@@ -3767,34 +3966,50 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  // v4.63 OPTIMAL RACING LINE 2.0
-  // Build one map-wide reference line from the course geometry itself. The solver
-  // minimizes driven distance AND steering angle over the whole remaining route,
-  // so it naturally uses wide straights, cuts legal apexes and prepares linked
-  // corners instead of greedily reacting to only the current bend.
+  // v4.64 CORNERING PHYSICS 2.0 + OPTIMAL RACING LINE 2.1
+  // The map-wide solver now models corner entry, apex and exit separately. It
+  // classifies bend severity, rewards outside -> inside -> outside geometry, and
+  // looks through linked corners so the exit of one bend becomes the entry of the next.
   let racingLine2Cache=null;
+  function cornerClass64(si){
+    const power=cornerIntensity(si);
+    if(power>=.30) return {name:"hairpin",power,entry:.96,apex:.995,exit:.88,speed:.936};
+    if(power>=.205) return {name:"sharp",power,entry:.90,apex:.992,exit:.82,speed:.958};
+    if(power>=.125) return {name:"medium",power,entry:.80,apex:.982,exit:.74,speed:.978};
+    if(power>=.055) return {name:"sweeper",power,entry:.65,apex:.945,exit:.62,speed:.992};
+    return {name:"straight",power,entry:0,apex:0,exit:0,speed:1};
+  }
+
+  function nextMeaningfulCorner64(si,maxLook=5){
+    for(let k=1;k<=maxLook;k++){
+      const idx=Math.min(route.length-2,si+k);
+      const side=cornerInsideSide(idx), cls=cornerClass64(idx);
+      if(side && cls.power>=.055) return {idx,side,cls,gap:k};
+    }
+    return null;
+  }
+
   function buildOptimalRacingLine2(){
     if(racingLine2Cache) return racingLine2Cache;
-    const fracs=[-.985,-.86,-.73,-.60,-.47,-.34,-.22,-.11,0,.11,.22,.34,.47,.60,.73,.86,.985];
+    const fracs=[-.985,-.90,-.81,-.72,-.63,-.54,-.45,-.36,-.27,-.18,-.09,0,.09,.18,.27,.36,.45,.54,.63,.72,.81,.90,.985];
     const K=fracs.length,N=segs.length;
     const nodes=Array.from({length:N},(_,i)=>{
-      const s=segs[i],half=Math.max(2.0,widths[i]*ROAD_MARGIN*.965);
+      const s=segs[i],half=Math.max(2.0,widths[i]*ROAD_MARGIN*.972);
       return fracs.map(f=>({off:f*half,x:s.b[0]+s.nx*f*half,y:s.b[1]+s.ny*f*half,frac:f}));
     });
     const INF=1e30;
-    // dp for a state (previous candidate, current candidate) at endpoint i.
     let dp=Array.from({length:K},()=>Array(K).fill(INF));
     const back=Array.from({length:N},()=>Array.from({length:K},()=>Array(K).fill(-1)));
     const start={x:route[0][0],y:route[0][1]};
-    // Endpoint 0 has no meaningful previous lateral lane. Duplicate the current
-    // candidate index in the state so later reconstruction stays uniform.
     for(let b=0;b<K;b++){
       const q=nodes[0][b];
       if(!lineStaysOnCourse(start.x,start.y,q.x,q.y,ROUTE_PLAN_EXTRA*.72)) continue;
       const d=Math.hypot(q.x-start.x,q.y-start.y);
-      const nextSide=cornerInsideSide(1), nextPower=cornerIntensity(1);
-      const apexBonus=nextSide ? -nextSide*q.frac*nextPower*.34 : 0;
-      dp[b][b]=d+apexBonus;
+      const nc=nextMeaningfulCorner64(0,5);
+      // On a long straight, prepare on the OUTSIDE of the upcoming bend instead
+      // of hugging the inside too early. This produces a larger turn radius.
+      const entryBonus=nc ? nc.side*q.frac*nc.cls.power*.19/Math.max(1,nc.gap) : 0;
+      dp[b][b]=d+entryBonus;
     }
     for(let i=1;i<N;i++){
       const ndp=Array.from({length:K},()=>Array(K).fill(INF));
@@ -3811,24 +4026,28 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           const l2=Math.hypot(v2x,v2y)||1;
           const dot=Math.max(-1,Math.min(1,(v1x*v2x+v1y*v2y)/(l1*l2)));
           const ang=Math.acos(dot);
-          // Angle cost models the time lost by abrupt steering. It is deliberately
-          // strong enough to create outside -> apex -> outside arcs instead of a
-          // sequence of mathematically short but humanly ugly zig-zag chords.
-          let cost=base+l2+ang*ang*4.65;
-          const side=cornerInsideSide(i),power=cornerIntensity(i);
-          if(side && power>.02) cost += -side*cur.frac*power*.58;
-          // Look 2-3 bends ahead. A linked opposite corner rewards exiting toward
-          // the side that becomes the next corner's outside/entry lane.
-          let futureSide=0,futurePower=0;
-          for(let k=1;k<=3;k++){
-            const idx=Math.min(N-1,i+k);
-            const fs=cornerInsideSide(idx),fp=cornerIntensity(idx);
-            if(fs && fp>.025){futureSide=fs;futurePower=fp*(1-(k-1)*.18);break;}
+          const cls=cornerClass64(i), side=cornerInsideSide(i);
+          // Steering loss grows superlinearly in sharper bends. Abrupt zig-zags are
+          // expensive, while a long smooth arc can beat the raw shortest chord.
+          let cost=base+l2+ang*ang*(4.25+cls.power*7.8);
+          if(side && cls.power>=.055){
+            // cur is the entry side of the vertex, nxt is the apex/exit side.
+            // Positive cost term on side*cur.frac rewards OUTSIDE (-side); negative
+            // on side*nxt.frac rewards INSIDE (+side).
+            cost += side*cur.frac*cls.power*(.35+.48*cls.entry);
+            cost += -side*nxt.frac*cls.power*(.48+.56*cls.apex);
           }
-          if(futureSide) cost += futureSide*nxt.frac*futurePower*.13;
-          // Avoid gratuitous lane changes on clear straights unless they shorten
-          // the route or are preparing a real future corner.
-          if(power<.02 && futurePower<.025) cost += Math.abs(nxt.frac-cur.frac)*.045;
+          const future=nextMeaningfulCorner64(i,3);
+          if(future){
+            // Exit toward the outside of the current bend unless a close linked
+            // corner needs the opposite side. For S-bends, that same exit naturally
+            // becomes the outside entry of the following corner.
+            const w=future.cls.power*(future.gap===1?.33:future.gap===2?.20:.11);
+            cost += future.side*nxt.frac*w;
+          }
+          // Wide straights should not default to centre. Lane changes are penalized
+          // only when they add distance without preparing a meaningful bend.
+          if(cls.power<.055 && !future) cost += Math.abs(nxt.frac-cur.frac)*.052;
           if(cost<ndp[b][c]){ndp[b][c]=cost;back[i][b][c]=a;}
         }
       }
@@ -3853,12 +4072,77 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const line=buildOptimalRacingLine2();
     si=Math.max(0,Math.min(line.length-1,si));
     const base=line[si]||0;
-    // Individuality is execution quality around the SAME fast macro-line. Nobody
-    // receives a deliberately slow outer route merely to look different.
+    // Individuality remains execution quality around the same fast macro line.
     const skill=Math.max(0,Math.min(1,((p.stats.cornering+p.stats.insideLine+p.stats.routeReading+p.stats.control)/4-72)/27));
     const half=Math.max(1.8,widths[si]*ROAD_MARGIN);
-    const signature=Math.sin((si+1)*.61+(p.routeIdentityPhase||0))*half*(.004+(1-skill)*.010);
+    const signature=Math.sin((si+1)*.61+(p.routeIdentityPhase||0))*half*(.003+(1-skill)*.008);
     return clampRoadOffset(si,base+signature,p);
+  }
+
+  function cornerPhysics64Target(p,si,baseOff){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const cls=cornerClass64(idx), side=cornerInsideSide(idx);
+    const rx=p.x-s.a[0],ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const phase=s.L?along/s.L:1;
+    const half=Math.max(1.8,widths[idx]*ROAD_MARGIN*.965);
+    const cornerN=Math.max(0,Math.min(1,(p.stats.cornering-72)/27));
+    const insideN=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
+    const readN=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
+    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+    const brakingN=Math.max(0,Math.min(1,(p.stats.braking-72)/27));
+    const skill=cornerN*.34+insideN*.22+readN*.21+controlN*.15+brakingN*.08;
+    let target=baseOff,weight=0,speedMul=1;
+
+    if(side && cls.power>=.055){
+      // Entry -> apex -> exit. Sharp corners get a wider entry and later apex;
+      // sweepers stay closer to the globally shortest line.
+      const entryEnd=cls.name==="hairpin"?.30:cls.name==="sharp"?.27:.23;
+      const apexEnd=cls.name==="hairpin"?.69:cls.name==="sharp"?.66:.63;
+      if(phase<entryEnd){
+        const t=phase/entryEnd;
+        const outside=-side*half*(cls.entry*(.93+.06*skill));
+        target=outside*(1-t)+side*half*(.20+.15*skill)*t;
+        weight=.42+cls.power*.70;
+      }else if(phase<apexEnd){
+        const t=(phase-entryEnd)/(apexEnd-entryEnd);
+        const apex=side*half*Math.min(.995,cls.apex*(.96+.04*insideN));
+        target=baseOff*(1-t)+apex*t;
+        weight=.58+cls.power*.80;
+      }else{
+        const t=(phase-apexEnd)/Math.max(.01,1-apexEnd);
+        const future=nextMeaningfulCorner64(idx,3);
+        let exit=-side*half*cls.exit;
+        if(future){
+          // In an S-bend, the current outside exit is also the next bend's outside
+          // entry when geometry agrees; otherwise cross only as much as required.
+          const nextEntry=-future.side*half*(future.gap===1?.82:.66);
+          exit=exit*(future.gap===1?.42:.68)+nextEntry*(future.gap===1?.58:.32);
+        }
+        const apex=side*half*Math.min(.995,cls.apex);
+        target=apex*(1-t)+exit*t;
+        weight=.50+cls.power*.65;
+      }
+      const minSpeed=cls.speed;
+      const skillSave=(1-minSpeed)*Math.min(.88,skill*.72+cornerN*.16);
+      speedMul=Math.min(1,minSpeed+skillSave);
+      // Do not apply full corner-speed loss at entry/exit; most of the loss belongs
+      // near the actual apex where steering angle is highest.
+      const apexLoad=Math.max(0,1-Math.abs(phase-.52)/.48);
+      speedMul=1-(1-speedMul)*apexLoad;
+    }else{
+      // Straight: begin an outside setup only for a nearby meaningful bend.
+      const future=nextMeaningfulCorner64(idx,4);
+      if(future){
+        const proximity=Math.max(0,1-(future.gap-1)/4);
+        const outside=-future.side*half*(future.cls.entry*(.88+.08*readN));
+        weight=(.12+.30*proximity)*(.78+.22*readN);
+        target=baseOff*(1-weight)+outside*weight;
+        weight=.72; // target already contains the setup blend
+      }
+    }
+    return {off:clampRoadOffset(idx,baseOff*(1-Math.min(.94,weight))+target*Math.min(.94,weight),p),speedMul,type:cls.name};
   }
 
   function extremeInsideAdjustment(p,si,now,baseOff){
@@ -4288,10 +4572,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v4.10: globally trust the shortest optimized line more, while keeping enough
     // personality/pack weight for racers to remain recognisably different.
     targetOff=targetOff*.065+plannedOff*(.84-packWeight-identityWeight)+packOff*packWeight+identityOff*identityWeight;
+      // Legacy pre-v4.64 corner shaping is retained only while an observer field is
+      // active. On clear road, Racing Line 2.1 + Cornering Physics 2.0 owns the line.
+      const legacyCornerShaping = playerPerceivedObservers(p,26.0).length>0;
       // Kart-style cornering: aggressively approach the inside/apex on turns.
       const insideSide=cornerInsideSide(si);
       const turnPower=cornerIntensity(si);
-      if(insideSide!==0 && turnPower>0.055){
+      if(legacyCornerShaping && insideSide!==0 && turnPower>0.055){
         const halfRoad=Math.max(1.8,widths[si]*1.13);
         const apexOff=insideSide*halfRoad*INSIDE_CORNER_STRENGTH;
         const apexBlend=Math.min(0.999,0.955+turnPower*1.68);
@@ -4301,7 +4588,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Look ahead several route segments so the racer hugs the inside wall before
       // the corner actually begins instead of waiting until the midpoint.
       const futureInside=futureInsideBias(si);
-      if(Math.abs(futureInside)>0.10){
+      if(legacyCornerShaping && Math.abs(futureInside)>0.10){
         const halfRoad2=Math.max(1.8,widths[si]*1.15);
         const futureApex=futureInside*halfRoad2*1.075;
         targetOff=targetOff*0.012+futureApex*0.988;
@@ -4311,7 +4598,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // target is derived only from upcoming route curvature, so it works on
       // every similar section and does not encode screenshot coordinates.
       const earlyInside=openingInsideBias(si);
-      if(Math.abs(earlyInside)>.08){
+      if(legacyCornerShaping && Math.abs(earlyInside)>.08){
         const halfRoad3=Math.max(1.8,widths[si]*1.13);
         const insideSkill=Math.max(0,Math.min(1,(p.stats.insideLine-72)/27));
         const earlyTarget=earlyInside*halfRoad3;
@@ -4323,7 +4610,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // authority over route personality. All racers begin overlapped, then fan
       // naturally only when observer avoidance or player traits justify it.
       const openingFast=openingFastLineTarget(p,si);
-      if(openingFast!=null){
+      if(legacyCornerShaping && openingFast!=null){
         const read=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
         // v4.27: openingFast already contains the racer's lane signature. Give it
         // strong authority so the pack visibly fans out from the overlapped start.
@@ -4384,7 +4671,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*.16+p.shockAvoidOffset*.84;
     }
 
-    // v4.63 CLEAR-ROAD AUTHORITY: with no perceived observer field, the map-wide
+    // v4.65 CLEAR-ROAD / PASS AUTHORITY: with no perceived observer field, the map-wide
     // Racing Line 2.0 is the macro route. Personality/tactics may add tiny execution
     // texture, but they may not choose a knowingly slower lane.
     const clearRoadObs=playerPerceivedObservers(p,26.0);
@@ -4395,7 +4682,44 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       targetOff=targetOff*(1-trust)+fastLine*trust;
     }
 
-    let speedMul=(clearRoadObs.length===0?1:humanDrive.speedMul)*unitAI.pace;
+    // v4.64 CORNERING PHYSICS 2.0: the map-wide line is refined by a local
+    // entry/apex/exit model only on observer-free road. Observer avoidance below
+    // still has absolute final authority.
+    let cornerPhysics64={off:targetOff,speedMul:1,type:"traffic"};
+    if(clearRoadObs.length===0 && now>=p.shockAvoidUntil){
+      cornerPhysics64=cornerPhysics64Target(p,si,targetOff);
+      targetOff=cornerPhysics64.off;
+    }
+
+    // v4.66 MULTI-CAR LINE AUTHORITY:
+    // 4.64 remains the solo/leader baseline. Only real nearby racer traffic may
+    // bend that line; then 4.65's explicit overtake plan may make the final attack.
+    let multiCar66={off:targetOff,mode:"observer",authority:0};
+    if(clearRoadObs.length===0 && now>=p.shockAvoidUntil){
+      const solo66=cornerPhysics64.off;
+      multiCar66=multiCarRacingLine66(p,si,now,solo66);
+      if(multiCar66.authority>0){
+        targetOff=targetOff*(1-multiCar66.authority)+multiCar66.off*multiCar66.authority;
+      }
+    }
+
+    // v4.65 PASS AUTHORITY: 4.64 correctly made the solo optimal line dominant,
+    // but that also erased most passing moves. When another racer actually blocks
+    // that line, allow the selected overtake corridor to override it. Observers still
+    // have final authority in chooseAvoidance() below.
+    if(passPlan && clearRoadObs.length===0 && now>=p.shockAvoidUntil){
+      const myProg65=currentProgress(p);
+      const target65=players[p.passTargetId];
+      const rel65=target65&&!target65.done ? currentProgress(target65)-myProg65 : 99;
+      if(rel65>-1.0 && rel65<10.5){
+        const passSkill65=Math.max(0,Math.min(1,
+          ((p.stats.aggression+p.stats.prediction+p.stats.routeReading+p.stats.control)/4-72)/27));
+        const authority65=(passPlan.mode===2?.74:passPlan.mode===3?.70:.82)+passSkill65*.08;
+        targetOff=targetOff*(1-authority65)+passPlan.off*authority65;
+      }
+    }
+
+    let speedMul=(clearRoadObs.length===0?cornerPhysics64.speedMul:humanDrive.speedMul)*unitAI.pace;
     if(passPlan) speedMul*=passPlan.speedMul;
     if(clutchPlan) speedMul*=clutchPlan.speedMul;
     if(now<p.startLaunchUntil){
@@ -4428,7 +4752,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!avoid && now<p.avoidRecoverUntil){
       const duration=Math.max(430,p.avoidRecoverUntil-(p.avoidRecoverStart||now));
       const t=Math.max(0,Math.min(1,(now-(p.avoidRecoverStart||now))/duration));
-      // v4.63 SAFE REJOIN 3.0: recover toward the optimized line only as quickly as
+      // v4.64 SAFE REJOIN 3.1: recover toward the optimized line only as quickly as
       // the road ahead permits. Clear straights rejoin quickly; an approaching corner
       // or visible observer chain keeps the current safe line until the geometry settles.
       const recoveryN=Math.max(0,Math.min(1,(p.stats.recovery-72)/27));
