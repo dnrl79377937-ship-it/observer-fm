@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.90";
+  const BUILD_ID = "v4.91";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4958,53 +4958,73 @@ function packContextOffset(p,si,now){
   // Do not hard-code screenshot coordinates. Every route segment uses the same rule:
   // preserve forward direction, blend into the next tangent gradually, and cap how
   // sharply the virtual-mouse target can rotate during ordinary racing.
-  function continuousSteeringTarget90(p,si,tx,ty,emergency=false){
+  
+  // v4.91 RACE AI 5.2 — NO ORTHOGONAL DROP
+  // Generic route-geometry solution: choose the farthest future racing-line point
+  // that can be reached by ONE legal chord. This naturally creates long diagonals
+  // across wide corridors and removes the old "straight, then 90-degree drop" shape.
+  // No screenshot coordinates or hand-drawn line coordinates are encoded here.
+  function farthestVisibleFastTarget91(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    let best=null;
+    const maxLook=Math.min(segs.length-1,idx+8);
+
+    // Test future segment end points from far to near. Each candidate uses that
+    // segment's own optimized fast offset, so edge/inside-line legality is preserved.
+    for(let j=maxLook;j>=idx+1;j--){
+      const sj=segs[j];
+      const macro=optimalRacingLine2Offset(p,j);
+      const corner=cornerPhysics64Target(p,j,macro).off;
+      const linked=integratedFastLine74(p,j,corner);
+      const off=raceLine79(p,j,linked,false);
+      const x=sj.b[0]+sj.nx*off;
+      const y=sj.b[1]+sj.ny*off;
+      if(lineStaysOnCourse(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
+        best={x,y,j,off};
+        break;
+      }
+    }
+
+    if(best) return best;
+
+    // Fallback: current fast line endpoint.
+    const s=segs[idx];
+    const off=fastReference84(p,idx);
+    return {x:s.b[0]+s.nx*off,y:s.b[1]+s.ny*off,j:idx,off};
+  }
+
+  function noOrthogonalDrop91(p,si,tx,ty,emergency=false){
     if(emergency) return {x:tx,y:ty};
 
     const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-    const next=segs[Math.min(segs.length-1,idx+1)];
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const phase=s.L ? along/s.L : 1;
+    const vis=farthestVisibleFastTarget91(p,idx);
 
-    // Start rotating toward the next route tangent progressively instead of reaching
-    // a joint and then snapping toward it. Stronger corners begin the blend earlier.
-    const turn=Math.abs(s.ux*next.uy-s.uy*next.ux);
-    const blendStart=Math.max(.48,.72-turn*.48);
-    const tangentBlend=Math.max(0,Math.min(1,(phase-blendStart)/Math.max(.12,1-blendStart)));
-    let rdx=s.ux*(1-tangentBlend)+next.ux*tangentBlend;
-    let rdy=s.uy*(1-tangentBlend)+next.uy*tangentBlend;
-    let rl=Math.hypot(rdx,rdy)||1;
-    rdx/=rl; rdy/=rl;
+    // Prefer the farthest legal chord over local segment-joint targets.
+    // This is the key difference from v4.90: the AI no longer waits for a joint
+    // and then turns downward/vertical. It aims through the corridor in one line.
+    let x=vis.x, y=vis.y;
 
-    let dx=tx-p.x, dy=ty-p.y;
-    let dist=Math.hypot(dx,dy);
-    if(dist<.01) return {x:tx,y:ty};
-    dx/=dist; dy/=dist;
+    // Never commit a calm-racing click that is close to perpendicular to the current
+    // motion. If necessary, rotate it toward current momentum while retaining a
+    // forward component. Real emergency avoidance bypasses this filter.
+    let hx=p.steerX||segs[idx].ux, hy=p.steerY||segs[idx].uy;
+    let hl=Math.hypot(hx,hy)||1; hx/=hl; hy/=hl;
+    let dx=x-p.x, dy=y-p.y;
+    let d=Math.hypot(dx,dy)||1; dx/=d; dy/=d;
+    let angle=Math.atan2(hx*dy-hy*dx,hx*dx+hy*dy);
 
-    // Signed angular difference between the smooth route tangent and requested target.
-    let dot=Math.max(-1,Math.min(1,rdx*dx+rdy*dy));
-    let cross=rdx*dy-rdy*dx;
-    let angle=Math.atan2(cross,dot);
+    const maxTurn=52*Math.PI/180; // calm-racing click can never be an L-turn
+    if(Math.abs(angle)>maxTurn){
+      angle=Math.sign(angle)*maxTurn;
+      const ca=Math.cos(angle),sa=Math.sin(angle);
+      const ndx=hx*ca-hy*sa, ndy=hx*sa+hy*ca;
+      const look=Math.max(10,Math.min(24,d));
+      x=p.x+ndx*look; y=p.y+ndy*look;
+      const legal=courseAwareTarget(p,idx,x,y);
+      x=legal.x; y=legal.y;
+    }
 
-    // Straight corridors stay almost straight. Real corners progressively earn more
-    // steering angle; this removes the horizontal -> sudden vertical "L-turn".
-    const cornerPower=Math.max(cornerIntensity(idx),cornerIntensity(Math.min(segs.length-1,idx+1))*.78);
-    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
-    const maxDeg=10.5 + Math.min(31,cornerPower*66) + tangentBlend*7 + controlN*2.5;
-    const maxRad=maxDeg*Math.PI/180;
-    angle=Math.max(-maxRad,Math.min(maxRad,angle));
-
-    const ca=Math.cos(angle), sa=Math.sin(angle);
-    const ndx=rdx*ca-rdy*sa, ndy=rdx*sa+rdy*ca;
-
-    // Keep a useful look distance so the target remains a long, natural line rather
-    // than a tiny succession of right-angle correction clicks.
-    const look=Math.max(8.5,Math.min(22,dist));
-    let x=p.x+ndx*look, y=p.y+ndy*look;
-    const legal=courseAwareTarget(p,idx,x,y);
-    return {x:legal.x,y:legal.y};
+    return {x,y};
   }
 
 function updatePlayer(p, now, dt){
@@ -5512,16 +5532,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=legalTarget.x; ty=legalTarget.y;
     }
 
-    // v4.90: ordinary racing target is direction-continuous. Observer emergencies
-    // still retain full escape authority below through the hard-route-lock override.
+    // v4.91: ordinary racing uses the farthest legal fast-line chord, eliminating
+    // straight-then-perpendicular drops. True observer emergencies retain full authority.
     {
-      const emergency90=!!avoid && (
+      const emergency91=!!avoid && (
         avoid.mode==="stop" ||
         (Number.isFinite(avoid.minClear) && avoid.minClear<1.05) ||
         now<(p.hardRouteLockUntil||0)
       );
-      const smooth90=continuousSteeringTarget90(p,si,tx,ty,emergency90);
-      tx=smooth90.x; ty=smooth90.y;
+      const chord91=noOrthogonalDrop91(p,si,tx,ty,emergency91);
+      tx=chord91.x; ty=chord91.y;
     }
 
     // v4.60 HARD ROUTE LOCK + ESCAPE CORRIDOR: while locked, bypass the optimized
@@ -5584,6 +5604,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const reach=Math.max(.82,Math.min(1.06,p.mouseReach||1));
         let mx=p.x+(tx-p.x)*reach+(Math.random()-.5)*err;
         let my=p.y+(ty-p.y)*reach+(Math.random()-.5)*err;
+        if(!dangerActive){
+          const safeClick91=noOrthogonalDrop91(p,si,mx,my,false);
+          mx=safeClick91.x; my=safeClick91.y;
+        }
         // v4.31 shorter human clicks: reduce the frequency of long screen-spanning
         // commands. Danger uses especially short re-readable clicks so the racer can
         // react to the next observer without twitching every frame.
@@ -5642,7 +5666,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     let dx=tx-p.x, dy=ty-p.y;
     const d=Math.hypot(dx,dy) || 1;
     const ndx=dx/d, ndy=dy/d;
-    const steerBlend=Math.min(.25,(.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06)*(unitAI.steer||1));
+    const steerBlend=(p.mouseMode==="race")
+      ? Math.min(.13,(.075+((p.stats.control-72)/27)*.035+cornerIntensity(si)*.025)*(unitAI.steer||1))
+      : Math.min(.25,(.12+((p.stats.control-72)/27)*.07+cornerIntensity(si)*.06)*(unitAI.steer||1));
     p.steerX += (ndx-p.steerX)*steerBlend;
     p.steerY += (ndy-p.steerY)*steerBlend;
     const steerLen=Math.hypot(p.steerX,p.steerY)||1;
