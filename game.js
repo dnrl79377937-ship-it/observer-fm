@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.4";
+  const BUILD_ID = "v4.59.5";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -100,7 +100,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   ];
 
   // v2.21: stronger behavioral identity; never changes raw base speed.
-  // v4.59.4 FUTURE SAFE CORRIDOR: prefer a lane that stays open 3–4s ahead, reduce stop-stutter, and slightly lengthen clear-road clicks.
+  // v4.59.5 SMOOTH RECOVERY: keep the survival corridor, suppress stop-stutter further, hold through chained threats, and blend back to pace smoothly.
   // v4.46 RACE-SITUATION AI: leader/chaser/clutch behavior uses Aggression, Risk Control and Pressure.
   // v4.45 PERSONALITY AI 2.0: persistent styles now alter line commitment, safety margin,
   // click rhythm and rejoin patience. They never create random deaths or hidden speed boosts.
@@ -997,7 +997,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const obsForward=ovx*s.ux+ovy*s.uy, obsLateral=Math.abs(ovx*s.nx+ovy*s.ny);
         const crossing=obsLateral>Math.abs(obsForward)*.72 && obsLateral>.18;
         const oneSidePressure=Math.abs(leftBlock-rightBlock)>=1;
-        const stopWeight=.00022*leaderControlCalm; // v4.59.4 virtually eliminate stop-stutter
+        const stopWeight=(!sideEscapeOpen && immediateAlong<.72 && leftBlock>0 && rightBlock>0 ? .000045 : 0)*leaderControlCalm; // v4.59.5 stop only when truly boxed point-blank
         const spinWeight=(oneSidePressure && sideEscapeOpen ? .082 : .030)*packControlCalm*leaderControlCalm;
         const diagonalWeight=(crossing?.98:1.30)*packControlCalm;
         const backWeight=((!sideEscapeOpen && immediateAlong<.92 && leftBlock>0 && rightBlock>0) ? .0065 : .00008)*leaderControlCalm;
@@ -1047,7 +1047,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           const nlat=Math.abs((nearMem?.vx||0)*s.nx+(nearMem?.vy||0)*s.ny);
           const nfwd=Math.abs((nearMem?.vx||0)*s.ux+(nearMem?.vy||0)*s.uy);
           const nearCross=nlat>nfwd*.72 && nlat>.18;
-          const nearMode=rr<(nearCross?.715:.855)?"diagonal":rr<(nearCross?.716:.856)?"stopcon":rr<(nearCross?.945:.94)?"zigzag":"spin360";
+          const nearMode=rr<(nearCross?.735:.875)?"diagonal":rr<(nearCross?.955:.955)?"zigzag":"spin360"; // v4.59.5 no stop in normal near-threat palette
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -1068,7 +1068,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const flat=Math.abs((farMem?.vx||0)*s.nx+(farMem?.vy||0)*s.ny);
       const ffwd=Math.abs((farMem?.vx||0)*s.ux+(farMem?.vy||0)*s.uy);
       const farCross=flat>ffwd*.72 && flat>.18;
-      const mode=rr<(farCross?.735:.855)?"diagonal":rr<(farCross?.7355:.8555)?"stopcon":rr<(farCross?.955:.945)?"zigzag":"spin360";
+      const mode=rr<(farCross?.755:.885)?"diagonal":rr<(farCross?.965:.96)?"zigzag":"spin360"; // v4.59.5 moving controls only
       let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -2332,7 +2332,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // This prevents dodge-one-observer -> instant apex rejoin -> hit-next-observer deaths.
         if(best.kind!=='stop' && best.kind!=='back'){
           p.survivalRecoverStart=now+hold;
-          p.survivalRecoverUntil=p.survivalRecoverStart+(sparseField?650:300)+avoid*(sparseField?230:160)+pred*(sparseField?190:120); // v4.59.3 hold the cleared lane a little longer
+          p.survivalRecoverUntil=p.survivalRecoverStart+(sparseField?690:340)+avoid*(sparseField?245:175)+pred*(sparseField?205:135); // v4.59.5 hold the cleared lane through the next-threat check
           p.survivalRecoverOffset=best.off;
         }
         // v4.26: a stop is a tiny human tap, not a long decision lock. Re-read the
@@ -2367,8 +2367,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const joinRiskNear=scoreFutureEscapePath(p,s,proposed,.82,rejoinObs);
       const joinRiskMid=scoreFutureEscapePath(p,s,proposed,1.28,rejoinObs);
       const joinRiskFar=scoreFutureEscapePath(p,s,proposed,1.72,rejoinObs);
-      const joinMin=Math.min(joinRiskNear.minClear,joinRiskMid.minClear,joinRiskFar.minClear);
-      const joinScore=Math.max(joinRiskNear.score,joinRiskMid.score*.96,joinRiskFar.score*.90);
+      const joinRiskChain=scoreFutureEscapePath(p,s,proposed,2.18,rejoinObs); // v4.59.5 do not rejoin between chained observers
+      const joinMin=Math.min(joinRiskNear.minClear,joinRiskMid.minClear,joinRiskFar.minClear,joinRiskChain.minClear);
+      const joinScore=Math.max(joinRiskNear.score,joinRiskMid.score*.96,joinRiskFar.score*.90,joinRiskChain.score*.84);
       const nextThreatClosing=rejoinObs.some(o=>{
         const rx=o.x-p.x, ry=o.y-p.y;
         const rvx=(o.vx||0)-(p.vx||0), rvy=(o.vy||0)-(p.vy||0);
@@ -2377,7 +2378,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const leaderRejoin=liveRaceSituation(p).rank===1;
       // Leaders may return a little sooner when the corridor is genuinely clear, but
       // never cut through a closing observer just to protect first place.
-      const minNeed=leaderRejoin?2.02:2.14; // v4.59.3: no early cut-back through a marginal gap
+      const minNeed=leaderRejoin?2.05:2.17; // v4.59.5 preserve a small safety buffer during recovery
       const scoreSlack=leaderRejoin?.64:.54;
       const joinBad=rejoinObs.length && (joinMin<minNeed || joinScore>holdRisk.score+scoreSlack || (nextThreatClosing && joinMin<2.35));
       p.survivalRejoinLastRisk=joinScore||0;
@@ -2390,14 +2391,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         return {off:held,speedMul:1.012,danger:Math.max(p.liveEvadeDanger*.30,.16),side:p.liveEvadeSide};
       }
       if(!p.survivalRejoinClearSince) p.survivalRejoinClearSince=now;
-      const clearNeed=(leaderRejoin?175:210)+(1-avoid)*75+(1-pred)*65; // v4.59.3 continuous safe-window confirmation
+      const clearNeed=(leaderRejoin?190:225)+(1-avoid)*78+(1-pred)*68; // v4.59.5 confirm the lane before returning
       if(now-p.survivalRejoinClearSince<clearNeed){
         p.liveEvadeAction='recover-check';
         return {off:held,speedMul:1.008,danger:p.liveEvadeDanger*.25,side:p.liveEvadeSide};
       }
       // Blend back more gently. Even after confirmation, never snap straight to apex.
-      const blendCap=leaderRejoin?.68:.54;
-      const safeBlend=Math.min(blendCap,.28+rawT*.46);
+      const blendCap=leaderRejoin?.62:.49; // v4.59.5 softer recovery angle
+      const safeBlend=Math.min(blendCap,.22+rawT*.40);
       const safeProposed=clampRoadOffset(Math.min(p.seg,segs.length-1),held*(1-safeBlend)+proposed*safeBlend,p);
       p.liveEvadeAction='recover';
       return {off:safeProposed,speedMul:1.005,danger:p.liveEvadeDanger*.22,side:p.liveEvadeSide};
@@ -4486,6 +4487,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
           : dangerTier===2 ? Math.max(58,dangerMs*.84)
           : dangerTier===1 ? Math.max(72,dangerMs*1.02)
           : calmMs)*unitThink;
+        // v4.59.5: keep v4.59.4 click reach, but hold a clean-road command slightly longer.
+        if(dangerTier===0 && playerPerceivedObservers(p,21.5).length===0) cadence*=1.10;
         if(p.mouseMode==='stop') cadence=Math.min(cadence,48+Math.random()*22);
         p.mouseNextThink=now+cadence;
         p.mouseCommandUntil=now+cadence+(p.mouseMode==='stop'?18:120);
