@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.03";
+  const BUILD_ID = "v5.04";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -159,21 +159,27 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }));
 
   // Centerline based on the user's supplied map.
+  // v5.04 ROUTE GEOMETRY FIX
+  // The two broad horizontal corridors are represented as actual horizontal centerlines.
+  // Previous points encoded a large diagonal/downward descent inside the middle corridor,
+  // so every steering algorithm eventually followed that false geometry.
   const route = [
     [21,158],[44,158],[73,158],[104,158],[130,157],[143,151],
-    [148,139],[148,121],[147,103],[139,91],[127,85],[111,83],
-    [101,88],[98,99],[89,105],[73,108],[54,108],[36,108],[23,105],
-    [20,94],[20,78],[20,61],[21,43],[27,28],[40,20],[57,18],
-    [70,19],[78,26],[81,34],[93,36],[111,35],[130,34],[145,34],[154,34]
+    [148,139],[148,121],[147,103],
+    // 3 -> 9 o'clock: enter smoothly, then run straight across the road center.
+    [142,101],[132,101],[118,101],[104,101],[89,101],[73,101],[54,101],[36,101],[23,101],
+    [20,94],[20,78],[20,61],[21,43],[27,28],[40,20],[57,18],[70,19],[78,26],
+    // 11 -> 1 o'clock: one continuous horizontal centerline to the finish side.
+    [81,35],[93,35],[111,35],[130,35],[145,35],[154,35]
   ];
 
   // Tuned road half widths. We keep controls constrained to the visible road.
-  const widths = route.map((_, i) => {
-    if (i < 6) return 9.5;
-    if (i < 13) return 7.0;
-    if (i < 21) return 8.2;
-    if (i < 28) return 7.0;
-    return 7.8;
+  const widths = route.map((pt, i) => {
+    const y=pt[1];
+    if(y>=145) return 9.5;                 // start/bottom corridor
+    if(y>=94 && y<=108) return 8.2;        // middle horizontal corridor
+    if(y<=42 && pt[0]>=76) return 7.8;     // final/top horizontal corridor
+    return 7.0;                            // connecting bends/vertical sections
   });
 
   const segs = [];
