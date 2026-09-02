@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.49";
+  const BUILD_ID = "v4.50";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -843,9 +843,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const id=identityOf(p);
     if(id.control && w[id.control]!=null && id.control!=="stopcon") w[id.control]*=1.16;
     // v2.51: stopcon is an emergency last resort only.
-    w.stopcon*=.18;
-    w.zigzag*=1.18;
-    w.backcon*=.42;
+    w.stopcon*=.035; // v4.50: stop-control is now an exceptional emergency-only move
+    w.zigzag*=1.34;
+    w.backcon*=.34;
     return w;
   }
 
@@ -930,7 +930,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     const si=Math.min(p.seg,segs.length-1),s=segs[si];
     let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
-    const closeObs=playerPerceivedObservers(p,6.8);
+    const earlySurvival=currentProgress(p)<routeLength*.56;
+    const closeObs=playerPerceivedObservers(p,earlySurvival?7.35:6.8);
 
     // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
     if(!closeObs.length){
@@ -948,8 +949,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const o=closeObs[i],dx=o.x-p.x,dy=o.y-p.y;
       const along=dx*s.ux+dy*s.uy;if(along<=0)continue;
       const lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<3.15&&lat<2.25&&along<immediateAlong){immediate=o;immediateAlong=along;}
-      if(along<4.8&&lat<3.8&&along<nearAlong){nearAhead=o;nearAlong=along;}
+      if(along<(earlySurvival?3.45:3.15)&&lat<(earlySurvival?2.45:2.25)&&along<immediateAlong){immediate=o;immediateAlong=along;}
+      if(along<(earlySurvival?5.25:4.8)&&lat<(earlySurvival?4.05:3.8)&&along<nearAlong){nearAhead=o;nearAlong=along;}
     }
 
     if(p.controlMode==="normal"&&p.reactiveControlCooldown<=0){
@@ -984,11 +985,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // like a collision pass-through. Natural diagonal escape is the main tool;
         // stop-control is more common, while reverse is a very rare last resort.
         const marseilleWeight=0;
-        const stopWeight=.075*leaderControlCalm;
-        const spinWeight=.012*packControlCalm*leaderControlCalm;
-        const diagonalWeight=1.02*packControlCalm;
-        const backWeight=((!sideEscapeOpen && immediateAlong<1.38) ? .004 : .00025)*leaderControlCalm;
-        const zigWeight=.055*leaderControlCalm;
+        // v4.50 CONTROL DIVERSITY: keep the racer moving. Seeing an immediate observer
+        // normally produces a forward diagonal escape; zigzag and 360 are visible alternatives.
+        // Stop is nearly eliminated because repeated braking reads as stutter. Reverse stays rare.
+        const stopWeight=.006*leaderControlCalm;
+        const spinWeight=.052*packControlCalm*leaderControlCalm;
+        const diagonalWeight=1.16*packControlCalm;
+        const backWeight=((!sideEscapeOpen && immediateAlong<1.32) ? .010 : .00055)*leaderControlCalm;
+        const zigWeight=.145*leaderControlCalm;
         const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
         const r=Math.random()*totalWeight;
         let cut=marseilleWeight;
@@ -1030,7 +1034,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
         if(Math.random()<zigChance){
           const rr=Math.random();
-          const nearMode=rr<.86?"diagonal":rr<.91?"stopcon":rr<.975?"zigzag":"spin360";
+          const nearMode=rr<.80?"diagonal":rr<.805?"stopcon":rr<.925?"zigzag":"spin360";
           const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
           beginControl(p,nearMode,now,dur,true,nearAhead.id);
           p.reactiveControlCooldown=950+Math.random()*1200;return;
@@ -1044,7 +1048,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
       // v4.191: nearby-but-not-urgent threats stay forward-moving. No backcon here.
       const rr=Math.random();
-      const mode=rr<.82?"diagonal":rr<.87?"stopcon":rr<.965?"zigzag":"spin360";
+      const mode=rr<.78?"diagonal":rr<.783?"stopcon":rr<.925?"zigzag":"spin360";
       let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
       duration*=(1.04-ct*.10);
       beginControl(p,mode,now,duration,true,nearAhead.id);
@@ -1679,7 +1683,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const survival=p.survivalNorm||0;
     // Better survival stats value clearance more strongly. The price is that
     // detours are penalized less, so these racers willingly travel farther.
-    const survivalSafety=(1.20+survival*.72)*identityOf(p).safety; // v4.44: stronger stat separation; elite survival stats value clearance more, physical HIT unchanged
+    const progressRatio=Math.max(0,Math.min(1,currentProgress(p)/routeLength));
+    // v4.50: a small survival nudge before the first mid-course shelter. It does not
+    // grant invulnerability or speed; it only makes early AI value predicted clearance a bit more.
+    const preShelterSafety=progressRatio<.56 ? 1.085 : (progressRatio<.64 ? 1.035 : 1);
+    const survivalSafety=(1.20+survival*.72)*identityOf(p).safety*preShelterSafety; // v4.50
     const timeLoss=(1-speedMul)*(19.0+situationRisk*7.0)/Math.max(.90,safetyBias);
     const detour=Math.abs(targetOff-p.desiredOffset)*0.23*(2-safetyBias)*(1-survival*.66);
     return {score:danger*safetyBias*survivalSafety+timeLoss+detour,minClear:Math.sqrt(minClearSq)};
