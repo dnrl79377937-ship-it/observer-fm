@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v4.59.5";
+  const BUILD_ID = "v4.59.6";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -385,8 +385,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       return {
         index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
-        visionRadius:Math.max(26,Math.min(37,
-          28.5+((stats.prediction-72)/27)*6.5+((stats.reaction-72)/27)*3.2+((stats.focus-72)/27)*2.6)),
+        visionRadius:Math.max(31,Math.min(44,
+          33.0+((stats.prediction-72)/27)*7.2+((stats.reaction-72)/27)*3.8+((stats.focus-72)/27)*3.3)),
         // v2.34: persistent route personality. Negative = safer/wider, positive = tighter inside.
         linePersonality:(
           drivingStyle.style==="apexHunter" ? .92 :
@@ -1313,16 +1313,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const predictionN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
     const consistencyN=Math.max(0,Math.min(1,(p.stats.consistency-72)/27));
     const perceptionSkill=focusN*.42+reactionN*.25+predictionN*.25+consistencyN*.08;
-    const visionScale=.72+focusN*.27+reactionN*.10;
+    // v4.59.6 DYNAMIC VISION: racers look much farther down the road than sideways.
+    // The larger forward read is still personal/stat-driven and uses perceived motion only.
+    const visionScale=.84+focusN*.22+reactionN*.10;
     const maxR=Math.min(r,(p.visionRadius||r)*visionScale);
     const raw=playerNearbyObservers(p,maxR);
     let hx=p.steerX||0, hy=p.steerY||0;
     let hl=Math.hypot(hx,hy);
     if(hl<.15){ const seg=segs[Math.min(p.seg,segs.length-1)]; hx=seg.ux; hy=seg.uy; hl=1; }
     hx/=hl; hy/=hl;
-    const halfFov=(60+focusN*20)*Math.PI/180;
+    const halfFov=(67+focusN*18)*Math.PI/180; // v4.59.6 wider forward awareness
     const cosFov=Math.cos(halfFov);
-    const peripheral=2.30+reactionN*1.05;
+    const peripheral=2.65+reactionN*1.15;
     const memoryMs=350+predictionN*430+focusN*220;
     for(const o of raw){
       const dx=o.x-p.x,dy=o.y-p.y,d=Math.hypot(dx,dy);
@@ -2031,7 +2033,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Read an observer's current travel vector and begin a single broad, committed arc
     // before the paths intersect. This replaces last-second micro-jukes near the sprite.
     if(safeAt(p.x,p.y)) return null;
-    const vision=Math.min(33,p.visionRadius||33); // v4.59.2 earlier readable threat window
+    const vision=Math.min(42,p.visionRadius||42); // v4.59.6 long forward sight: break route fixation before contact
     const raw=playerPerceivedObservers(p,vision);
     if(!raw.length){
       p.liveEvadeDanger=0;
@@ -2055,6 +2057,33 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Real converging danger still has full avoidance authority.
     const leaderNow=liveRaceSituation(p).rank===1;
     const half=Math.max(3.3,widths[Math.min(p.seg,widths.length-1)]*.72);
+
+    // v4.59.6 ROUTE BREAK AI: seeing a relevant observer ahead interrupts the old
+    // racing-line plan before the normal collision score becomes large. The racer
+    // deliberately throws away the held route click and creates a fresh escape click.
+    // This is not omniscience: only personally perceived observers can trigger it.
+    let routeBreakObserver=null, routeBreakScore=0;
+    for(const o of raw){
+      const dx=o.x-p.x, dy=o.y-p.y;
+      const along=dx*s.ux+dy*s.uy, lat=dx*s.nx+dy*s.ny;
+      if(along<1.0 || along>28.5) continue;
+      const laneWindow=half+4.8+pred*1.8;
+      if(Math.abs(lat)>laneWindow) continue;
+      const forwardN=1-Math.min(1,along/30);
+      const laneN=1-Math.min(1,Math.abs(lat)/Math.max(1,laneWindow));
+      const conf=o.confidence==null?1:o.confidence;
+      const score=(forwardN*.55+laneN*.45)*(.72+.28*conf);
+      if(score>routeBreakScore){ routeBreakScore=score; routeBreakObserver=o; }
+    }
+    const visualRouteBreak=!!routeBreakObserver && routeBreakScore>.22;
+    if(visualRouteBreak){
+      const rid=routeBreakObserver.id;
+      if(p.routeBreakThreat!==rid || now>(p.routeBreakRefreshAt||0)){
+        p.routeBreakThreat=rid;
+        p.routeBreakForceClick=true;
+        p.routeBreakRefreshAt=now+360+(1-react)*170;
+      }
+    }
 
     // v4.34: detect a genuine moving box (front plus both lateral exits pressured).
     // If already committed to a breakout, keep it briefly unless the corridor becomes illegal.
@@ -2130,6 +2159,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(clusterDelta<-.15) rightRisk += clusterNow.confidence*(1.0+clusterNow.density);
       else if(clusterDelta>.15) leftRisk += clusterNow.confidence*(1.0+clusterNow.density);
     }
+    // v4.59.6 visual contact itself can break route fixation. If trajectory math is
+    // still uncertain, create a low watch-level threat and bias away from the seen lane
+    // instead of continuing to click the memorized racing line.
+    if(visualRouteBreak && routeBreakObserver){
+      const rdx=routeBreakObserver.x-p.x, rdy=routeBreakObserver.y-p.y;
+      const rlat=rdx*s.nx+rdy*s.ny;
+      const visualW=.10+routeBreakScore*.20;
+      danger=Math.max(danger,visualW);
+      if(rlat<0) leftRisk+=.34+routeBreakScore*.60; else rightRisk+=.34+routeBreakScore*.60;
+      if(threatId<0){ threatId=routeBreakObserver.id; bestT=Math.min(bestT,3.35); }
+    }
     p.liveEvadeDanger=danger;
     // v4.35 RISK LADDER: convert continuous threat into a stable human-readable
     // safety tier. The tier changes how far/wide/often the virtual mouse acts.
@@ -2149,10 +2189,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // no longer causes frantic inputs, but a close observer still gets an emergency read.
     // v4.43 NO_EVADE/LATE_REACTION fix: a readable converging path should trigger a
     // committed dodge earlier, while non-converging nearby observers still do nothing.
-    const basePredictive=finalDanger>(sparseField?.040:.086) && bestT<(sparseField?4.75:4.18); // v4.59.4 earlier corridor commitment when collision is genuinely developing
+    const basePredictive=(finalDanger>(sparseField?.040:.086) && bestT<(sparseField?4.75:4.18)) || visualRouteBreak; // v4.59.6 visible observer may break the old route before CPA is certain
     // v4.59: leader pace remains sacred for weak reads, but a genuine converging
     // multi-observer lane gets avoidance authority before it becomes an emergency.
-    const predictive=basePredictive && (!leaderNow || finalDanger>.090 || bestT<3.82 || clusterNow.frontCount>=2); // v4.59.4 leader yields the fast line sooner for a real future collision
+    const predictive=basePredictive && (!leaderNow || visualRouteBreak || finalDanger>.090 || bestT<3.82 || clusterNow.frontCount>=2); // v4.59.6 leader also abandons a held line on relevant visual contact
     const emergency=nearest<(sparseField?3.65:3.05);
     if(!predictive && !emergency && now>=p.liveEvadeUntil) return null;
 
@@ -2221,7 +2261,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const current=Number.isFinite(raceOff)?raceOff:p.desiredOffset;
       const tier=p.dangerTier||0;
       // Watch = small flowing correction, Danger = decisive diagonal, Emergency = wider escape.
-      const evadeWidth=tier===3?1.16:tier===2?1.04:tier===1?.88:.78;
+      const evadeWidth=tier===3?1.16:tier===2?1.04:tier===1?.94:(visualRouteBreak?.90:.78);
       const openSide=leftRisk<=rightRisk?-1:1;
       const preferred=p.liveEvadeSide||openSide;
       // v4.24 HUMAN DODGE: choose one coherent human action, then commit to it.
@@ -4430,7 +4470,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
         p.mouseReactionReadyAt=0;
       }
       const distToHeld=Math.hypot((p.mouseTargetX??p.x)-p.x,(p.mouseTargetY??p.y)-p.y);
-      const needsClick=now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
+      const routeBreakInterrupt=!!p.routeBreakForceClick && dangerActive;
+      const needsClick=routeBreakInterrupt || now>=p.mouseNextThink || now>=p.mouseCommandUntil || distToHeld<1.05;
       // v4.40 emergency re-judgment: human delay still exists, but an already obvious
       // imminent collision may interrupt it once instead of watching the racer drive straight in.
       // v4.43 LATE_REACTION fix: tier-2 remains an immediate interrupt; a very short
@@ -4469,6 +4510,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         if(nextMode!==(p.aiDiagLastMode||'race')){ p.aiDiagModeChanges=(p.aiDiagModeChanges||0)+1; p.aiDiagLastMode=nextMode; }
         p.mouseTargetX=mx; p.mouseTargetY=my;
         p.mouseMode=nextMode;
+        if(routeBreakInterrupt) p.routeBreakForceClick=false;
         p.mouseLastClickAt=now; p.mouseClickSeq=(p.mouseClickSeq||0)+1;
         if(!Array.isArray(p.mouseClickLog)) p.mouseClickLog=[];
         p.mouseClickLog.push({seq:p.mouseClickSeq,t:now,x:+mx.toFixed(3),y:+my.toFixed(3),mode:p.mouseMode,threatId:p.liveEvadeThreat??-1});
