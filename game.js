@@ -6948,7 +6948,27 @@ function farthestVisibleFastTarget91(p,si){
     let sr435=survivalRacingAI435(p,si,now);
     sr435=westToUpperClimbGuard635(p,si,sr435);
     if(sr435) return {...sr435,kind:(sr435.kind||"racing")+"-635"};
-const drive419=drivingAI419(p,si,now);
+    const avoid630=avoidance330(p,si,now);
+    if(avoid630) return avoid630;
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const three=linkedThreeCorner525(p,si);
+    const two=linkedTwoCorner524(p,si);
+    const corner=continuousCornerTarget523(p,si);
+    const inside=fastInsideLine527(p,si);
+    const edgeStraight=edgeAwareStraight526(p,si);
+    const shortStraight=shortestStraightTarget521(p,si);
+
+    // Compare legal candidates by estimated short-horizon distance rather than
+    // blindly preferring one system. Linked-corner plans get a small priority
+    // only when their distance is essentially equivalent.
+    const inside604=insideLine604(p,si,now);
+    const ai610=integratedAI610(p,si,now);
+    const rl415=racingLine415(p,si,now);
+    const drive419=drivingAI419(p,si,now);
     const drive420=drivingAI420(p,si,now);
     if(drive420) return {...drive420,kind:(drive420.kind||"racing")+"-620"};
     const pool=[drive419,rl415,ai610,inside604,three,two,corner,inside,edgeStraight,shortStraight];
