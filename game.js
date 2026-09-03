@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.20";
+  const BUILD_ID = "v6.25";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -160,7 +160,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // v6.04: exact Neon City road-center route; start/goal aligned to original small boxes.
   const route = [
-    [30.77,132.8],[55,132.8],[82,132.8],[108,132.8],[128,132.8],
+    [31.00,132.50],[55,132.8],[82,132.8],[108,132.8],[128,132.8],
     [128,118],[128,100],[128,84],[128,74],
     [110,74],[92,74],[74,74],[58,74],[44,74],
     [44,60],[44,46],[44,32],[44,23.5],
@@ -6578,7 +6578,101 @@ function farthestVisibleFastTarget91(p,si){
     return hardRoadClamp619(p,si,t);
   }
 
+
+  // ============================================================
+  // v6.25 Observer Avoidance 3.0 phase 1 (v6.21 ~ v6.25)
+  // ============================================================
+  function observerThreat621(p,o){
+    const rx=o.x-p.x, ry=o.y-p.y;
+    const pvx=(p.x-(p.simPrevX??p.prevX??p.x))*60;
+    const pvy=(p.y-(p.simPrevY??p.prevY??p.y))*60;
+    const ovx=Number.isFinite(o.vx)?o.vx:0;
+    const ovy=Number.isFinite(o.vy)?o.vy:0;
+    const vx=ovx-pvx, vy=ovy-pvy;
+    const vv=vx*vx+vy*vy;
+    let t=vv>1e-6?-(rx*vx+ry*vy)/vv:999;
+    t=Math.max(0,Math.min(2.2,t));
+    const fx=rx+vx*t, fy=ry+vy*t;
+    const miss=Math.hypot(fx,fy);
+    return {o,t,miss,dist:Math.hypot(rx,ry),rx,ry};
+  }
+
+  function collisionTTC622(p){
+    let best=null;
+    for(const o of observers){
+      const q=observerThreat621(p,o);
+      if(q.t>1.65 || q.miss>3.2) continue;
+      if(!best || q.t<best.t || (Math.abs(q.t-best.t)<.08 && q.miss<best.miss)) best=q;
+    }
+    return best;
+  }
+
+  function minimumDodge623(p,si,threat,side){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s||!threat) return null;
+    const urgency=Math.max(0,Math.min(1,(1.35-threat.t)/1.35));
+    const missNeed=Math.max(0,2.35-threat.miss);
+    const lateral=Math.min((widths[si]||14)*0.42, 1.05+missNeed*.82+urgency*1.45);
+    const forward=3.2+Math.max(0,1-urgency)*1.8;
+    return {
+      x:p.x+s.ux*forward+s.nx*lateral*side,
+      y:p.y+s.uy*forward+s.ny*lateral*side,
+      kind:"minimum-dodge623"
+    };
+  }
+
+  function dodgeScore624(p,si,t,threat){
+    if(!t) return Infinity;
+    if(!courseContainsPoint(t.x,t.y,0.00)) return Infinity;
+    if(!lineStaysOnCourse(p.x,p.y,t.x,t.y,0.00)) return Infinity;
+    const d=Math.hypot(t.x-p.x,t.y-p.y);
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const forward=(t.x-p.x)*s.ux+(t.y-p.y)*s.uy;
+    let nearest=999;
+    for(const o of observers){
+      nearest=Math.min(nearest,Math.hypot(t.x-o.x,t.y-o.y));
+    }
+    return d*0.50 - forward*0.24 + Math.max(0,4.0-nearest)*2.8;
+  }
+
+  function roadSafeAvoidance625(p,si,now){
+    const threat=collisionTTC622(p);
+    if(!threat) return null;
+
+    let left=minimumDodge623(p,si,threat,-1);
+    let right=minimumDodge623(p,si,threat,1);
+    left=hardRoadClamp619(p,si,left);
+    right=hardRoadClamp619(p,si,right);
+
+    const sl=dodgeScore624(p,si,left,threat);
+    const sr=dodgeScore624(p,si,right,threat);
+    let best=sl<=sr?left:right;
+    if(!best || !Number.isFinite(Math.min(sl,sr))) return null;
+
+    best=localMotionCap616(p,si,best);
+    best=minimumForward618(p,si,best);
+    best=hardRoadClamp619(p,si,best);
+    if(best){
+      best.kind="avoidance3-phase1-625";
+      p.avoidance3Until625=now+260;
+    }
+    return best;
+  }
+
+
+  function forceStartCenter625(p){
+    const sx=31.00, sy=132.50;
+    p.x=sx; p.y=sy;
+    p.prevX=sx; p.prevY=sy;
+    p.simPrevX=sx; p.simPrevY=sy;
+    p.lastX=sx; p.lastY=sy;
+    p.mouseTargetX=sx; p.mouseTargetY=sy;
+    p._lastLegal619={x:sx,y:sy};
+  }
+
   function racingLine529(p,si,now){
+    const avoid625=roadSafeAvoidance625(p,si,now);
+    if(avoid625) return avoid625;
     if(p.controlMode!=="normal") return null;
     if(now<(p.hardRouteLockUntil||0)) return null;
     if(now<(p.routeBreakCombatUntil||0)) return null;
