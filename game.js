@@ -25,7 +25,8 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.40";
+  const BUILD_ID = "v5.41";
+  const MAP_LAYOUT_V541 = "ORTHOGONAL_S";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -160,21 +161,33 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // Centerline based on the user's supplied map.
   const route = [
-    [21,158],[44,158],[73,158],[104,158],[130,157],[143,151],
-    [148,139],[148,121],[147,103],[139,91],[127,85],[111,83],
-    [101,88],[98,99],[89,105],[73,108],[54,108],[36,108],[23,105],
-    [20,94],[20,78],[20,61],[21,43],[27,28],[40,20],[57,18],
-    [70,19],[78,26],[81,34],[93,36],[111,35],[130,34],[145,34],[154,34]
-  ];
+  [20,158],
+  [48,158],
+  [78,158],
+  [108,158],
+  [138,158],
+  [150,158],
+  [150,142],
+  [150,124],
+  [150,106],
+  [132,106],
+  [104,106],
+  [76,106],
+  [48,106],
+  [20,106],
+  [20,88],
+  [20,70],
+  [20,52],
+  [20,35],
+  [42,35],
+  [70,35],
+  [98,35],
+  [126,35],
+  [154,35]
+];
 
   // Tuned road half widths. We keep controls constrained to the visible road.
-  const widths = route.map((_, i) => {
-    if (i < 6) return 9.5;
-    if (i < 13) return 7.0;
-    if (i < 21) return 8.2;
-    if (i < 28) return 7.0;
-    return 7.8;
-  });
+  const widths = [10.5,10.5,10.5,10.5,11.5,11.5,11.5,11.5,11.5,10.5,10.5,10.5,10.5,11.5,11.5,11.5,11.5,11.5,11.5,10.5,10.5,10.5,10.5];
 
   const segs = [];
   let routeLength = 0;
@@ -5335,6 +5348,7 @@ function farthestVisibleFastTarget91(p,si){
 
   // v5.01 HORIZONTAL CENTERLINE LOCK
   function horizontalCenterLock501(p,si,now){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[idx];
     const next=segs[Math.min(segs.length-1,idx+1)];
@@ -5356,6 +5370,7 @@ function farthestVisibleFastTarget91(p,si){
   // Preserve the current horizontal segment until its endpoint is genuinely reached.
   // This prevents early segment switching from pulling the target vertically.
   function horizontalHold503(p,si){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[idx];
     if(Math.abs(s.ux)<.88) return false;
@@ -5385,14 +5400,17 @@ function farthestVisibleFastTarget91(p,si){
   // Final 11->1 corridor: after the last corner, hold the exit Y and drive
   // horizontally all the way to the finish instead of re-targeting downward/upward.
   function middleUpperLine508(si){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     return si>=13 && si<=18;
   }
 
   function finalStraight508(si){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     return si>=28 && si<=32;
   }
 
   function middleUpperTarget508(p,si){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     if(!middleUpperLine508(si)) return null;
     const s=segs[si];
     const half=Math.max(1.8,widths[si]*ROAD_MARGIN*.96);
@@ -5422,6 +5440,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function finalHorizontalTarget508(p,si,now){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     if(!finalStraight508(si)) return null;
     const s=segs[si];
 
@@ -5454,6 +5473,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function broadRoadTarget507(p,si,now){
+    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     const start=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[start];
 
