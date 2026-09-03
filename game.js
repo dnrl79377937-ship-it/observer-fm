@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.23";
+  const BUILD_ID = "v5.26";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5896,6 +5896,158 @@ function farthestVisibleFastTarget91(p,si){
     return null;
   }
 
+
+  // v5.26 RACING LINE 3.0 PHASE 2 (v5.24~v5.26)
+
+  function meaningfulCorner526(si){
+    const idx=Math.max(0,Math.min(segs.length-2,si));
+    const a=segs[idx], b=segs[idx+1];
+    if(!a || !b) return false;
+    return Math.abs(a.ux*b.uy-a.uy*b.ux)>.055;
+  }
+
+  // v5.24: connect two consecutive corners into one plan.
+  function linkedTwoCorner524(p,si){
+    const idx=Math.max(0,Math.min(segs.length-3,si));
+    if(!meaningfulCorner526(idx) || !meaningfulCorner526(idx+1)) return null;
+
+    const a1=autoApex522(idx);
+    const a2=autoApex522(idx+1);
+    if(!a1 || !a2) return null;
+
+    const s=segs[idx];
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const frac=s.L>0 ? along/s.L : 0;
+
+    // Blend first apex toward second apex early enough to avoid a post-corner lane jump.
+    const u=Math.max(0,Math.min(1,(frac-.38)/.62));
+    let x=a1.x*(1-u)+a2.x*u;
+    let y=a1.y*(1-u)+a2.y*u;
+
+    // Keep it local enough for the stabilized steering layer.
+    const dx=x-p.x, dy=y-p.y;
+    const d=Math.hypot(dx,dy);
+    if(d>10.5){
+      const k=10.5/d;
+      x=p.x+dx*k;
+      y=p.y+dy*k;
+    }
+
+    if(roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
+      return {x,y,kind:"linked-2corner-524"};
+    }
+    return null;
+  }
+
+  // v5.25: connect up to three meaningful corners.
+  function linkedThreeCorner525(p,si){
+    const idx=Math.max(0,Math.min(segs.length-4,si));
+    if(!meaningfulCorner526(idx) ||
+       !meaningfulCorner526(idx+1) ||
+       !meaningfulCorner526(idx+2)) return null;
+
+    const a1=autoApex522(idx);
+    const a2=autoApex522(idx+1);
+    const a3=autoApex522(idx+2);
+    if(!a1 || !a2 || !a3) return null;
+
+    const s=segs[idx];
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const frac=s.L>0 ? along/s.L : 0;
+
+    // Quadratic-like progression through three apexes.
+    const t=Math.max(0,Math.min(1,(frac-.28)/.72));
+    const u=1-t;
+    let x=u*u*a1.x + 2*u*t*a2.x + t*t*a3.x;
+    let y=u*u*a1.y + 2*u*t*a2.y + t*t*a3.y;
+
+    const dx=x-p.x, dy=y-p.y;
+    const d=Math.hypot(dx,dy);
+    if(d>10.0){
+      const k=10.0/d;
+      x=p.x+dx*k;
+      y=p.y+dy*k;
+    }
+
+    if(roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
+      return {x,y,kind:"linked-3corner-525"};
+    }
+    return null;
+  }
+
+  // v5.26: edge rows stay fully legal and selectable.
+  // They are neither forbidden nor the default; candidate scoring decides.
+  function edgeAwareCandidate526(si,t,baseOff){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const b=corridorBounds520(idx);
+    const candidates=[
+      baseOff,
+      baseOff*.72,
+      0,
+      b.min*.90,
+      b.max*.90
+    ];
+
+    const pts=[];
+    for(const off of candidates){
+      const q=corridorPoint520(idx,t,off);
+      pts.push({x:q.x,y:q.y,off});
+    }
+    return pts;
+  }
+
+  function edgeAwareStraight526(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const next=segs[Math.min(segs.length-1,idx+1)];
+    if(!s) return null;
+    const turn=next ? Math.abs(s.ux*next.uy-s.uy*next.ux) : 0;
+    if(turn>.060) return null;
+
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const currentOff=rx*s.nx+ry*s.ny;
+    const ahead=Math.min(s.L,along+8.0);
+    const t=s.L>0 ? ahead/s.L : 1;
+
+    let best=null, bestScore=Infinity;
+    for(const q of edgeAwareCandidate526(idx,t,currentOff*.88)){
+      if(!roadChordLegal507(p.x,p.y,q.x,q.y,ROUTE_PLAN_EXTRA)) continue;
+      const d=Math.hypot(q.x-p.x,q.y-p.y);
+      const laneChange=Math.abs(q.off-currentOff);
+      const edgePenalty=(Math.abs(q.off)>corridorBounds520(idx).half*.82) ? .18 : 0;
+      const score=d + laneChange*.38 + edgePenalty;
+      if(score<bestScore){
+        bestScore=score;
+        best={...q,kind:"edge-aware-straight-526"};
+      }
+    }
+    return best;
+  }
+
+  function racingLine526(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const three=linkedThreeCorner525(p,si);
+    if(three) return three;
+
+    const two=linkedTwoCorner524(p,si);
+    if(two) return two;
+
+    const corner=continuousCornerTarget523(p,si);
+    if(corner) return corner;
+
+    const straight=edgeAwareStraight526(p,si);
+    if(straight) return straight;
+
+    return shortestStraightTarget521(p,si);
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -6422,12 +6574,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // On calm broad road, replace edge-biased/offset-biased targets with the farthest
     // legal center/shortest chord through the road surface.
     // v5.20~v5.23 Racing Line 3.0 phase 1.
-    const racing523=racingLine523(p,si,now);
-    p.routeSource523=racing523?.kind || "legacy";
+    const racing526=racingLine526(p,si,now);
+    p.routeSource523=racing526?.kind || "legacy";
     let broad507=null;
-    if(racing523 && !liveEvade){
-      tx=racing523.x;
-      ty=racing523.y;
+    if(racing526 && !liveEvade){
+      tx=racing526.x;
+      ty=racing526.y;
     }else{
       broad507=broadRoadTarget507(p,si,now);
       if(broad507 && !liveEvade){
@@ -6572,7 +6724,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.07 direct broad-road movement:
     // do not allow stale mouse/edge commands to turn a valid broad-road straight chord
     // into a one-tile edge-following L path.
-    if((racing523 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
+    if((racing526 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
        now>=(p.hardRouteLockUntil||0) &&
        now>=(p.routeBreakCombatUntil||0) &&
        p.controlMode==="normal"){
