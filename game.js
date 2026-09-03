@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.19";
+  const BUILD_ID = "v5.23";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5692,7 +5692,8 @@ function farthestVisibleFastTarget91(p,si){
       mx:moveX,
       my:moveY,
       t:now,
-      anomalies:p.anomalyCount519||0
+      anomalies:p.anomalyCount519||0,
+      source:p.routeSource523||"legacy"
     };
   }
 
@@ -5739,7 +5740,7 @@ function farthestVisibleFastTarget91(p,si){
     ctx.font="12px monospace";
     ctx.textBaseline="top";
     ctx.fillText("v5.19 DRIVE DEBUG",16,14);
-    ctx.fillText("P1 seg "+d.seg+"  mode "+d.mode+"  anomaly "+d.anomalies,16,31);
+    ctx.fillText("P1 seg "+d.seg+" "+d.mode+"  "+d.source,16,31);
     ctx.fillText("route "+d.rx.toFixed(1)+","+d.ry.toFixed(1),16,48);
     ctx.fillText("steer "+d.sx.toFixed(1)+","+d.sy.toFixed(1),16,64);
     ctx.fillText("move  "+d.mx.toFixed(2)+","+d.my.toFixed(2),16,80);
@@ -5748,6 +5749,151 @@ function farthestVisibleFastTarget91(p,si){
       ctx.fillText("! "+p.lastAnomaly519.reason,178,31);
     }
     ctx.restore();
+  }
+
+
+  // v5.23 RACING LINE 3.0 PHASE 1 (v5.20~v5.23)
+
+  // v5.20: treat the road as a drivable corridor, not as a single reference line.
+  function corridorBounds520(si){
+    const idx=Math.max(0,Math.min(widths.length-1,si));
+    const half=Math.max(1.6,widths[idx]*ROAD_MARGIN*.94);
+    return {min:-half,max:half,half};
+  }
+
+  function corridorPoint520(si,t,off){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const clampedT=Math.max(0,Math.min(1,t));
+    const b=corridorBounds520(idx);
+    const o=Math.max(b.min,Math.min(b.max,off));
+    return {
+      x:s.a[0]+s.dx*clampedT+s.nx*o,
+      y:s.a[1]+s.dy*clampedT+s.ny*o
+    };
+  }
+
+  // v5.21: shortest legal line across the full corridor on straight-ish sections.
+  function shortestStraightTarget521(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const next=segs[Math.min(segs.length-1,idx+1)];
+    if(!s) return null;
+
+    const turn=next ? Math.abs(s.ux*next.uy-s.uy*next.ux) : 0;
+    if(turn>.060) return null;
+
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const currentOff=rx*s.nx+ry*s.ny;
+
+    // Preserve the current fast lane instead of forcing a centerline.
+    // Search several forward distances and only gently reduce offset.
+    const targetOff=currentOff*.86;
+    const distances=[9.0,7.5,6.0,4.5];
+    for(const d of distances){
+      const ahead=Math.min(s.L,along+d);
+      const t=s.L>0 ? ahead/s.L : 1;
+      const q=corridorPoint520(idx,t,targetOff);
+      if(roadChordLegal507(p.x,p.y,q.x,q.y,ROUTE_PLAN_EXTRA)){
+        return {...q,kind:"straight-shortest-521"};
+      }
+    }
+    return null;
+  }
+
+  function signedTurn522(si){
+    const idx=Math.max(0,Math.min(segs.length-2,si));
+    const a=segs[idx], b=segs[idx+1];
+    return a.ux*b.uy-a.uy*b.ux;
+  }
+
+  // v5.22: automatic apex point based on actual corner direction and corridor width.
+  function autoApex522(si){
+    const idx=Math.max(0,Math.min(segs.length-2,si));
+    const s=segs[idx], next=segs[idx+1];
+    const turn=signedTurn522(idx);
+    const mag=Math.abs(turn);
+    if(mag<.055) return null;
+
+    const b=corridorBounds520(idx);
+    // Apex is on the inside of the corner but slightly inset from the absolute edge.
+    const insideSign=turn>0 ? 1 : -1;
+    const strength=Math.max(.52,Math.min(.84,.54+mag*.52));
+    const apexOff=insideSign*b.half*strength;
+
+    // Apex slightly before the segment endpoint to avoid point-to-point L turns.
+    const q=corridorPoint520(idx,.86,apexOff);
+    return {
+      x:q.x,y:q.y,
+      off:apexOff,
+      turn,
+      strength,
+      kind:"auto-apex-522"
+    };
+  }
+
+  // v5.23: entry -> apex -> exit as one continuous target, not separate jumps.
+  function continuousCornerTarget523(p,si){
+    const idx=Math.max(0,Math.min(segs.length-2,si));
+    const s=segs[idx], next=segs[idx+1];
+    const apex=autoApex522(idx);
+    if(!apex) return null;
+
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const frac=s.L>0 ? along/s.L : 0;
+
+    const nextBounds=corridorBounds520(idx+1);
+    const exitOff=apex.turn>0
+      ? Math.max(nextBounds.min,Math.min(nextBounds.max,apex.off*.42))
+      : Math.max(nextBounds.min,Math.min(nextBounds.max,apex.off*.42));
+    const exitPoint=corridorPoint520(idx+1,.52,exitOff);
+
+    // Entry point: a mild setup, never a full-road outside swing.
+    const entryOff=apex.off*-.24;
+    const entryPoint=corridorPoint520(idx,Math.max(frac+.10,.58),entryOff);
+
+    let target;
+    if(frac<.62){
+      // Smoothly blend entry setup toward apex.
+      const u=Math.max(0,Math.min(1,(frac-.28)/.34));
+      target={
+        x:entryPoint.x*(1-u)+apex.x*u,
+        y:entryPoint.y*(1-u)+apex.y*u
+      };
+    }else{
+      // Smoothly blend apex into the next-segment exit.
+      const u=Math.max(0,Math.min(1,(frac-.62)/.38));
+      target={
+        x:apex.x*(1-u)+exitPoint.x*u,
+        y:apex.y*(1-u)+exitPoint.y*u
+      };
+    }
+
+    if(roadChordLegal507(p.x,p.y,target.x,target.y,ROUTE_PLAN_EXTRA)){
+      return {...target,kind:"entry-apex-exit-523"};
+    }
+
+    if(roadChordLegal507(p.x,p.y,apex.x,apex.y,ROUTE_PLAN_EXTRA)){
+      return apex;
+    }
+    return null;
+  }
+
+  function racingLine523(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const corner=continuousCornerTarget523(p,si);
+    if(corner) return corner;
+
+    const straight=shortestStraightTarget521(p,si);
+    if(straight) return straight;
+
+    return null;
   }
 
 function updatePlayer(p, now, dt){
@@ -6275,10 +6421,19 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.07 FINAL BROAD-ROAD AUTHORITY:
     // On calm broad road, replace edge-biased/offset-biased targets with the farthest
     // legal center/shortest chord through the road surface.
-    const broad507=broadRoadTarget507(p,si,now);
-    if(broad507 && !liveEvade){
-      tx=broad507.x;
-      ty=broad507.y;
+    // v5.20~v5.23 Racing Line 3.0 phase 1.
+    const racing523=racingLine523(p,si,now);
+    p.routeSource523=racing523?.kind || "legacy";
+    let broad507=null;
+    if(racing523 && !liveEvade){
+      tx=racing523.x;
+      ty=racing523.y;
+    }else{
+      broad507=broadRoadTarget507(p,si,now);
+      if(broad507 && !liveEvade){
+        tx=broad507.x;
+        ty=broad507.y;
+      }
     }
 
     // v5.16 ROUTE -> STEERING separation.
@@ -6417,7 +6572,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.07 direct broad-road movement:
     // do not allow stale mouse/edge commands to turn a valid broad-road straight chord
     // into a one-tile edge-following L path.
-    if(broad507 && !liveEvade &&
+    if((racing523 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
        now>=(p.hardRouteLockUntil||0) &&
        now>=(p.routeBreakCombatUntil||0) &&
        p.controlMode==="normal"){
