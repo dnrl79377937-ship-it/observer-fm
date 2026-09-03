@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.05";
+  const BUILD_ID = "v6.06";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v605_neon_city_start_goal_taller_no_mid.png?v=60501";
+  map.src = "map_v606_approved_clean_neon_s.png?v=60601";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -331,13 +331,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  const SAFE_ZONES_605 = {
-    start:{x0:26.20,y0:135.80,x1:35.34,y1:151.80},
-    goal:{x0:144.32,y0:15.80,x1:152.97,y1:29.80}
+  const SAFE_ZONES_606 = {
+    start:{x0:26.20,y0:133.80,x1:35.34,y1:153.80},
+    goal:{x0:144.32,y0:13.80,x1:152.97,y1:31.80}
   };
 
   function safeAt(x,y){
-    const z=SAFE_ZONES_605;
+    const z=SAFE_ZONES_606;
     return (
       (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
       (x>=z.goal.x0 && x<=z.goal.x1 && y>=z.goal.y0 && y<=z.goal.y1)
@@ -8066,7 +8066,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   const renderOrder=[];
 
-  const MINI_CROP={x:20,y:10,w:138,h:148};
+  const MINI_CROP={x:24,y:8,w:134,h:150};
   let lastMiniMapRender=0;
   function renderMiniMap(){
     const now=performance.now();
