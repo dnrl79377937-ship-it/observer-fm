@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.03";
+  const BUILD_ID = "v6.04";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -56,7 +56,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // extra body-size safety margin
   const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
   const DEATH_EDGE_EXTRA = 4.50;      // v4.09: lethal zone begins well beyond the real route ribbon
-  const ROUTE_PLAN_EXTRA = 1.35;      // planning may use the outer racing rows, but not cut across gaps
+  const ROUTE_PLAN_EXTRA = 0.25;      // planning may use the outer racing rows, but not cut across gaps
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -158,17 +158,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
-  // v6.03 approved Neon City S-map route; spawn-aligned, orthogonal macro path.
+  // v6.04: exact Neon City road-center route; start/goal aligned to original small boxes.
   const route = [
-    [20.5,154.8],[44,154.8],[70,154.8],[96,154.8],[122,154.8],
-    [147,154.8],[147,142],[147,128],[147,114],[147,101],
-    [128,101],[103,101],[78,101],[53,101],[30,101],
-    [30,88],[30,75],[30,62],[30,49],[30,35],
-    [52,35],[77,35],[102,35],[128,35],[151,35]
+    [30.77,144],[55,144],[82,144],[110,144],[138,144],
+    [138,128],[138,110],[138,92],[138,80],[118,80],
+    [99,80],[80,80],[62,80],[46,80],[46,66],
+    [46,51],[46,36],[46,22.62],[70,22.62],[96,22.62],
+    [122,22.62],[148.65,22.62]
   ];
 
-  // v6.03: broad legal road; restore normal v5.29 survival tolerance.
-  const widths = [12.6,12.6,12.6,12.6,13.2,13.2,13.2,12.6,13.2,13.2,13.2,12.6,12.6,13.2,13.2,13.2,12.6,12.6,13.2,13.2,13.2,12.6,12.6,12.6,12.6];
+  // v6.04: road width matches the approved visual; planning is kept inside the road.
+  const widths = [14.0,14.0,14.0,14.6,14.6,14.6,14.0,14.6,14.6,14.6,14.0,14.0,14.6,14.6,14.6,14.0,14.6,14.6,14.6,14.0,14.0,14.0];
 
   const segs = [];
   let routeLength = 0;
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v603_neon_city_clean.png?v=60301";
+  map.src = "map_v604_neon_city_clean_small_safe_boxes.png?v=60401";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -331,14 +331,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  const SAFE_ZONES_603 = {
-    start:{x0:14.5,y0:147.0,x1:27.5,y1:163.0},
-    mid:{x0:80.0,y0:94.0,x1:96.0,y1:108.0},
-    goal:{x0:140.0,y0:28.0,x1:156.0,y1:42.0}
+  const SAFE_ZONES_604 = {
+    start:{x0:26.20,y0:137.95,x1:35.34,y1:150.06},
+    mid:{x0:93.03,y0:73.94,x1:102.17,y1:86.06},
+    goal:{x0:144.32,y0:17.55,x1:152.97,y1:27.69}
   };
 
   function safeAt(x,y){
-    const z=SAFE_ZONES_603;
+    const z=SAFE_ZONES_604;
     return (
       (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
       (x>=z.mid.x0 && x<=z.mid.x1 && y>=z.mid.y0 && y<=z.mid.y1) ||
@@ -436,7 +436,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         extremeInsideCooldown:900+Math.random()*1200, extremeInsideSide:0,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:20.5, y:154.8 + startLane*7.6,
+        x:30.77, y:144.00,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -451,7 +451,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.566903319,
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:20.5, prevY:154.8 + startLane*7.6, simPrevX:20.5, simPrevY:154.8 + startLane*7.6,
+        hitFxUntil:0, visualAngle:0, prevX:30.77, prevY:144.00, simPrevX:30.77, simPrevY:144.00,
         // v4.69: brief tolerance for borderline upper-left corner exits.
         outsideGrace69Since:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
@@ -470,8 +470,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         modeStart:0,
         lastProgress:0,
         lastAdvanceAt:0,
-        lastX:20.5,
-        lastY:154.8 + (i-3.5)*0.40,
+        lastX:30.77,
+        lastY:144.00,
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
@@ -504,7 +504,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         breakoutUntil:0, breakoutOffset:0, breakoutSpeed:1, breakoutSide:0, breakoutScore:0,
         // v4.20 Virtual Mouse Human Controller. Movement follows a held click target
         // until the next human-timed command instead of consuming a fresh perfect target every tick.
-        mouseTargetX:20.5, mouseTargetY:154.8, mouseNextThink:0, mouseCommandUntil:0,
+        mouseTargetX:30.77, mouseTargetY:144.00, mouseNextThink:0, mouseCommandUntil:0,
         mouseClickSeq:0, mouseClickLog:[], mouseMode:"race", mouseLastClickAt:0,
         // v4.59.9 AI DEATH BLACKBOX: 5-second rolling decision/perception trace.
         aiBlackbox:[], aiBlackboxNextSample:0,
@@ -810,7 +810,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           .994+skill*.016+(p.raceForm-1)*.07+(Math.random()-.5)*(.004-consistency*.0012)));
 
         // Opening lane is derived from the persistent route signature + driving personality.
-        // No spawn offset is used: everyone still physically starts at x=20.5,y=154.8.
+        // No spawn offset is used: everyone physically starts at the v6.04 yellow-box center x=30.77,y=144.00.
         const half0=Math.max(2.0,widths[0]*.66);
         const id=identityOf(p);
         const styleBias=(id.apex-1)*.34+(id.pass-1)*.20-(id.safety-1)*.18;
@@ -4797,7 +4797,7 @@ function packContextOffset(p,si,now){
     return r1x*r1x+r1y*r1y<r*r;
   }
 
-  // v4.48 START AI: racers still spawn at exactly the same coordinate. Start, Reaction,
+  // v4.48 START AI: racers still spawn at exactly the same v6.04 start-safe coordinate. Start, Reaction,
   // Acceleration and personality decide how quickly and how strongly each racer fans into
   // a legal opening line. Observer avoidance below always has final authority.
   function startOpeningTarget(p,si,now,targetOff){
@@ -6145,28 +6145,24 @@ function farthestVisibleFastTarget91(p,si){
 
   // v5.29: final integrated Racing Line 3.0 authority.
 
-  function insideLine603(p,si,now){
+  function insideLine604(p,si,now){
     if(p.controlMode!=="normal") return null;
     if(now<(p.hardRouteLockUntil||0)) return null;
     if(now<(p.routeBreakCombatUntil||0)) return null;
     if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
     const s=segs[Math.max(0,Math.min(segs.length-1,si))];
     const next=segs[Math.min(segs.length-1,si+1)];
-    if(!s || !next) return null;
-
+    if(!s||!next) return null;
     const turn=s.ux*next.uy-s.uy*next.ux;
-    if(Math.abs(turn)<0.035) return null;
-
-    const half=(widths[Math.max(0,Math.min(widths.length-1,si))]||12)*0.66;
-    const off=(turn>0 ? 1 : -1)*half*0.90;
-    const forward=Math.max(4.5,Math.min(7.0,s.L*0.38));
-
+    if(Math.abs(turn)<.035) return null;
+    const half=(widths[Math.max(0,Math.min(widths.length-1,si))]||14)*.62;
+    const off=(turn>0?1:-1)*half*.92;
+    const forward=Math.max(4.0,Math.min(6.5,s.L*.34));
     const x=p.x+s.ux*forward+s.nx*off;
     const y=p.y+s.uy*forward+s.ny*off;
-    if(!courseContainsPoint(x,y,0.25)) return null;
+    if(!courseContainsPoint(x,y,0.05)) return null;
     if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) return null;
-    return {x,y,kind:"inside-line-603"};
+    return {x,y,kind:"inside-line-604"};
   }
 
   function racingLine529(p,si,now){
@@ -6185,8 +6181,8 @@ function farthestVisibleFastTarget91(p,si){
     // Compare legal candidates by estimated short-horizon distance rather than
     // blindly preferring one system. Linked-corner plans get a small priority
     // only when their distance is essentially equivalent.
-    const inside603=insideLine603(p,si,now);
-    const pool=[inside603,three,two,corner,inside,edgeStraight,shortStraight];
+    const inside604=insideLine604(p,si,now);
+    const pool=[inside604,three,two,corner,inside,edgeStraight,shortStraight];
     const best=chooseShortest529(p,si,pool);
     if(!best) return null;
 
