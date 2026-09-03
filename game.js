@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.13";
+  const BUILD_ID = "v5.16";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5583,6 +5583,92 @@ function farthestVisibleFastTarget91(p,si){
     return {x:candX,y:candY};
   }
 
+
+  // v5.16 INTEGRATED CORNER + DRIVE LAYER (v5.14~v5.16)
+  // v5.14: corner-entry stability
+  // v5.15: corner-exit stability
+  // v5.16: route planning is separated from final steering/movement shaping
+
+  function cornerPhase516(p,si){
+    const idx=Math.max(0,Math.min(segs.length-1,si));
+    const s=segs[idx];
+    const next=segs[Math.min(segs.length-1,idx+1)];
+    const prev=segs[Math.max(0,idx-1)];
+
+    const rx=p.x-s.a[0], ry=p.y-s.a[1];
+    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+    const frac=s.L>0 ? along/s.L : 0;
+
+    const nextTurn=next ? Math.abs(s.ux*next.uy-s.uy*next.ux) : 0;
+    const prevTurn=prev ? Math.abs(prev.ux*s.uy-prev.uy*s.ux) : 0;
+
+    return {
+      frac,
+      entering: nextTurn>.08 && frac>.68,
+      exiting: prevTurn>.08 && frac<.34,
+      straight: nextTurn<.055 && prevTurn<.055
+    };
+  }
+
+  function stabilizeCorner516(p,si,now,tx,ty,liveEvade){
+    if(liveEvade || p.controlMode!=="normal") return {x:tx,y:ty};
+
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return {x:tx,y:ty};
+    const phase=cornerPhase516(p,si);
+
+    let dx=tx-p.x, dy=ty-p.y;
+    let forward=dx*s.ux+dy*s.uy;
+    let lateral=dx*s.nx+dy*s.ny;
+
+    // v5.14 CORNER ENTRY:
+    // once committed to a corner entry, do not make a last-second large lane swap.
+    if(phase.entering){
+      const currentOff=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+      const commit=Math.max(-1.10,Math.min(1.10,-currentOff*.16));
+      lateral=lateral*.28+commit*.72;
+      lateral=Math.max(-1.25,Math.min(1.25,lateral));
+      p.cornerEntryLockUntil516=now+280;
+      p.cornerEntryOff516=currentOff;
+    }else if(now<(p.cornerEntryLockUntil516||0) && Number.isFinite(p.cornerEntryOff516)){
+      lateral=lateral*.35+(-p.cornerEntryOff516*.12)*.65;
+    }
+
+    // v5.15 CORNER EXIT:
+    // immediately after a corner, preserve the exit line for a short distance instead
+    // of re-centering/re-targeting across the road.
+    if(phase.exiting){
+      if(!Number.isFinite(p.cornerExitOff516)){
+        p.cornerExitOff516=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+      }
+      const hold=p.cornerExitOff516;
+      const desired=hold-((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
+      lateral=lateral*.22+desired*.78;
+      lateral=Math.max(-1.05,Math.min(1.05,lateral));
+      p.cornerExitHoldUntil516=now+360;
+    }else if(now>=(p.cornerExitHoldUntil516||0)){
+      p.cornerExitOff516=NaN;
+    }
+
+    const maxForward=Math.max(5.0,Math.min(9.0,s.L*.70));
+    forward=Math.max(1.8,Math.min(maxForward,forward));
+
+    const x=p.x+s.ux*forward+s.nx*lateral;
+    const y=p.y+s.uy*forward+s.ny*lateral;
+    return roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA) ? {x,y} : {x:tx,y:ty};
+  }
+
+  // v5.16 final steering layer.
+  // Route/planner code may decide a desired target, but only this function converts it
+  // into the local movement target used by the movement engine.
+  function steeringTarget516(p,si,now,routeTarget,liveEvade){
+    if(liveEvade || p.controlMode!=="normal") return routeTarget;
+
+    const first=stabilizeTarget513(p,si,now,routeTarget.x,routeTarget.y,liveEvade);
+    const second=stabilizeCorner516(p,si,now,first.x,first.y,liveEvade);
+    return second;
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -6114,8 +6200,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
       ty=broad507.y;
     }
 
-    const stable513=stabilizeTarget513(p,si,now,tx,ty,liveEvade);
-    tx=stable513.x; ty=stable513.y;
+    // v5.16 ROUTE -> STEERING separation.
+    // Everything above chooses the route target. Only steeringTarget516 is allowed
+    // to turn that route decision into the local movement target.
+    const routeTarget516={x:tx,y:ty};
+    const steerTarget516=steeringTarget516(p,si,now,routeTarget516,liveEvade);
+    tx=steerTarget516.x;
+    ty=steerTarget516.y;
 
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
     // the virtual mouse consumes the planner output. Diagnostic only; no steering changes.
@@ -6246,7 +6337,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(localSeg){
       const forward=dx*localSeg.ux+dy*localSeg.uy;
       let lateral=dx*localSeg.nx+dy*localSeg.ny;
-      const maxLat=Math.max(.80,Math.min(1.75,widths[si]*.17));
+      const phase516=cornerPhase516(p,si);
+      const baseMaxLat=Math.max(.80,Math.min(1.75,widths[si]*.17));
+      const maxLat=(phase516.entering||phase516.exiting) ? Math.min(baseMaxLat,1.10) : baseMaxLat;
       lateral=Math.max(-maxLat,Math.min(maxLat,lateral));
       dx=localSeg.ux*forward+localSeg.nx*lateral;
       dy=localSeg.uy*forward+localSeg.ny*lateral;
