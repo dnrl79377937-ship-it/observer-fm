@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.04";
+  const BUILD_ID = "v6.05";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v604_neon_city_clean_small_safe_boxes.png?v=60401";
+  map.src = "map_v605_neon_city_start_goal_taller_no_mid.png?v=60501";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -331,17 +331,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  const SAFE_ZONES_604 = {
-    start:{x0:26.20,y0:137.95,x1:35.34,y1:150.06},
-    mid:{x0:93.03,y0:73.94,x1:102.17,y1:86.06},
-    goal:{x0:144.32,y0:17.55,x1:152.97,y1:27.69}
+  const SAFE_ZONES_605 = {
+    start:{x0:26.20,y0:135.80,x1:35.34,y1:151.80},
+    goal:{x0:144.32,y0:15.80,x1:152.97,y1:29.80}
   };
 
   function safeAt(x,y){
-    const z=SAFE_ZONES_604;
+    const z=SAFE_ZONES_605;
     return (
       (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
-      (x>=z.mid.x0 && x<=z.mid.x1 && y>=z.mid.y0 && y<=z.mid.y1) ||
       (x>=z.goal.x0 && x<=z.goal.x1 && y>=z.goal.y0 && y<=z.goal.y1)
     );
   }
@@ -8068,7 +8066,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   const renderOrder=[];
 
-  const MINI_CROP={x:0,y:0,w:172,h:178};
+  const MINI_CROP={x:20,y:10,w:138,h:148};
   let lastMiniMapRender=0;
   function renderMiniMap(){
     const now=performance.now();
