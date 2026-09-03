@@ -158,39 +158,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
-  const ORTHOGONAL_S_V550 = true;
-
   // Centerline based on the user's supplied map.
   const route = [
-    [18,158],
-    [44,158],
-    [72,158],
-    [100,158],
-    [128,158],
-    [150,158],
-    [150,144],
-    [150,128],
-    [150,112],
-    [150,98],
-    [130,98],
-    [104,98],
-    [78,98],
-    [52,98],
-    [28,98],
-    [20,98],
-    [20,82],
-    [20,66],
-    [20,50],
-    [20,34],
-    [42,34],
-    [70,34],
-    [98,34],
-    [126,34],
-    [154,34]
+    [18,158],[42,158],[66,158],[90,158],[114,158],[138,158],
+    [152,158],[152,144],[152,130],[152,116],[152,104],[128,104],
+    [104,104],[80,104],[56,104],[32,104],[20,104],[20,90],
+    [20,76],[20,62],[20,48],[20,34],[44,34],[68,34],
+    [92,34],[116,34],[140,34],[156,34]
   ];
 
   // Tuned road half widths. We keep controls constrained to the visible road.
-  const widths = [10.0,10.0,10.0,10.0,11.2,11.2,11.2,10.0,11.2,11.2,11.2,10.0,10.0,10.0,11.2,11.2,11.2,10.0,11.2,11.2,11.2,10.0,10.0,10.0,10.0];
+  const widths = [10.2,10.2,10.2,10.2,10.2,11.2,11.2,11.2,10.2,11.2,11.2,11.2,10.2,10.2,10.2,11.2,11.2,11.2,10.2,10.2,11.2,11.2,11.2,10.2,10.2,10.2,10.2,10.2];
 
   const segs = [];
   let routeLength = 0;
@@ -203,9 +181,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map.png";
+  map.src = "map_v550_blue_orthogonal_s.png?v=5503";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
+  const MAP_LAYOUT_ID="V550_BLUE_ORTHOGONAL_S_REALFIX_3";
 
   let players = [];
   let observers = [];
@@ -5401,12 +5380,10 @@ function farthestVisibleFastTarget91(p,si){
   // Final 11->1 corridor: after the last corner, hold the exit Y and drive
   // horizontally all the way to the finish instead of re-targeting downward/upward.
   function middleUpperLine508(si){
-    if(ORTHOGONAL_S_V550) return false;
     return si>=13 && si<=18;
   }
 
   function finalStraight508(si){
-    if(ORTHOGONAL_S_V550) return false;
     return si>=28 && si<=32;
   }
 
@@ -8062,7 +8039,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   const renderOrder=[];
 
-  const MINI_CROP={x:4,y:12,w:168,h:164};
+  const MINI_CROP={x:0,y:0,w:172,h:178};
   let lastMiniMapRender=0;
   function renderMiniMap(){
     const now=performance.now();
