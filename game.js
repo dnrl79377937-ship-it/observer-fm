@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.50";
+  const BUILD_ID = "v6.00";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -158,17 +158,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
-  // Centerline based on the user's supplied map.
+  // v6.00 Blue Neon City pure orthogonal S centerline.
   const route = [
-    [18,158],[42,158],[66,158],[90,158],[114,158],[138,158],
-    [152,158],[152,144],[152,130],[152,116],[152,104],[128,104],
-    [104,104],[80,104],[56,104],[32,104],[20,104],[20,90],
-    [20,76],[20,62],[20,48],[20,34],[44,34],[68,34],
-    [92,34],[116,34],[140,34],[156,34]
+    [18,158],[44,158],[70,158],[96,158],[122,158],[148,158],
+    [150,158],[150,145],[150,132],[150,119],[150,106],[124,106],
+    [98,106],[72,106],[46,106],[20,106],[20,92],[20,78],
+    [20,64],[20,50],[20,35],[46,35],[73,35],[100,35],
+    [127,35],[154,35]
   ];
 
-  // Tuned road half widths. We keep controls constrained to the visible road.
-  const widths = [10.2,10.2,10.2,10.2,10.2,11.2,11.2,11.2,10.2,11.2,11.2,11.2,10.2,10.2,10.2,11.2,11.2,11.2,10.2,10.2,11.2,11.2,11.2,10.2,10.2,10.2,10.2,10.2];
+  // v6.00: wide road. The visible edge stripe sits ~1 logical tile inside the legal road boundary.
+  const widths = [11.6,11.6,11.6,11.6,12.2,12.2,12.2,11.6,11.6,12.2,12.2,12.2,11.6,11.6,12.2,12.2,12.2,11.6,11.6,12.2,12.2,12.2,11.6,11.6,11.6,11.6];
 
   const segs = [];
   let routeLength = 0;
@@ -181,10 +181,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v550_blue_orthogonal_s.png?v=5503";
+  map.src = "map_v600_blue_neon_city_s.png?v=60001";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
-  const MAP_LAYOUT_ID="V550_BLUE_ORTHOGONAL_S_REALFIX_3";
 
   let players = [];
   let observers = [];
@@ -333,9 +332,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function safeAt(x,y){
     return (
-      (x>=7 && x<=38 && y>=143 && y<=172) ||
-      (x>=7 && x<=38 && y>=93 && y<=123) ||
-      (x>=140 && x<=168 && y>=20 && y<=46)
+      (x>=8 && x<=36 && y>=145 && y<=171) ||   // START invulnerability
+      (x>=8 && x<=36 && y>=94 && y<=119)  ||   // MID invulnerability
+      (x>=140 && x<=168 && y>=22 && y<=48)     // GOAL invulnerability
     );
   }
 
