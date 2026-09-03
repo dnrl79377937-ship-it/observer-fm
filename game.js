@@ -158,17 +158,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
-  // v6.00 Blue Neon City pure orthogonal S centerline.
+  // v6.00 exact approved Neon City S-map route.
   const route = [
-    [18,158],[44,158],[70,158],[96,158],[122,158],[148,158],
-    [150,158],[150,145],[150,132],[150,119],[150,106],[124,106],
-    [98,106],[72,106],[46,106],[20,106],[20,92],[20,78],
-    [20,64],[20,50],[20,35],[46,35],[73,35],[100,35],
-    [127,35],[154,35]
+    [23,157],[48,157],[75,157],[103,157],[132,157],[147,157],
+    [147,143],[147,128],[147,113],[147,101],[128,101],[103,101],
+    [78,101],[53,101],[30,101],[30,88],[30,75],[30,62],
+    [30,49],[30,35],[52,35],[77,35],[102,35],[128,35],
+    [151,35]
   ];
 
-  // v6.00: wide road. The visible edge stripe sits ~1 logical tile inside the legal road boundary.
-  const widths = [11.6,11.6,11.6,11.6,12.2,12.2,12.2,11.6,11.6,12.2,12.2,12.2,11.6,11.6,12.2,12.2,12.2,11.6,11.6,12.2,12.2,12.2,11.6,11.6,11.6,11.6];
+  // v6.00 exact concept: broad road; bright edge-line is NOT the lethal edge.
+  // One extra outer tile beyond each visible edge-line remains legal/in-course.
+  const widths = [12.8,12.8,12.8,12.8,13.4,13.4,13.4,12.8,13.4,13.4,13.4,12.8,12.8,13.4,13.4,13.4,12.8,12.8,13.4,13.4,13.4,12.8,12.8,12.8,12.8];
 
   const segs = [];
   let routeLength = 0;
@@ -181,7 +182,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v600_blue_neon_city_s.png?v=60001";
+  map.src = "map_v600_exact_neon_concept.png?v=600-exact-concept";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -332,9 +333,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function safeAt(x,y){
     return (
-      (x>=8 && x<=36 && y>=145 && y<=171) ||   // START invulnerability
-      (x>=8 && x<=36 && y>=94 && y<=119)  ||   // MID invulnerability
-      (x>=140 && x<=168 && y>=22 && y<=48)     // GOAL invulnerability
+      (x>=20 && x<=32 && y>=143 && y<=164) ||  // START yellow safe box
+      (x>=57 && x<=69 && y>=92 && y<=110)  ||  // MID cyan safe box
+      (x>=142 && x<=157 && y>=22 && y<=43)     // GOAL green safe box
     );
   }
 
