@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.19";
+  const BUILD_ID = "v6.20";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -160,11 +160,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // v6.04: exact Neon City road-center route; start/goal aligned to original small boxes.
   const route = [
-    [30.77,144],[55,144],[82,144],[110,144],[138,144],
-    [138,128],[138,110],[138,92],[138,80],[118,80],
-    [99,80],[80,80],[62,80],[46,80],[46,66],
-    [46,51],[46,36],[46,22.62],[70,22.62],[96,22.62],
-    [122,22.62],[148.65,22.62]
+    [30.77,132.8],[55,132.8],[82,132.8],[108,132.8],[128,132.8],
+    [128,118],[128,100],[128,84],[128,74],
+    [110,74],[92,74],[74,74],[58,74],[44,74],
+    [44,60],[44,46],[44,32],[44,23.5],
+    [70,23.5],[96,23.5],[122,23.5],[148.65,23.5]
   ];
 
   // v6.04: road width matches the approved visual; planning is kept inside the road.
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v619_neon_s_wide3_start_goal.png?v=61902";
+  map.src = "map_v620_only_big_start_goal_corrected.png?v=62001";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -331,13 +331,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  const SAFE_ZONES_619 = {
-    start:{x0:21.00,y0:132.50,x1:40.50,y1:155.00},
-    goal:{x0:139.00,y0:12.50,x1:158.50,y1:32.50}
+  const SAFE_ZONES_620 = {
+    start:{x0:21.00,y0:123.00,x1:41.00,y1:142.00},
+    goal:{x0:139.00,y0:13.00,x1:158.00,y1:32.00}
   };
 
   function safeAt(x,y){
-    const z=SAFE_ZONES_619;
+    const z=SAFE_ZONES_620;
     return (
       (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
       (x>=z.goal.x0 && x<=z.goal.x1 && y>=z.goal.y0 && y<=z.goal.y1)
@@ -6522,6 +6522,62 @@ function farthestVisibleFastTarget91(p,si){
     p.x=s.a[0]; p.y=s.a[1]; p._lastLegal619={x:p.x,y:p.y};
   }
 
+
+  // ============================================================
+  // v6.20 strict shortest-inside + corrected S-road geometry
+  // ============================================================
+  function strictInside620(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const next=segs[Math.min(segs.length-1,si+1)];
+    if(!s||!next) return null;
+
+    const turn=s.ux*next.uy-s.uy*next.ux;
+    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
+    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
+
+    // Straight: hold the shortest forward chord, no wandering to the far side.
+    if(Math.abs(turn)<0.035){
+      const f=Math.max(3.2,Math.min(6.0,remain));
+      return hardRoadClamp619(p,si,{
+        x:p.x+s.ux*f,
+        y:p.y+s.uy*f,
+        kind:"strict-straight620"
+      });
+    }
+
+    // Corner: hug the legal inside edge with a small safety buffer.
+    const legalHalf=Math.max(2.0,(widths[si]||14)*ROAD_MARGIN);
+    const insideSign=turn>0?1:-1;
+    const inside=insideSign*legalHalf*0.84;
+
+    let x,y;
+    if(remain>5.0){
+      const f=Math.max(3.0,Math.min(5.5,remain*.72));
+      x=p.x+s.ux*f+s.nx*inside;
+      y=p.y+s.uy*f+s.ny*inside;
+    }else{
+      // Cut across the inside of the 90-degree bend and immediately align with exit.
+      x=s.b[0]+s.nx*inside*.88+next.ux*4.4+next.nx*inside*.18;
+      y=s.b[1]+s.ny*inside*.88+next.uy*4.4+next.ny*inside*.18;
+    }
+    return hardRoadClamp619(p,si,{x,y,kind:"strict-inside620"});
+  }
+
+  function drivingAI420(p,si,now){
+    let t=strictInside620(p,si,now);
+    if(!t) t=drivingAI419(p,si,now);
+    if(!t) return null;
+    t=localMotionCap616(p,si,t);
+    t=steeringStable617(p,si,t,now);
+    t=minimumForward618(p,si,t);
+    return hardRoadClamp619(p,si,t);
+  }
+
   function racingLine529(p,si,now){
     if(p.controlMode!=="normal") return null;
     if(now<(p.hardRouteLockUntil||0)) return null;
@@ -6542,6 +6598,8 @@ function farthestVisibleFastTarget91(p,si){
     const ai610=integratedAI610(p,si,now);
     const rl415=racingLine415(p,si,now);
     const drive419=drivingAI419(p,si,now);
+    const drive420=drivingAI420(p,si,now);
+    if(drive420) return {...drive420,kind:(drive420.kind||"racing")+"-620"};
     const pool=[drive419,rl415,ai610,inside604,three,two,corner,inside,edgeStraight,shortStraight];
     const best=chooseShortest529(p,si,pool);
     if(!best) return null;
