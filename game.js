@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.15";
+  const BUILD_ID = "v6.19";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v606_approved_clean_neon_s.png?v=60601";
+  map.src = "map_v619_neon_s_wide3_start_goal.png?v=61902";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -331,13 +331,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  const SAFE_ZONES_606 = {
-    start:{x0:26.20,y0:133.80,x1:35.34,y1:153.80},
-    goal:{x0:144.32,y0:13.80,x1:152.97,y1:31.80}
+  const SAFE_ZONES_619 = {
+    start:{x0:21.00,y0:132.50,x1:40.50,y1:155.00},
+    goal:{x0:139.00,y0:12.50,x1:158.50,y1:32.50}
   };
 
   function safeAt(x,y){
-    const z=SAFE_ZONES_606;
+    const z=SAFE_ZONES_619;
     return (
       (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
       (x>=z.goal.x0 && x<=z.goal.x1 && y>=z.goal.y0 && y<=z.goal.y1)
@@ -6405,6 +6405,123 @@ function farthestVisibleFastTarget91(p,si){
     return look || apex || exit || entry || base610 || null;
   }
 
+
+  // ============================================================
+  // v6.19 Driving AI 4.0 (v6.16 ~ v6.19)
+  // movement radius / steering / forward motion / hard road lock
+  // ============================================================
+  function localMotionCap616(p,si,target){
+    if(!target) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+    const dx=target.x-p.x, dy=target.y-p.y;
+    const d=Math.hypot(dx,dy)||1;
+    const maxD=6.0;
+    let x=target.x,y=target.y;
+    if(d>maxD){ x=p.x+dx/d*maxD; y=p.y+dy/d*maxD; }
+    const lat=(x-p.x)*s.nx+(y-p.y)*s.ny;
+    const maxLat=(widths[si]||14)*0.38;
+    if(Math.abs(lat)>maxLat){
+      const over=lat-Math.sign(lat)*maxLat;
+      x-=s.nx*over; y-=s.ny*over;
+    }
+    return {x,y,kind:(target.kind||"target")+"-cap616"};
+  }
+
+  function steeringStable617(p,si,target,now){
+    if(!target) return null;
+    const danger=Math.max(0,Math.min(1,p.liveEvadeDanger||0));
+    if(!p._steer617) p._steer617={x:target.x,y:target.y};
+    const a=0.30+danger*0.48;
+    const x=p._steer617.x+(target.x-p._steer617.x)*a;
+    const y=p._steer617.y+(target.y-p._steer617.y)*a;
+    p._steer617={x,y};
+    return {x,y,kind:(target.kind||"target")+"-smooth617"};
+  }
+
+  function minimumForward618(p,si,target){
+    if(!target) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+    const dx=target.x-p.x, dy=target.y-p.y;
+    const f=dx*s.ux+dy*s.uy;
+    if((p.liveEvadeDanger||0)<0.72 && f<1.8){
+      return {...target,x:target.x+s.ux*(1.8-f),y:target.y+s.uy*(1.8-f),
+        kind:(target.kind||"target")+"-forward618"};
+    }
+    return target;
+  }
+
+  function hardRoadClamp619(p,si,target){
+    if(!target) return null;
+    if(courseContainsPoint(target.x,target.y,0.00) &&
+       lineStaysOnCourse(p.x,p.y,target.x,target.y,0.00)) return target;
+
+    for(let k=10;k>=1;k--){
+      const t=k/11;
+      const x=p.x+(target.x-p.x)*t;
+      const y=p.y+(target.y-p.y)*t;
+      if(courseContainsPoint(x,y,0.00) &&
+         lineStaysOnCourse(p.x,p.y,x,y,0.00))
+        return {x,y,kind:(target.kind||"target")+"-road619"};
+    }
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const x=p.x+s.ux*2.4, y=p.y+s.uy*2.4;
+    return courseContainsPoint(x,y,0.00)?{x,y,kind:"road-fallback619"}:null;
+  }
+
+  function insideShortest619(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const next=segs[Math.min(segs.length-1,si+1)];
+    if(!s||!next) return null;
+    const turn=s.ux*next.uy-s.uy*next.ux;
+    if(Math.abs(turn)<0.035) return null;
+    const half=(widths[si]||14)*0.60;
+    const inside=(turn>0?1:-1)*half*0.94;
+    const dist=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
+    let x,y;
+    if(dist>4.2){
+      const f=Math.max(2.8,Math.min(6.0,dist*.75));
+      x=p.x+s.ux*f+s.nx*inside;
+      y=p.y+s.uy*f+s.ny*inside;
+    } else {
+      x=s.b[0]+next.ux*4.2+next.nx*inside*.34;
+      y=s.b[1]+next.uy*4.2+next.ny*inside*.34;
+    }
+    return hardRoadClamp619(p,si,{x,y,kind:"inside-shortest619"});
+  }
+
+  function drivingAI419(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    let t=insideShortest619(p,si,now) || racingLine415(p,si,now) || integratedAI610(p,si,now);
+    if(!t) return null;
+    t=localMotionCap616(p,si,t);
+    t=steeringStable617(p,si,t,now);
+    t=minimumForward618(p,si,t);
+    return hardRoadClamp619(p,si,t);
+  }
+
+  function enforceRoadPosition619(p){
+    if(courseContainsPoint(p.x,p.y,0.00)){
+      p._lastLegal619={x:p.x,y:p.y};
+      return;
+    }
+    if(p._lastLegal619){
+      p.x=p._lastLegal619.x; p.y=p._lastLegal619.y;
+      if(Number.isFinite(p.prevX)) p.prevX=p.x;
+      if(Number.isFinite(p.prevY)) p.prevY=p.y;
+      if(Number.isFinite(p.simPrevX)) p.simPrevX=p.x;
+      if(Number.isFinite(p.simPrevY)) p.simPrevY=p.y;
+      return;
+    }
+    const s=segs[Math.max(0,Math.min(segs.length-1,p.seg||0))];
+    p.x=s.a[0]; p.y=s.a[1]; p._lastLegal619={x:p.x,y:p.y};
+  }
+
   function racingLine529(p,si,now){
     if(p.controlMode!=="normal") return null;
     if(now<(p.hardRouteLockUntil||0)) return null;
@@ -6424,7 +6541,8 @@ function farthestVisibleFastTarget91(p,si){
     const inside604=insideLine604(p,si,now);
     const ai610=integratedAI610(p,si,now);
     const rl415=racingLine415(p,si,now);
-    const pool=[rl415,ai610,inside604,three,two,corner,inside,edgeStraight,shortStraight];
+    const drive419=drivingAI419(p,si,now);
+    const pool=[drive419,rl415,ai610,inside604,three,two,corner,inside,edgeStraight,shortStraight];
     const best=chooseShortest529(p,si,pool);
     if(!best) return null;
 
@@ -7364,6 +7482,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         }
       }
     }
+    enforceRoadPosition619(p);
   }
 
   // v4.59.9 rolling AI death blackbox. Keeps only the last ~5.5 seconds.
