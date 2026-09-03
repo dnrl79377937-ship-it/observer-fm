@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.35";
+  const BUILD_ID = "v6.36";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -720,10 +720,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0; simTickCounter=0;
     lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];
     broadcastFocusId=-1; broadcastFocusUntil=0; previousUiRanks=new Map();
+    cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
-    camX=28; camY=158;
+    camX=31.05; camY=132.55;
     roundTransitioning=false;
     startBtn.textContent=`${currentRound}R 시작`;
     render(0);
@@ -810,7 +811,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           .994+skill*.016+(p.raceForm-1)*.07+(Math.random()-.5)*(.004-consistency*.0012)));
 
         // Opening lane is derived from the persistent route signature + driving personality.
-        // No spawn offset is used: everyone physically starts at the v6.04 yellow-box center x=30.77,y=144.00.
+        // No spawn offset is used: everyone physically starts at the current yellow-box center x=31.05,y=132.55.
         const half0=Math.max(2.0,widths[0]*.66);
         const id=identityOf(p);
         const styleBias=(id.apex-1)*.34+(id.pass-1)*.20-(id.safety-1)*.18;
@@ -6944,10 +6945,84 @@ function farthestVisibleFastTarget91(p,si){
     }
   }
 
+
+  // ============================================================
+  // v6.36 CORE RULE AUDIT
+  // Consolidates the project's non-negotiable rules:
+  // - exact yellow-zone center start
+  // - auto camera always follows the actual live P1
+  // - player-player bodies are non-solid
+  // - no rank/speed rubber-band
+  // - calm racing = shortest legal road line
+  // - avoidance = local/minimum deviation only
+  // - physical position may never remain outside the legal road
+  // ============================================================
+
+  function finalRoadTarget636(p,si,target){
+    if(!target) return null;
+    let t=hardRoadClamp619(p,si,target);
+    if(!t){
+      const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+      if(!s) return null;
+      t={x:p.x+s.ux*2.2,y:p.y+s.uy*2.2,kind:"core-forward636"};
+      t=hardRoadClamp619(p,si,t);
+    }
+    return t;
+  }
+
+  function enforcePhysicalRoad636(p){
+    // The old order allowed OUTSIDE death before road containment ran.
+    // v6.36 makes containment authoritative immediately after movement.
+    if(courseContainsPoint(p.x,p.y,0.00)){
+      p._lastLegal636={x:p.x,y:p.y};
+      p._lastLegal619={x:p.x,y:p.y};
+      return true;
+    }
+
+    const si=Math.max(0,Math.min(segs.length-1,p.seg||0));
+    const s=segs[si];
+
+    // First try projection onto the current route segment center corridor.
+    if(s){
+      const rx=p.x-s.a[0], ry=p.y-s.a[1];
+      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
+      const lateral=rx*s.nx+ry*s.ny;
+      const half=Math.max(1.8,(widths[si]||14)*ROAD_MARGIN*.94);
+      const clampedLat=Math.max(-half,Math.min(half,lateral));
+      const x=s.a[0]+s.ux*along+s.nx*clampedLat;
+      const y=s.a[1]+s.uy*along+s.ny*clampedLat;
+      if(courseContainsPoint(x,y,0.00)){
+        p.x=x;p.y=y;
+        p._lastLegal636={x,y};
+        p._lastLegal619={x,y};
+        return true;
+      }
+    }
+
+    // Then restore the most recent legal position.
+    const last=p._lastLegal636||p._lastLegal619;
+    if(last && courseContainsPoint(last.x,last.y,0.00)){
+      p.x=last.x;p.y=last.y;
+      return true;
+    }
+
+    // Absolute fallback: yellow start-zone center.
+    p.x=31.05;p.y=132.55;
+    p.seg=0;
+    p._lastLegal636={x:p.x,y:p.y};
+    p._lastLegal619={x:p.x,y:p.y};
+    return true;
+  }
+
+  function auditedRaceTarget636(p,si,now){
+    let t=survivalRacingAI435(p,si,now);
+    t=westToUpperClimbGuard635(p,si,t);
+    return finalRoadTarget636(p,si,t);
+  }
+
   function racingLine529(p,si,now){
-    let sr435=survivalRacingAI435(p,si,now);
-    sr435=westToUpperClimbGuard635(p,si,sr435);
-    if(sr435) return {...sr435,kind:(sr435.kind||"racing")+"-635"};
+    const audit636=auditedRaceTarget636(p,si,now);
+    if(audit636) return {...audit636,kind:(audit636.kind||"racing")+"-636"};
     const avoid630=avoidance330(p,si,now);
     if(avoid630) return avoid630;
     if(p.controlMode!=="normal") return null;
@@ -7535,6 +7610,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
     tx=steerTarget516.x;
     ty=steerTarget516.y;
 
+    // v6.36 final planner invariant: even legacy steering layers cannot hand
+    // the virtual mouse a target whose chord leaves the legal road.
+    {
+      const road636=finalRoadTarget636(p,si,{x:tx,y:ty,kind:"post-steer636"});
+      if(road636){tx=road636.x;ty=road636.y;}
+    }
+
     // v5.19: after an abnormal move, briefly shrink the next steering target
     // instead of letting a second large correction compound the mistake.
     if(now<(p.anomalyUntil519||0) && !liveEvade){
@@ -7660,6 +7742,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
 
+    // v6.36 stale-click guard: a previously held mouse target may have become
+    // illegal after a corner/segment transition. Revalidate it every frame.
+    {
+      const road636=finalRoadTarget636(p,si,{x:tx,y:ty,kind:"held-mouse636"});
+      if(road636){
+        tx=road636.x;ty=road636.y;
+        p.mouseTargetX=tx;p.mouseTargetY=ty;
+      }
+    }
+
     // v5.07 direct broad-road movement:
     // do not allow stale mouse/edge commands to turn a valid broad-road straight chord
     // into a one-tile edge-following L path.
@@ -7777,6 +7869,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     p.x += moveDirX*move;
     p.y += moveDirY*move;
+
+    // v6.36 physical road authority: clamp immediately after the movement step,
+    // before OUTSIDE death, telemetry, segment advancement, or observer collision.
+    enforcePhysicalRoad636(p);
+    enforceProtectedClimb635(p);
+    enforcePhysicalRoad636(p);
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
@@ -8191,62 +8289,44 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   function updateCamera(dt){
-    let leader=null, leaderProg=-Infinity;
-    let second=null, secondProg=-Infinity;
-
-    for(let i=0;i<players.length;i++){
-      const p=players[i];
-      if(p.done || p.dead) continue;
-      const prog=currentProgress(p);
-      if(prog>leaderProg){
-        second=leader; secondProg=leaderProg;
-        leader=p; leaderProg=prog;
-      }else if(prog>secondProg){
-        second=p; secondProg=prog;
-      }
-    }
-    if(!leader) return;
-
     const now=gameNow();
 
-    // v2.06 broadcast rule: stay on P1 almost all the time.
-    // A prior leader is only retained very briefly to avoid camera jitter during
-    // near-identical overlaps/rapid timing swaps.
-    if(cameraLeaderId!==leader.index){
-      const held=players[cameraLeaderId];
-      if(held && !held.done && now<cameraLeaderHoldUntil){
-        const heldProg=currentProgress(held);
-        if(leaderProg-heldProg<0.55){
-          leader=held;
-          leaderProg=heldProg;
-        }else{
-          cameraLeaderId=leader.index;
-          cameraLeaderHoldUntil=now+650;
-        }
-      }else{
-        cameraLeaderId=leader.index;
-        cameraLeaderHoldUntil=now+650;
-      }
+    // Manual POV remains the only intentional override.
+    const pov=players[povPlayerIndex];
+    if(povPlayerIndex>=0 && pov && !pov.done && !pov.dead){
+      cameraLeaderId=pov.index;
+      const a=Math.min(0.22,Math.max(0.10,dt*0.0065));
+      camX+=(pov.x-camX)*a;
+      camY+=(pov.y-camY)*a;
+      return;
     }
+
+    // v6.36 AUTO CAMERA:
+    // Always derive the camera subject from the exact same currentProgress()
+    // ordering used for the race. No previous-leader hold and no event cutaway.
+    const active=players
+      .filter(p=>!p.done && !p.dead)
+      .sort((a,b)=>currentProgress(b)-currentProgress(a));
+
+    if(!active.length) return;
+    const leader=active[0];
+    const second=active[1]||null;
+    cameraLeaderId=leader.index;
+    cameraLeaderHoldUntil=now; // compatibility only; no hold behavior.
 
     let tx=leader.x, ty=leader.y;
 
-    // v4.29 AI POV: spectator can lock the broadcast camera to one actual racer.
-    const pov=players[povPlayerIndex];
-    if(povPlayerIndex>=0 && pov && !pov.done){
-      tx=pov.x; ty=pov.y;
-      leader=pov; second=null;
+    // Keep P1 visually dominant. A very close P2 may affect framing only 2%.
+    if(second){
+      const gap=Math.abs(currentProgress(leader)-currentProgress(second));
+      if(gap<0.55){
+        tx=leader.x*.98+second.x*.02;
+        ty=leader.y*.98+second.y*.02;
+      }
     }
 
-    // Only include P2 subtly when the lead battle is genuinely close.
-    if(second && Math.abs(leaderProg-secondProg)<0.85){
-      tx=leader.x*.94+second.x*.06;
-      ty=leader.y*.94+second.y*.06;
-    }
-
-    // Overtake/battle events remain on the HUD, but no longer pull the camera
-    // away from the leader. This prevents constant broadcast cuts.
-    const a=Math.min(0.068,dt*0.00220);
+    // Faster response than the old 0.65s hold + slow smoothing.
+    const a=Math.min(0.18,Math.max(0.085,dt*0.0055));
     camX+=(tx-camX)*a;
     camY+=(ty-camY)*a;
   }
