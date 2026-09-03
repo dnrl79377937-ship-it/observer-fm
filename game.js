@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.25";
+  const BUILD_ID = "v6.30";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -434,7 +434,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         extremeInsideCooldown:900+Math.random()*1200, extremeInsideSide:0,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:30.77, y:144.00,
+        x:31.05, y:132.55,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -449,7 +449,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.566903319,
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:30.77, prevY:144.00, simPrevX:30.77, simPrevY:144.00,
+        hitFxUntil:0, visualAngle:0, prevX:31.05, prevY:132.55, simPrevX:31.05, simPrevY:132.55,
         // v4.69: brief tolerance for borderline upper-left corner exits.
         outsideGrace69Since:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
@@ -468,8 +468,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         modeStart:0,
         lastProgress:0,
         lastAdvanceAt:0,
-        lastX:30.77,
-        lastY:144.00,
+        lastX:31.05,
+        lastY:132.55,
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
@@ -714,6 +714,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     broadcastStoryKey="";broadcastStoryUntil=0;broadcastTickerUntil=0;broadcastTickerText="";
     broadcastLastRankSnapshot=new Map();
     players=makePlayers();
+    players.forEach(forceStartCenter625);
     observers=spawnObservers();
     running=false;
     raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0; simTickCounter=0;
@@ -786,6 +787,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     running=true;
     const now=performance.now();
     if(!raceStart){
+      players.forEach(forceStartCenter625);
       raceStart=now;
       // v2.43: LIVE commentary UI removed.
       // v2.14: each racer gets a small stat-driven launch quality.
@@ -6660,19 +6662,152 @@ function farthestVisibleFastTarget91(p,si){
   }
 
 
+
+  // ============================================================
+  // v6.30 Observer Avoidance 3.0 FINAL (v6.26 ~ v6.30)
+  // 6.26 multi-observer danger map
+  // 6.27 safe-gap search
+  // 6.28 secondary-collision prediction
+  // 6.29 forward-progress preservation
+  // 6.30 full Avoidance 3.0 integration
+  // ============================================================
+
+  function multiObserverRisk626(p,x,y,horizon=0.72){
+    let risk=0, nearest=999, count=0;
+    for(const o of observers){
+      const ox=o.x, oy=o.y;
+      const ovx=Number.isFinite(o.vx)?o.vx:0;
+      const ovy=Number.isFinite(o.vy)?o.vy:0;
+      const px=ox+ovx*horizon;
+      const py=oy+ovy*horizon;
+      const d=Math.hypot(x-px,y-py);
+      nearest=Math.min(nearest,d);
+      if(d<8.0){
+        count++;
+        const w=Math.max(0,(8.0-d)/8.0);
+        risk+=w*w*4.0;
+      }
+    }
+    return {risk,nearest,count};
+  }
+
+  function safeGap627(p,si,threat){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return null;
+    const half=Math.max(2.2,(widths[si]||14)*0.54);
+    let best=null, bestScore=Infinity;
+
+    // Sample legal lateral gaps from strong inside to outside, but penalize detours.
+    for(let j=-8;j<=8;j++){
+      const off=half*(j/8);
+      const forward=4.0;
+      const x=p.x+s.ux*forward+s.nx*off;
+      const y=p.y+s.uy*forward+s.ny*off;
+      if(!courseContainsPoint(x,y,0.00)) continue;
+      if(!lineStaysOnCourse(p.x,p.y,x,y,0.00)) continue;
+
+      const r=multiObserverRisk626(p,x,y,0.62);
+      const travel=Math.hypot(x-p.x,y-p.y);
+      const lateral=Math.abs(off);
+      // Prefer low risk, small lateral movement, and forward progress.
+      const score=r.risk*5.0 + lateral*.34 + travel*.08 - forward*.16;
+      if(score<bestScore){
+        bestScore=score;
+        best={x,y,kind:"safe-gap627",risk:r.risk,nearest:r.nearest};
+      }
+    }
+    return best;
+  }
+
+  function secondaryCollision628(p,si,target){
+    if(!target) return null;
+    const steps=5;
+    let worst=0;
+    for(let k=1;k<=steps;k++){
+      const t=k/steps;
+      const x=p.x+(target.x-p.x)*t;
+      const y=p.y+(target.y-p.y)*t;
+      const r=multiObserverRisk626(p,x,y,t*.72);
+      worst=Math.max(worst,r.risk);
+      if(r.nearest<1.55) return null;
+    }
+    return {...target,secondaryRisk628:worst};
+  }
+
+  function preserveForward629(p,si,target){
+    if(!target) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+    const dx=target.x-p.x, dy=target.y-p.y;
+    const forward=dx*s.ux+dy*s.uy;
+    if(forward>=2.4) return target;
+
+    const need=2.4-forward;
+    const t={
+      ...target,
+      x:target.x+s.ux*need,
+      y:target.y+s.uy*need,
+      kind:(target.kind||"avoid")+"-forward629"
+    };
+    return hardRoadClamp619(p,si,t);
+  }
+
+  function avoidance330(p,si,now){
+    const primary=collisionTTC622(p);
+    if(!primary) return null;
+
+    // Existing minimum-dodge left/right candidates.
+    let left=secondaryCollision628(p,si,
+      hardRoadClamp619(p,si,minimumDodge623(p,si,primary,-1)));
+    let right=secondaryCollision628(p,si,
+      hardRoadClamp619(p,si,minimumDodge623(p,si,primary,1)));
+
+    // New multi-observer safe-gap candidate.
+    let gap=secondaryCollision628(p,si,safeGap627(p,si,primary));
+
+    const candidates=[left,right,gap].filter(Boolean);
+    if(!candidates.length) return null;
+
+    let best=null,bestScore=Infinity;
+    for(let t of candidates){
+      t=preserveForward629(p,si,t);
+      t=hardRoadClamp619(p,si,t);
+      if(!t) continue;
+      const base=dodgeScore624(p,si,t,primary);
+      const r=multiObserverRisk626(p,t.x,t.y,0.68);
+      const score=base+r.risk*4.4+(t.secondaryRisk628||0)*3.2;
+      if(score<bestScore){bestScore=score;best=t;}
+    }
+    if(!best) return null;
+
+    best=localMotionCap616(p,si,best);
+    best=minimumForward618(p,si,best);
+    best=preserveForward629(p,si,best);
+    best=hardRoadClamp619(p,si,best);
+    if(best){
+      best.kind="avoidance3-final630";
+      p.avoidance3Until625=now+300;
+      p.avoidance330ActiveUntil=now+300;
+    }
+    return best;
+  }
+
   function forceStartCenter625(p){
-    const sx=31.00, sy=132.50;
+    const sx=31.05, sy=132.55;
     p.x=sx; p.y=sy;
     p.prevX=sx; p.prevY=sy;
     p.simPrevX=sx; p.simPrevY=sy;
     p.lastX=sx; p.lastY=sy;
     p.mouseTargetX=sx; p.mouseTargetY=sy;
+    p.seg=0;
+    p.lastProgress=0;
     p._lastLegal619={x:sx,y:sy};
+    p._steer617={x:sx,y:sy};
   }
 
   function racingLine529(p,si,now){
-    const avoid625=roadSafeAvoidance625(p,si,now);
-    if(avoid625) return avoid625;
+    const avoid630=avoidance330(p,si,now);
+    if(avoid630) return avoid630;
     if(p.controlMode!=="normal") return null;
     if(now<(p.hardRouteLockUntil||0)) return null;
     if(now<(p.routeBreakCombatUntil||0)) return null;
