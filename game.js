@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.06";
+  const BUILD_ID = "v6.15";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6163,6 +6163,248 @@ function farthestVisibleFastTarget91(p,si){
     return {x,y,kind:"inside-line-604"};
   }
 
+
+  // ============================================================
+  // v6.10 integrated AI core (v6.07 ~ v6.10)
+  // ============================================================
+  function mapAwareGeometry610(si){
+    si=Math.max(0,Math.min(segs.length-1,si|0));
+    const s=segs[si];
+    const prev=segs[Math.max(0,si-1)]||s;
+    const next=segs[Math.min(segs.length-1,si+1)]||s;
+    const turnIn=prev.ux*s.uy-prev.uy*s.ux;
+    const turnOut=s.ux*next.uy-s.uy*next.ux;
+    const straight=Math.abs(turnOut)<0.035;
+    return {s,prev,next,turnIn,turnOut,straight};
+  }
+
+  function legalRoadTarget608(p,t){
+    if(!t || !Number.isFinite(t.x) || !Number.isFinite(t.y)) return null;
+    // Planning targets must remain on the actual S-road.
+    if(!courseContainsPoint(t.x,t.y,0.05)) return null;
+    if(!lineStaysOnCourse(p.x,p.y,t.x,t.y,0.08)) return null;
+    return t;
+  }
+
+  function straightStable609(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+    const g=mapAwareGeometry610(si);
+    if(!g.straight) return null;
+
+    const s=g.s;
+    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
+    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
+    if(remain<5.5) return null;
+
+    // Project current position to this straight and keep lateral motion small.
+    const lateral=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+    const desired=lateral*0.22;
+    const look=Math.min(9.0,Math.max(5.0,remain*0.42));
+    const x=p.x+s.ux*look+s.nx*(desired-lateral);
+    const y=p.y+s.uy*look+s.ny*(desired-lateral);
+    return legalRoadTarget608(p,{x,y,kind:"straight-stable-609"});
+  }
+
+  function cornerPhase610(p,si,now){
+    const g=mapAwareGeometry610(si);
+    const s=g.s, next=g.next;
+    if(!next || Math.abs(g.turnOut)<0.035) return {phase:"straight",turn:0,dist:Infinity};
+
+    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
+    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
+    let phase="approach";
+    if(remain<=7.0) phase="entry";
+    if(remain<=3.4) phase="apex";
+    return {phase,turn:g.turnOut,dist:remain};
+  }
+
+  function cornerAware610(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+    const c=cornerPhase610(p,si,now);
+    if(c.phase==="straight") return null;
+
+    const s=segs[si], next=segs[Math.min(segs.length-1,si+1)];
+    const half=(widths[si]||14)*0.62;
+    const inside=(c.turn>0?1:-1)*half;
+    let forward=5.5, off=inside*0.48;
+    if(c.phase==="entry"){ forward=Math.max(2.8,c.dist); off=inside*0.72; }
+    if(c.phase==="apex"){ forward=Math.max(1.8,c.dist); off=inside*0.90; }
+
+    let x=p.x+s.ux*forward+s.nx*off;
+    let y=p.y+s.uy*forward+s.ny*off;
+
+    // Near apex, blend toward the next straight so the target never jumps outside.
+    if(c.phase==="apex" && next){
+      const nx=s.b[0]+next.ux*3.8+next.nx*inside*0.34;
+      const ny=s.b[1]+next.uy*3.8+next.ny*inside*0.34;
+      x=x*0.38+nx*0.62; y=y*0.38+ny*0.62;
+    }
+    return legalRoadTarget608(p,{x,y,kind:"corner-aware-610-"+c.phase});
+  }
+
+  function integratedAI610(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const corner=cornerAware610(p,si,now);
+    if(corner) return corner;
+    const straight=straightStable609(p,si,now);
+    if(straight) return straight;
+    return null;
+  }
+
+
+  // ============================================================
+  // v6.15 Racing Line 4.0 integrated core (v6.11 ~ v6.15)
+  // 6.11 corner entry discipline
+  // 6.12 inside apex precision
+  // 6.13 corner exit alignment
+  // 6.14 two-corner lookahead
+  // 6.15 Racing Line 4.0 integration
+  // ============================================================
+
+  function cornerEntry611(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+    const c=cornerPhase610(p,si,now);
+    if(c.phase!=="approach" && c.phase!=="entry") return null;
+
+    const s=segs[si], next=segs[Math.min(segs.length-1,si+1)];
+    if(!s || !next || Math.abs(c.turn)<0.035) return null;
+
+    // Stay disciplined before turn: no unnecessary sweep to the opposite side.
+    const half=(widths[si]||14)*0.60;
+    const inside=(c.turn>0?1:-1)*half;
+    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
+    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
+
+    let off=inside*0.30;
+    if(remain<8.5) off=inside*0.48;
+    if(remain<5.8) off=inside*0.62;
+
+    const forward=Math.max(3.8,Math.min(7.5,remain*0.72));
+    const x=p.x+s.ux*forward+s.nx*off;
+    const y=p.y+s.uy*forward+s.ny*off;
+    return legalRoadTarget608(p,{x,y,kind:"corner-entry-611"});
+  }
+
+  function apex612(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+    const c=cornerPhase610(p,si,now);
+    if(c.phase!=="entry" && c.phase!=="apex") return null;
+
+    const s=segs[si], next=segs[Math.min(segs.length-1,si+1)];
+    if(!s || !next || Math.abs(c.turn)<0.035) return null;
+
+    const half=(widths[si]||14)*0.61;
+    const inside=(c.turn>0?1:-1)*half;
+
+    // Aim very close to the legal inside edge, but keep a safety buffer.
+    const apexOff=inside*0.95;
+    const bx=s.b[0], by=s.b[1];
+    let x=bx+s.nx*apexOff;
+    let y=by+s.ny*apexOff;
+
+    // Slightly pull toward the next straight to avoid stopping at the apex.
+    x+=next.ux*2.6;
+    y+=next.uy*2.6;
+
+    return legalRoadTarget608(p,{x,y,kind:"inside-apex-612"});
+  }
+
+  function cornerExit613(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+    const s=segs[si];
+    const next=segs[Math.min(segs.length-1,si+1)];
+    const next2=segs[Math.min(segs.length-1,si+2)];
+    if(!s || !next) return null;
+
+    const turn=s.ux*next.uy-s.uy*next.ux;
+    if(Math.abs(turn)<0.035) return null;
+
+    const distToCorner=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
+    if(distToCorner>5.2) return null;
+
+    const half=(widths[Math.min(widths.length-1,si+1)]||14)*0.60;
+    const inside=(turn>0?1:-1)*half;
+    let x=s.b[0]+next.ux*6.5+next.nx*inside*0.34;
+    let y=s.b[1]+next.uy*6.5+next.ny*inside*0.34;
+
+    // If the next segment is straight, progressively center onto it.
+    if(next2){
+      const t2=next.ux*next2.uy-next.uy*next2.ux;
+      if(Math.abs(t2)<0.035){
+        x=s.b[0]+next.ux*7.4+next.nx*inside*0.18;
+        y=s.b[1]+next.uy*7.4+next.ny*inside*0.18;
+      }
+    }
+    return legalRoadTarget608(p,{x,y,kind:"corner-exit-613"});
+  }
+
+  function futureCornerInfo614(si){
+    const out=[];
+    for(let k=0;k<3;k++){
+      const a=segs[Math.min(segs.length-1,si+k)];
+      const b=segs[Math.min(segs.length-1,si+k+1)];
+      if(!a || !b) continue;
+      const turn=a.ux*b.uy-a.uy*b.ux;
+      if(Math.abs(turn)>=0.035) out.push({index:si+k,turn});
+      if(out.length>=2) break;
+    }
+    return out;
+  }
+
+  function twoCornerLookahead614(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const info=futureCornerInfo614(si);
+    if(info.length<2) return null;
+
+    const first=info[0], second=info[1];
+    const s=segs[first.index];
+    const next=segs[Math.min(segs.length-1,first.index+1)];
+    if(!s || !next) return null;
+
+    const dist=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
+    if(dist>13.0) return null;
+
+    const half=(widths[first.index]||14)*0.58;
+    const sameDir=Math.sign(first.turn)===Math.sign(second.turn);
+
+    // Same-direction corners: stay committed to the inside.
+    // Opposite-direction corners: clip first apex but avoid overcommitting
+    // so the car is already positioned for the second turn.
+    let factor=sameDir?0.86:0.58;
+    const inside=(first.turn>0?1:-1)*half*factor;
+
+    const x=s.b[0]+next.ux*4.6+next.nx*inside;
+    const y=s.b[1]+next.uy*4.6+next.ny*inside;
+    return legalRoadTarget608(p,{x,y,kind:"two-corner-lookahead-614"});
+  }
+
+  function racingLine415(p,si,now){
+    if(p.controlMode!=="normal") return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
+    const look=twoCornerLookahead614(p,si,now);
+    const apex=apex612(p,si,now);
+    const exit=cornerExit613(p,si,now);
+    const entry=cornerEntry611(p,si,now);
+    const base610=integratedAI610(p,si,now);
+
+    // Priority follows race phase: lookahead -> apex -> exit -> entry -> base.
+    return look || apex || exit || entry || base610 || null;
+  }
+
   function racingLine529(p,si,now){
     if(p.controlMode!=="normal") return null;
     if(now<(p.hardRouteLockUntil||0)) return null;
@@ -6180,7 +6422,9 @@ function farthestVisibleFastTarget91(p,si){
     // blindly preferring one system. Linked-corner plans get a small priority
     // only when their distance is essentially equivalent.
     const inside604=insideLine604(p,si,now);
-    const pool=[inside604,three,two,corner,inside,edgeStraight,shortStraight];
+    const ai610=integratedAI610(p,si,now);
+    const rl415=racingLine415(p,si,now);
+    const pool=[rl415,ai610,inside604,three,two,corner,inside,edgeStraight,shortStraight];
     const best=chooseShortest529(p,si,pool);
     if(!best) return null;
 
