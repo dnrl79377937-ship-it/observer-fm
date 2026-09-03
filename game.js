@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.02";
+  const BUILD_ID = "v6.03";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -54,9 +54,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const AVOID_HORIZONS = [0.22,0.48,0.82,1.20,1.72,2.35,3.10,3.85];   // compare future lane safety
   const INSIDE_CORNER_STRENGTH = 1.105; // Kart-style inside apex bias
         // extra body-size safety margin
-  const ROAD_MARGIN = 0.12;           // outer one-line edge strip is legal air-racing space
-  const DEATH_EDGE_EXTRA = 0.65;      // v4.09: lethal zone begins well beyond the real route ribbon
-  const ROUTE_PLAN_EXTRA = 0.20;      // planning may use the outer racing rows, but not cut across gaps
+  const ROAD_MARGIN = 1.10;           // outer one-line edge strip is legal air-racing space
+  const DEATH_EDGE_EXTRA = 4.50;      // v4.09: lethal zone begins well beyond the real route ribbon
+  const ROUTE_PLAN_EXTRA = 1.35;      // planning may use the outer racing rows, but not cut across gaps
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
@@ -158,18 +158,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
-  // v6.00 exact approved Neon City S-map route.
+  // v6.03 approved Neon City S-map route; spawn-aligned, orthogonal macro path.
   const route = [
-    [23,157],[48,157],[75,157],[103,157],[132,157],[147,157],
-    [147,143],[147,128],[147,113],[147,101],[128,101],[103,101],
-    [78,101],[53,101],[30,101],[30,88],[30,75],[30,62],
-    [30,49],[30,35],[52,35],[77,35],[102,35],[128,35],
-    [151,35]
+    [20.5,154.8],[44,154.8],[70,154.8],[96,154.8],[122,154.8],
+    [147,154.8],[147,142],[147,128],[147,114],[147,101],
+    [128,101],[103,101],[78,101],[53,101],[30,101],
+    [30,88],[30,75],[30,62],[30,49],[30,35],
+    [52,35],[77,35],[102,35],[128,35],[151,35]
   ];
 
-  // v6.00 exact concept: broad road; bright edge-line is NOT the lethal edge.
-  // One extra outer tile beyond each visible edge-line remains legal/in-course.
-  const widths = [12.8,12.8,12.8,12.8,13.4,13.4,13.4,12.8,13.4,13.4,13.4,12.8,12.8,13.4,13.4,13.4,12.8,12.8,13.4,13.4,13.4,12.8,12.8,12.8,12.8];
+  // v6.03: broad legal road; restore normal v5.29 survival tolerance.
+  const widths = [12.6,12.6,12.6,12.6,13.2,13.2,13.2,12.6,13.2,13.2,13.2,12.6,12.6,13.2,13.2,13.2,12.6,12.6,13.2,13.2,13.2,12.6,12.6,12.6,12.6];
 
   const segs = [];
   let routeLength = 0;
@@ -182,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v602_neon_city_clean_safezones.png?v=60201";
+  map.src = "map_v603_neon_city_clean.png?v=60301";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -331,11 +330,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
 
+
+  const SAFE_ZONES_603 = {
+    start:{x0:14.5,y0:147.0,x1:27.5,y1:163.0},
+    mid:{x0:80.0,y0:94.0,x1:96.0,y1:108.0},
+    goal:{x0:140.0,y0:28.0,x1:156.0,y1:42.0}
+  };
+
   function safeAt(x,y){
+    const z=SAFE_ZONES_603;
     return (
-      (x>=22 && x<=34 && y>=149 && y<=166) ||  // START safe: bottom road interior
-      (x>=78 && x<=94 && y>=94 && y<=108)  ||  // MID safe: center of middle horizontal road
-      (x>=140 && x<=156 && y>=27 && y<=42)     // GOAL safe: top road interior
+      (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
+      (x>=z.mid.x0 && x<=z.mid.x1 && y>=z.mid.y0 && y<=z.mid.y1) ||
+      (x>=z.goal.x0 && x<=z.goal.x1 && y>=z.goal.y0 && y<=z.goal.y1)
     );
   }
 
@@ -1099,7 +1106,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const turn=cur.ux*next.uy-cur.uy*next.ux;
     const lineSkill=(p.profile.line-85)/15; // ~0.2 to ~0.75
     if(Math.abs(turn)<0.035){
-      return p.desiredOffset*(0.16-lineSkill*0.06); // v6.02 straights stay disciplined
+      return p.desiredOffset*(0.30-lineSkill*0.12);
     }
     // Better line skill clips the apex more precisely.
     const apex=0.82 + lineSkill*0.15;
@@ -6138,21 +6145,28 @@ function farthestVisibleFastTarget91(p,si){
 
   // v5.29: final integrated Racing Line 3.0 authority.
 
-  function insideLineBias602(p,si,now){
+  function insideLine603(p,si,now){
     if(p.controlMode!=="normal") return null;
-    if(now<(p.predictiveEvadeUntil533||0)) return null;
+    if(now<(p.hardRouteLockUntil||0)) return null;
+    if(now<(p.routeBreakCombatUntil||0)) return null;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
+
     const s=segs[Math.max(0,Math.min(segs.length-1,si))];
     const next=segs[Math.min(segs.length-1,si+1)];
     if(!s || !next) return null;
+
     const turn=s.ux*next.uy-s.uy*next.ux;
-    if(Math.abs(turn)<0.025) return null;
-    const half=(widths[Math.max(0,Math.min(widths.length-1,si))]||12)*0.70;
-    const off=(turn>0?1:-1)*half*0.88;
-    const forward=Math.min(7.0,Math.max(4.5,s.L*0.35));
+    if(Math.abs(turn)<0.035) return null;
+
+    const half=(widths[Math.max(0,Math.min(widths.length-1,si))]||12)*0.66;
+    const off=(turn>0 ? 1 : -1)*half*0.90;
+    const forward=Math.max(4.5,Math.min(7.0,s.L*0.38));
+
     const x=p.x+s.ux*forward+s.nx*off;
     const y=p.y+s.uy*forward+s.ny*off;
-    if(!courseContainsPoint(x,y,0.05)) return null;
-    return {x,y,kind:"inside-line-602"};
+    if(!courseContainsPoint(x,y,0.25)) return null;
+    if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) return null;
+    return {x,y,kind:"inside-line-603"};
   }
 
   function racingLine529(p,si,now){
@@ -6171,8 +6185,8 @@ function farthestVisibleFastTarget91(p,si){
     // Compare legal candidates by estimated short-horizon distance rather than
     // blindly preferring one system. Linked-corner plans get a small priority
     // only when their distance is essentially equivalent.
-    const inside602=insideLineBias602(p,si,now);
-    const pool=[inside602,three,two,corner,inside,edgeStraight,shortStraight];
+    const inside603=insideLine603(p,si,now);
+    const pool=[inside603,three,two,corner,inside,edgeStraight,shortStraight];
     const best=chooseShortest529(p,si,pool);
     if(!best) return null;
 
