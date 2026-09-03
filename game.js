@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.30";
+  const BUILD_ID = "v6.35";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6805,28 +6805,150 @@ function farthestVisibleFastTarget91(p,si){
     p._steer617={x:sx,y:sy};
   }
 
+
+  // ============================================================
+  // v6.35 Survival Racing AI 4.0 (v6.31 ~ v6.35)
+  // 6.31 immediate inside-line rejoin
+  // 6.32 suppress over-avoidance
+  // 6.33 stabilize consecutive avoidance
+  // 6.34 survival/racing authority integration
+  // 6.35 final Survival Racing AI 4.0
+  // ============================================================
+
+  function rejoinInside631(p,si,now){
+    if(now<(p.avoidance330ActiveUntil||0)) return null;
+    const last=p.avoidance3Until625||0;
+    if(!last || now-last>1250) return null;
+    const t=strictInside620(p,si,now);
+    if(!t) return null;
+    return {...t,kind:"rejoin-inside631"};
+  }
+
+  function suppressOverAvoidance632(p,si,now,target){
+    if(!target) return null;
+    const threat=collisionTTC622(p);
+    if(threat) return target;
+
+    // No current threat: do not continue drifting away from racing line.
+    if(now>=(p.avoidance330ActiveUntil||0)){
+      const rejoin=rejoinInside631(p,si,now);
+      if(rejoin) return rejoin;
+      return null;
+    }
+    return target;
+  }
+
+  function stabilizeAvoidance633(p,si,now,target){
+    if(!target) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+
+    const lat=(target.x-p.x)*s.nx+(target.y-p.y)*s.ny;
+    const side=Math.sign(lat)||0;
+    if(!p._avoid633) p._avoid633={side:0,until:0};
+
+    // Prevent left-right-left oscillation unless the new side is materially safer.
+    if(now<p._avoid633.until && p._avoid633.side && side && side!==p._avoid633.side){
+      const hold=minimumDodge623(p,si,collisionTTC622(p),p._avoid633.side);
+      const h=hardRoadClamp619(p,si,hold);
+      if(h) return {...h,kind:"avoid-side-hold633"};
+    }
+    if(side){
+      p._avoid633.side=side;
+      p._avoid633.until=now+240;
+    }
+    return target;
+  }
+
+  function survivalRacing634(p,si,now){
+    // Survival has authority only while there is a real predicted threat.
+    let avoid=avoidance330(p,si,now);
+    avoid=suppressOverAvoidance632(p,si,now,avoid);
+    avoid=stabilizeAvoidance633(p,si,now,avoid);
+    if(avoid) return avoid;
+
+    const rejoin=rejoinInside631(p,si,now);
+    if(rejoin) return rejoin;
+
+    return drivingAI420(p,si,now);
+  }
+
+  function survivalRacingAI435(p,si,now){
+    let t=survivalRacing634(p,si,now);
+    if(!t) return null;
+
+    t=localMotionCap616(p,si,t);
+    t=steeringStable617(p,si,t,now);
+    t=minimumForward618(p,si,t);
+    t=hardRoadClamp619(p,si,t);
+    return t;
+  }
+
+  // 9 o'clock -> 11 o'clock upward section protection.
+  // This is the first vertical climb after the middle westbound straight.
+  function westToUpperClimbGuard635(p,si,target){
+    if(!target) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+
+    // Route segment around x=44, y~74 -> y~23.5
+    const onProtectedClimb =
+      Math.abs(s.a[0]-44)<2.5 && Math.abs(s.b[0]-44)<2.5 &&
+      Math.min(s.a[1],s.b[1])<76 && Math.max(s.a[1],s.b[1])>28;
+
+    if(!onProtectedClimb) return target;
+
+    // Keep target inside a conservative visible-road corridor.
+    // Do not allow deep inside cutting toward scenery/non-road.
+    const centerX=44.0;
+    const maxInside=4.6;
+    const minX=centerX-maxInside;
+    const maxX=centerX+maxInside;
+
+    let x=Math.max(minX,Math.min(maxX,target.x));
+    let y=target.y;
+
+    let guarded={...target,x,y,kind:(target.kind||"target")+"-9to11guard635"};
+
+    // If the adjusted chord still leaves road, fall back to a short centerline climb.
+    guarded=hardRoadClamp619(p,si,guarded);
+    if(guarded) return guarded;
+
+    const forward=3.6;
+    const fallback={
+      x:centerX,
+      y:p.y+s.uy*forward,
+      kind:"9to11-center-fallback635"
+    };
+    return hardRoadClamp619(p,si,fallback);
+  }
+
+
+  function enforceProtectedClimb635(p){
+    const si=Math.max(0,Math.min(segs.length-1,p.seg||0));
+    const s=segs[si];
+    if(!s) return;
+    const onProtectedClimb =
+      Math.abs(s.a[0]-44)<2.5 && Math.abs(s.b[0]-44)<2.5 &&
+      Math.min(s.a[1],s.b[1])<76 && Math.max(s.a[1],s.b[1])>28;
+    if(!onProtectedClimb) return;
+
+    const minX=39.4, maxX=48.6;
+    if(p.x<minX) p.x=minX;
+    if(p.x>maxX) p.x=maxX;
+
+    // Keep only if still legal; otherwise fall back to last legal road point.
+    if(!courseContainsPoint(p.x,p.y,0.00) && p._lastLegal619){
+      p.x=p._lastLegal619.x;
+      p.y=p._lastLegal619.y;
+    }
+  }
+
   function racingLine529(p,si,now){
-    const avoid630=avoidance330(p,si,now);
-    if(avoid630) return avoid630;
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const three=linkedThreeCorner525(p,si);
-    const two=linkedTwoCorner524(p,si);
-    const corner=continuousCornerTarget523(p,si);
-    const inside=fastInsideLine527(p,si);
-    const edgeStraight=edgeAwareStraight526(p,si);
-    const shortStraight=shortestStraightTarget521(p,si);
-
-    // Compare legal candidates by estimated short-horizon distance rather than
-    // blindly preferring one system. Linked-corner plans get a small priority
-    // only when their distance is essentially equivalent.
-    const inside604=insideLine604(p,si,now);
-    const ai610=integratedAI610(p,si,now);
-    const rl415=racingLine415(p,si,now);
-    const drive419=drivingAI419(p,si,now);
+    let sr435=survivalRacingAI435(p,si,now);
+    sr435=westToUpperClimbGuard635(p,si,sr435);
+    if(sr435) return {...sr435,kind:(sr435.kind||"racing")+"-635"};
+const drive419=drivingAI419(p,si,now);
     const drive420=drivingAI420(p,si,now);
     if(drive420) return {...drive420,kind:(drive420.kind||"racing")+"-620"};
     const pool=[drive419,rl415,ai610,inside604,three,two,corner,inside,edgeStraight,shortStraight];
@@ -7770,6 +7892,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       }
     }
     enforceRoadPosition619(p);
+    enforceProtectedClimb635(p);
   }
 
   // v4.59.9 rolling AI death blackbox. Keeps only the last ~5.5 seconds.
