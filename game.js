@@ -25,8 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.41";
-  const MAP_LAYOUT_V541 = "ORTHOGONAL_S";
+  const BUILD_ID = "v5.50";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -159,35 +158,39 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
+  const ORTHOGONAL_S_V550 = true;
+
   // Centerline based on the user's supplied map.
   const route = [
-  [20,158],
-  [48,158],
-  [78,158],
-  [108,158],
-  [138,158],
-  [150,158],
-  [150,142],
-  [150,124],
-  [150,106],
-  [132,106],
-  [104,106],
-  [76,106],
-  [48,106],
-  [20,106],
-  [20,88],
-  [20,70],
-  [20,52],
-  [20,35],
-  [42,35],
-  [70,35],
-  [98,35],
-  [126,35],
-  [154,35]
-];
+    [18,158],
+    [44,158],
+    [72,158],
+    [100,158],
+    [128,158],
+    [150,158],
+    [150,144],
+    [150,128],
+    [150,112],
+    [150,98],
+    [130,98],
+    [104,98],
+    [78,98],
+    [52,98],
+    [28,98],
+    [20,98],
+    [20,82],
+    [20,66],
+    [20,50],
+    [20,34],
+    [42,34],
+    [70,34],
+    [98,34],
+    [126,34],
+    [154,34]
+  ];
 
   // Tuned road half widths. We keep controls constrained to the visible road.
-  const widths = [10.5,10.5,10.5,10.5,11.5,11.5,11.5,11.5,11.5,10.5,10.5,10.5,10.5,11.5,11.5,11.5,11.5,11.5,11.5,10.5,10.5,10.5,10.5];
+  const widths = [10.0,10.0,10.0,10.0,11.2,11.2,11.2,10.0,11.2,11.2,11.2,10.0,10.0,10.0,11.2,11.2,11.2,10.0,11.2,11.2,11.2,10.0,10.0,10.0,10.0];
 
   const segs = [];
   let routeLength = 0;
@@ -5348,7 +5351,6 @@ function farthestVisibleFastTarget91(p,si){
 
   // v5.01 HORIZONTAL CENTERLINE LOCK
   function horizontalCenterLock501(p,si,now){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[idx];
     const next=segs[Math.min(segs.length-1,idx+1)];
@@ -5370,7 +5372,6 @@ function farthestVisibleFastTarget91(p,si){
   // Preserve the current horizontal segment until its endpoint is genuinely reached.
   // This prevents early segment switching from pulling the target vertically.
   function horizontalHold503(p,si){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     const idx=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[idx];
     if(Math.abs(s.ux)<.88) return false;
@@ -5400,17 +5401,16 @@ function farthestVisibleFastTarget91(p,si){
   // Final 11->1 corridor: after the last corner, hold the exit Y and drive
   // horizontally all the way to the finish instead of re-targeting downward/upward.
   function middleUpperLine508(si){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
+    if(ORTHOGONAL_S_V550) return false;
     return si>=13 && si<=18;
   }
 
   function finalStraight508(si){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
+    if(ORTHOGONAL_S_V550) return false;
     return si>=28 && si<=32;
   }
 
   function middleUpperTarget508(p,si){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     if(!middleUpperLine508(si)) return null;
     const s=segs[si];
     const half=Math.max(1.8,widths[si]*ROAD_MARGIN*.96);
@@ -5440,7 +5440,6 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function finalHorizontalTarget508(p,si,now){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     if(!finalStraight508(si)) return null;
     const s=segs[si];
 
@@ -5473,7 +5472,6 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function broadRoadTarget507(p,si,now){
-    if(typeof MAP_LAYOUT_V541!=="undefined" && MAP_LAYOUT_V541==="ORTHOGONAL_S") return null;
     const start=Math.max(0,Math.min(segs.length-1,si));
     const s=segs[start];
 
@@ -5761,7 +5759,6 @@ function farthestVisibleFastTarget91(p,si){
     ctx.textBaseline="top";
     ctx.fillText("v5.19 DRIVE DEBUG",16,14);
     ctx.fillText("P1 seg "+d.seg+" "+d.mode+"  "+d.source,16,31);
-    ctx.fillText("risk "+(p.multiObserverRisk535||0).toFixed(2),190,14);
     ctx.fillText("route "+d.rx.toFixed(1)+","+d.ry.toFixed(1),16,48);
     ctx.fillText("steer "+d.sx.toFixed(1)+","+d.sy.toFixed(1),16,64);
     ctx.fillText("move  "+d.mx.toFixed(2)+","+d.my.toFixed(2),16,80);
@@ -6195,334 +6192,6 @@ function farthestVisibleFastTarget91(p,si){
     return {...best,kind:(best.kind||"racing")+"-529"};
   }
 
-
-  // v5.33 OBSERVER AVOIDANCE 2.0 PHASE 1 (v5.30~v5.33)
-
-  // v5.30: predict observer future position from recent velocity.
-  function predictedObserver530(o,horizon){
-    const vx=Number.isFinite(o.vx) ? o.vx : (Number.isFinite(o.dx) ? o.dx : 0);
-    const vy=Number.isFinite(o.vy) ? o.vy : (Number.isFinite(o.dy) ? o.dy : 0);
-    const h=Math.max(0,Math.min(.90,horizon));
-    return {x:o.x+vx*h,y:o.y+vy*h,vx,vy};
-  }
-
-  // v5.31: time-to-collision against a moving observer.
-  function timeToCollision531(p,o){
-    const ov=predictedObserver530(o,0);
-    const pvx=Number.isFinite(p.lastMoveVX531) ? p.lastMoveVX531 : 0;
-    const pvy=Number.isFinite(p.lastMoveVY531) ? p.lastMoveVY531 : 0;
-    const rvx=pvx-ov.vx, rvy=pvy-ov.vy;
-    const rx=p.x-o.x, ry=p.y-o.y;
-    const vv=rvx*rvx+rvy*rvy;
-    if(vv<1e-5) return Infinity;
-    const t=-(rx*rvx+ry*rvy)/vv;
-    if(t<0 || t>1.15) return Infinity;
-    const cx=rx+rvx*t, cy=ry+rvy*t;
-    const miss=Math.hypot(cx,cy);
-    const safe=(typeof HIT_RANGE!=="undefined" ? HIT_RANGE : .41)+.72;
-    return miss<=safe ? t : Infinity;
-  }
-
-  // v5.32: choose only the minimum lateral displacement needed to clear danger.
-  function minimumDodge532(p,si,o,side){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return null;
-    const pred=predictedObserver530(o,.34);
-    const relx=pred.x-p.x, rely=pred.y-p.y;
-    const obsLat=relx*s.nx+rely*s.ny;
-    const clearance=1.15;
-    const wanted=obsLat + side*clearance;
-    const lateral=Math.max(-1.55,Math.min(1.55,wanted));
-    const forward=Math.max(3.8,Math.min(6.2,relx*s.ux+rely*s.uy+3.4));
-    const x=p.x+s.ux*forward+s.nx*lateral;
-    const y=p.y+s.uy*forward+s.ny*lateral;
-    if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) return null;
-    return {x,y,lateral,forward};
-  }
-
-  // v5.33: compare left/right evade cost and choose the shorter legal escape.
-  function predictiveAvoidance533(p,si,now){
-    const nearby=playerPerceivedObservers(p,18.0);
-    if(!nearby || !nearby.length) return null;
-
-    let threat=null, bestT=Infinity;
-    for(const o of nearby){
-      const t=timeToCollision531(p,o);
-      if(t<bestT){ bestT=t; threat=o; }
-    }
-    if(!threat || !Number.isFinite(bestT)) return null;
-
-    const left=minimumDodge532(p,si,threat,-1);
-    const right=minimumDodge532(p,si,threat,1);
-    if(!left && !right) return null;
-    if(!left) return {...right,kind:"predict-evade-right-533",ttc:bestT};
-    if(!right) return {...left,kind:"predict-evade-left-533",ttc:bestT};
-
-    const lc=Math.hypot(left.x-p.x,left.y-p.y)+Math.abs(left.lateral)*.34;
-    const rc=Math.hypot(right.x-p.x,right.y-p.y)+Math.abs(right.lateral)*.34;
-    const pick=lc<=rc ? left : right;
-    return {...pick,kind:lc<=rc?"predict-evade-left-533":"predict-evade-right-533",ttc:bestT};
-  }
-
-
-  // v5.36 OBSERVER AVOIDANCE 2.0 PHASE 2 (v5.34~v5.36)
-
-  // v5.34: if a legal gap exists between observers, prefer passing through it
-  // instead of making an unnecessarily wide evade.
-  function gapPass534(p,si,observers){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s || !observers || observers.length<2) return null;
-
-    const projected=[];
-    for(const o of observers){
-      const pr=predictedObserver530(o,.30);
-      const rx=pr.x-p.x, ry=pr.y-p.y;
-      const forward=rx*s.ux+ry*s.uy;
-      const lateral=rx*s.nx+ry*s.ny;
-      if(forward>-1.0 && forward<8.5){
-        projected.push({o,forward,lateral,x:pr.x,y:pr.y});
-      }
-    }
-    if(projected.length<2) return null;
-
-    projected.sort((a,b)=>a.lateral-b.lateral);
-
-    let best=null, bestScore=Infinity;
-    const safeGap=1.72;
-    for(let i=0;i<projected.length-1;i++){
-      const a=projected[i], b=projected[i+1];
-      const gap=b.lateral-a.lateral;
-      if(gap<safeGap) continue;
-
-      const mid=(a.lateral+b.lateral)*.5;
-      const forward=Math.max(4.2,Math.min(6.8,Math.max(a.forward,b.forward)+2.0));
-      const x=p.x+s.ux*forward+s.nx*mid;
-      const y=p.y+s.uy*forward+s.ny*mid;
-      if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) continue;
-
-      const score=Math.abs(mid)*.28 + forward*.06;
-      if(score<bestScore){
-        bestScore=score;
-        best={x,y,lateral:mid,forward,kind:"gap-pass-534"};
-      }
-    }
-    return best;
-  }
-
-  // v5.35: aggregate nearby observer risk instead of evaluating only one object.
-  function multiObserverRisk535(p,si,observers){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s || !observers || !observers.length) return {risk:0,count:0,hot:[]};
-
-    let risk=0;
-    const hot=[];
-    for(const o of observers){
-      const t=timeToCollision531(p,o);
-      const pr=predictedObserver530(o,.26);
-      const dx=pr.x-p.x, dy=pr.y-p.y;
-      const forward=dx*s.ux+dy*s.uy;
-      const lateral=Math.abs(dx*s.nx+dy*s.ny);
-      if(forward<-1.2 || forward>11.0) continue;
-
-      let r=0;
-      if(Number.isFinite(t)){
-        r += Math.max(0,1.18-t)*1.55;
-      }
-      r += Math.max(0,2.4-lateral)*.32;
-      r += Math.max(0,7.5-forward)*.045;
-      if(r>.18) hot.push({o,r,t,forward,lateral});
-      risk += r;
-    }
-
-    hot.sort((a,b)=>b.r-a.r);
-    return {risk,count:hot.length,hot};
-  }
-
-  // v5.36: while evading, check the chosen path for a secondary observer threat.
-  function secondaryThreat536(p,si,target,observers){
-    if(!target || !observers || !observers.length) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return null;
-
-    const vx=target.x-p.x, vy=target.y-p.y;
-    const len=Math.hypot(vx,vy);
-    if(len<.01) return null;
-
-    let worst=null, worstScore=0;
-    for(const o of observers){
-      const pr=predictedObserver530(o,.34);
-      const wx=pr.x-p.x, wy=pr.y-p.y;
-      const t=Math.max(0,Math.min(1,(wx*vx+wy*vy)/(len*len)));
-      const cx=p.x+vx*t, cy=p.y+vy*t;
-      const miss=Math.hypot(pr.x-cx,pr.y-cy);
-      const along=Math.hypot(cx-p.x,cy-p.y);
-      const score=Math.max(0,1.25-miss) + Math.max(0,5.8-along)*.055;
-      if(score>worstScore){
-        worstScore=score;
-        worst={o,miss,score};
-      }
-    }
-    return worstScore>.34 ? worst : null;
-  }
-
-  function advancedAvoidance536(p,si,now){
-    const nearby=playerPerceivedObservers(p,20.0);
-    if(!nearby || !nearby.length) return null;
-
-    const risk=multiObserverRisk535(p,si,nearby);
-
-    // First preference: keep speed and pass through a legal gap when risk allows it.
-    if(risk.count>=2){
-      const gap=gapPass534(p,si,nearby);
-      if(gap && risk.risk<3.25){
-        const sec=secondaryThreat536(p,si,gap,nearby);
-        if(!sec){
-          return {...gap,risk:risk.risk};
-        }
-      }
-    }
-
-    // Fall back to predictive left/right minimum dodge.
-    const base=predictiveAvoidance533(p,si,now);
-    if(!base) return null;
-
-    // Re-check the selected evade against all other observers.
-    const sec=secondaryThreat536(p,si,base,nearby);
-    if(!sec){
-      return {...base,risk:risk.risk};
-    }
-
-    // If the first dodge has a secondary threat, try the opposite side.
-    const threat=sec.o;
-    const left=minimumDodge532(p,si,threat,-1);
-    const right=minimumDodge532(p,si,threat,1);
-    const options=[left,right].filter(Boolean);
-    let best=null, bestScore=Infinity;
-
-    for(const c of options){
-      const sec2=secondaryThreat536(p,si,c,nearby);
-      const penalty=sec2 ? 5.0+sec2.score*3.0 : 0;
-      const score=Math.hypot(c.x-p.x,c.y-p.y)+Math.abs(c.lateral)*.30+penalty;
-      if(score<bestScore){
-        bestScore=score;
-        best=c;
-      }
-    }
-
-    if(best){
-      return {...best,kind:"secondary-safe-536",risk:risk.risk};
-    }
-    return {...base,kind:"fallback-predictive-536",risk:risk.risk};
-  }
-
-
-  // v5.39 OBSERVER AVOIDANCE 2.0 FINAL (v5.37~v5.39)
-
-  // v5.37: once the immediate collision risk is gone, return to the current
-  // Racing Line 3.0 target immediately instead of lingering in an evade lane.
-  function racingLineRejoin537(p,si,now){
-    if(now<(p.predictiveEvadeUntil533||0)) return null;
-    const risk=multiObserverRisk535(p,si,playerPerceivedObservers(p,15.0));
-    if(risk.risk>.52 || risk.count>0) return null;
-
-    const r=racingLine529(p,si,now);
-    if(!r) return null;
-
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const dx=r.x-p.x, dy=r.y-p.y;
-    let forward=dx*s.ux+dy*s.uy;
-    let lateral=dx*s.nx+dy*s.ny;
-
-    // Rejoin progressively: fast enough to recover the racing line, but without
-    // a full-road snap after a dodge.
-    forward=Math.max(3.5,Math.min(7.0,forward));
-    lateral=Math.max(-1.05,Math.min(1.05,lateral));
-
-    const x=p.x+s.ux*forward+s.nx*lateral;
-    const y=p.y+s.uy*forward+s.ny*lateral;
-    if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) return null;
-    return {x,y,kind:"racing-rejoin-537"};
-  }
-
-  // v5.38: suppress over-avoidance. A dodge must be proportional to actual risk.
-  function suppressOverAvoidance538(p,si,avoid,riskValue){
-    if(!avoid) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return avoid;
-
-    const dx=avoid.x-p.x, dy=avoid.y-p.y;
-    let forward=dx*s.ux+dy*s.uy;
-    let lateral=dx*s.nx+dy*s.ny;
-
-    const risk=Math.max(0,Math.min(4,riskValue||0));
-    const maxLat = risk<.85 ? .72 :
-                   risk<1.55 ? 1.02 :
-                   risk<2.40 ? 1.28 : 1.52;
-    const maxForward = risk<.85 ? 5.2 :
-                       risk<1.55 ? 5.8 :
-                       risk<2.40 ? 6.4 : 7.0;
-
-    lateral=Math.max(-maxLat,Math.min(maxLat,lateral));
-    forward=Math.max(3.0,Math.min(maxForward,forward));
-
-    const x=p.x+s.ux*forward+s.nx*lateral;
-    const y=p.y+s.uy*forward+s.ny*lateral;
-    if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) return avoid;
-    return {...avoid,x,y,lateral,forward,kind:(avoid.kind||"avoid")+"-limited538"};
-  }
-
-  // v5.39: integrated Avoidance 2.0 authority.
-  function observerAvoidance539(p,si,now){
-    const nearby=playerPerceivedObservers(p,20.0);
-    const risk=multiObserverRisk535(p,si,nearby);
-
-    // If danger is gone, give route authority straight back to Racing Line 3.0.
-    if(risk.risk<.52 && risk.count===0){
-      const rejoin=racingLineRejoin537(p,si,now);
-      if(rejoin) return {...rejoin,risk:risk.risk,evading:false};
-      return null;
-    }
-
-    // Multi-observer / gap / secondary-threat logic from v5.36.
-    const base=advancedAvoidance536(p,si,now);
-    if(!base) return null;
-
-    // Final anti-overavoidance clamp.
-    const limited=suppressOverAvoidance538(p,si,base,risk.risk);
-    return {...limited,risk:risk.risk,evading:true,kind:(limited.kind||"avoid")+"-539"};
-  }
-
-
-  // v5.40 STOP/STUTTER FIX
-  // Avoidance 2.0 is the sole avoidance authority while active, and racers retain
-  // forward momentum unless an actual lethal/emergency condition requires otherwise.
-  function minimumForward540(p,si,moveDirX,moveDirY,speedMul){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return {x:moveDirX,y:moveDirY,speedMul};
-
-    const risk=p.multiObserverRisk535||0;
-    const emergency=(p.controlMode==="hard" || p.controlMode==="break" || risk>3.0);
-
-    let vx=moveDirX, vy=moveDirY;
-    let forward=vx*s.ux+vy*s.uy;
-    let lateral=vx*s.nx+vy*s.ny;
-
-    if(!emergency){
-      const minForward = p.avoidance2Owns540 ? .72 : .82;
-      if(forward<minForward){
-        forward=minForward;
-        const mag=Math.hypot(forward,lateral)||1;
-        forward/=mag;
-        lateral/=mag;
-        vx=s.ux*forward+s.nx*lateral;
-        vy=s.uy*forward+s.ny*lateral;
-      }
-      speedMul=Math.max(speedMul,p.avoidance2Owns540 ? .82 : .88);
-    }
-
-    return {x:vx,y:vy,speedMul};
-  }
-
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -6752,7 +6421,7 @@ function updatePlayer(p, now, dt){
     // v4.67 unified survival/racing policy. The avoidance planner still detects danger,
     // but its route is scored against the optimized racing line and large exterior arcs
     // are suppressed unless the predicted collision risk is genuinely severe.
-    const avoid = p.avoidance2Owns540 ? null : chooseAvoidance(p,s,now);
+    const avoid=chooseAvoidance(p,s,now);
     if(avoid){
       if(avoid.mode==="stop"){
         speedMul*=.72;
@@ -7063,25 +6732,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
       }
     }
 
-    // v5.37~v5.39 Observer Avoidance 2.0 final integration.
-    const avoid539=observerAvoidance539(p,si,now);
-    p.avoidance2Owns540=false;
-    if(avoid539){
-      tx=avoid539.x;
-      ty=avoid539.y;
-      p.routeSource523=avoid539.kind;
-      p.multiObserverRisk535=avoid539.risk||0;
-      p.avoidance2Owns540=true;
-      if(avoid539.evading){
-        p.predictiveEvadeUntil533=now+240;
-        liveEvade=true;
-      }else{
-        liveEvade=false;
-      }
-    }else{
-      p.multiObserverRisk535=0;
-    }
-
     // v5.16 ROUTE -> STEERING separation.
     // Everything above chooses the route target. Only steeringTarget516 is allowed
     // to turn that route decision into the local movement target.
@@ -7330,15 +6980,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.17 debug HUD data uses the actual final movement vector.
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
-    const motion540=minimumForward540(p,si,moveDirX,moveDirY,speedMul);
-    moveDirX=motion540.x;
-    moveDirY=motion540.y;
-    speedMul=motion540.speedMul;
-    const move540=Math.min(Math.max(0,p.speed*speedMul*dt/1000),Math.max(move,0.01));
-    p.lastMoveVX531=moveDirX*Math.max(0,p.speed*speedMul);
-    p.lastMoveVY531=moveDirY*Math.max(0,p.speed*speedMul);
-    p.x += moveDirX*move540;
-    p.y += moveDirY*move540;
+    p.x += moveDirX*move;
+    p.y += moveDirY*move;
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
