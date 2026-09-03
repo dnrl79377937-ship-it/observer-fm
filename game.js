@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.09";
+  const BUILD_ID = "v5.13";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5534,6 +5534,55 @@ function farthestVisibleFastTarget91(p,si){
     return best;
   }
 
+
+  // v5.13 INTEGRATED STABILITY (v5.10~v5.13)
+  function stabilizeTarget513(p,si,now,tx,ty,liveEvade){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s || liveEvade || p.controlMode!=="normal") return {x:tx,y:ty};
+    let dx=tx-p.x, dy=ty-p.y;
+    let forward=dx*s.ux+dy*s.uy;
+    let lateral=dx*s.nx+dy*s.ny;
+
+    // v5.10: separate forward and lateral movement radius.
+    const maxForward=Math.max(6.0,Math.min(10.0,s.L*.72));
+    const maxLateral=Math.max(.75,Math.min(1.85,widths[si]*.18));
+    forward=Math.max(2.0,Math.min(maxForward,forward));
+    lateral=Math.max(-maxLateral,Math.min(maxLateral,lateral));
+
+    // v5.13: straight-road stability; strongly suppress lane hunting.
+    const next=segs[Math.min(segs.length-1,si+1)];
+    const turn=next ? Math.abs(s.ux*next.uy-s.uy*next.ux) : 0;
+    if(turn<.055){
+      const currentOff=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
+      const desiredLat=Math.max(-.70,Math.min(.70,-currentOff*.22));
+      lateral=lateral*.22+desiredLat*.78;
+    }
+
+    // v5.12: suppress rapid left-right-left direction flips.
+    const sign=Math.abs(lateral)>.12 ? Math.sign(lateral) : 0;
+    if(!Number.isFinite(p.stableLatSign513)) p.stableLatSign513=sign;
+    if(!Number.isFinite(p.stableLatFlipAt513)) p.stableLatFlipAt513=0;
+    if(sign && p.stableLatSign513 && sign!==p.stableLatSign513){
+      if(now-p.stableLatFlipAt513<520) lateral*=.18;
+      else { p.stableLatFlipAt513=now; p.stableLatSign513=sign; }
+    }else if(sign) p.stableLatSign513=sign;
+
+    let candX=p.x+s.ux*forward+s.nx*lateral;
+    let candY=p.y+s.uy*forward+s.ny*lateral;
+
+    // v5.11: commit to a recent legal target briefly instead of retargeting every frame.
+    const held=Number.isFinite(p.stableTargetX513)&&Number.isFinite(p.stableTargetY513);
+    if(held && now<(p.stableTargetUntil513||0)){
+      const hd=Math.hypot(p.stableTargetX513-p.x,p.stableTargetY513-p.y);
+      if(hd>2.2 && roadChordLegal507(p.x,p.y,p.stableTargetX513,p.stableTargetY513,ROUTE_PLAN_EXTRA)){
+        candX=p.stableTargetX513; candY=p.stableTargetY513;
+      }
+    }else if(roadChordLegal507(p.x,p.y,candX,candY,ROUTE_PLAN_EXTRA)){
+      p.stableTargetX513=candX; p.stableTargetY513=candY; p.stableTargetUntil513=now+360;
+    }
+    return {x:candX,y:candY};
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -6065,6 +6114,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
       ty=broad507.y;
     }
 
+    const stable513=stabilizeTarget513(p,si,now,tx,ty,liveEvade);
+    tx=stable513.x; ty=stable513.y;
+
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
     // the virtual mouse consumes the planner output. Diagnostic only; no steering changes.
     recordAiBlackboxSample(p,now,tx,ty);
@@ -6181,8 +6233,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
        now>=(p.hardRouteLockUntil||0) &&
        now>=(p.routeBreakCombatUntil||0) &&
        p.controlMode==="normal"){
-      tx=broad507.x;
-      ty=broad507.y;
+      // v5.13: keep the stabilized local target instead of restoring the far raw target.
       p.mouseTargetX=tx;
       p.mouseTargetY=ty;
     }
@@ -6195,7 +6246,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(localSeg){
       const forward=dx*localSeg.ux+dy*localSeg.uy;
       let lateral=dx*localSeg.nx+dy*localSeg.ny;
-      const maxLat=Math.max(1.15,Math.min(2.35,widths[si]*.22));
+      const maxLat=Math.max(.80,Math.min(1.75,widths[si]*.17));
       lateral=Math.max(-maxLat,Math.min(maxLat,lateral));
       dx=localSeg.ux*forward+localSeg.nx*lateral;
       dy=localSeg.uy*forward+localSeg.ny*lateral;
