@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.39";
+  const BUILD_ID = "v5.40";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6472,6 +6472,37 @@ function farthestVisibleFastTarget91(p,si){
     return {...limited,risk:risk.risk,evading:true,kind:(limited.kind||"avoid")+"-539"};
   }
 
+
+  // v5.40 STOP/STUTTER FIX
+  // Avoidance 2.0 is the sole avoidance authority while active, and racers retain
+  // forward momentum unless an actual lethal/emergency condition requires otherwise.
+  function minimumForward540(p,si,moveDirX,moveDirY,speedMul){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return {x:moveDirX,y:moveDirY,speedMul};
+
+    const risk=p.multiObserverRisk535||0;
+    const emergency=(p.controlMode==="hard" || p.controlMode==="break" || risk>3.0);
+
+    let vx=moveDirX, vy=moveDirY;
+    let forward=vx*s.ux+vy*s.uy;
+    let lateral=vx*s.nx+vy*s.ny;
+
+    if(!emergency){
+      const minForward = p.avoidance2Owns540 ? .72 : .82;
+      if(forward<minForward){
+        forward=minForward;
+        const mag=Math.hypot(forward,lateral)||1;
+        forward/=mag;
+        lateral/=mag;
+        vx=s.ux*forward+s.nx*lateral;
+        vy=s.uy*forward+s.ny*lateral;
+      }
+      speedMul=Math.max(speedMul,p.avoidance2Owns540 ? .82 : .88);
+    }
+
+    return {x:vx,y:vy,speedMul};
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -6701,7 +6732,7 @@ function updatePlayer(p, now, dt){
     // v4.67 unified survival/racing policy. The avoidance planner still detects danger,
     // but its route is scored against the optimized racing line and large exterior arcs
     // are suppressed unless the predicted collision risk is genuinely severe.
-    const avoid=chooseAvoidance(p,s,now);
+    const avoid = p.avoidance2Owns540 ? null : chooseAvoidance(p,s,now);
     if(avoid){
       if(avoid.mode==="stop"){
         speedMul*=.72;
@@ -7014,11 +7045,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v5.37~v5.39 Observer Avoidance 2.0 final integration.
     const avoid539=observerAvoidance539(p,si,now);
+    p.avoidance2Owns540=false;
     if(avoid539){
       tx=avoid539.x;
       ty=avoid539.y;
       p.routeSource523=avoid539.kind;
       p.multiObserverRisk535=avoid539.risk||0;
+      p.avoidance2Owns540=true;
       if(avoid539.evading){
         p.predictiveEvadeUntil533=now+240;
         liveEvade=true;
@@ -7277,10 +7310,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.17 debug HUD data uses the actual final movement vector.
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
+    const motion540=minimumForward540(p,si,moveDirX,moveDirY,speedMul);
+    moveDirX=motion540.x;
+    moveDirY=motion540.y;
+    speedMul=motion540.speedMul;
+    const move540=Math.min(Math.max(0,p.speed*speedMul*dt/1000),Math.max(move,0.01));
     p.lastMoveVX531=moveDirX*Math.max(0,p.speed*speedMul);
     p.lastMoveVY531=moveDirY*Math.max(0,p.speed*speedMul);
-    p.x += moveDirX*move;
-    p.y += moveDirY*move;
+    p.x += moveDirX*move540;
+    p.y += moveDirY*move540;
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
