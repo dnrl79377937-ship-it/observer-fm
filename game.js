@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v5.16";
+  const BUILD_ID = "v5.19";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -774,7 +774,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     lastTs=now;
     simAccumulator=0;
     if(pauseBtn){pauseBtn.textContent="⏸ 일시정지";pauseBtn.classList.remove("paused");}
-    raf=requestAnimationFrame(loop);
+    raf=drawDebugHud519(ctx);
+    requestAnimationFrame(loop);
   }
 
   function start(){
@@ -5669,6 +5670,86 @@ function farthestVisibleFastTarget91(p,si){
     return second;
   }
 
+
+  // v5.19 INTEGRATED DIAGNOSTICS + STABILITY (v5.17~v5.19)
+
+  function driveMode519(p,liveEvade,now){
+    if(liveEvade) return "EVADE";
+    if(now<(p.hardRouteLockUntil||0)) return "HARD";
+    if(now<(p.routeBreakCombatUntil||0)) return "BREAK";
+    if(p.controlMode && p.controlMode!=="normal") return String(p.controlMode).toUpperCase();
+    return "CALM";
+  }
+
+  function recordDriveDebug519(p,si,now,routeTarget,steerTarget,moveX=0,moveY=0,liveEvade=false){
+    p.debug519={
+      seg:si,
+      mode:driveMode519(p,liveEvade,now),
+      rx:routeTarget?.x ?? p.x,
+      ry:routeTarget?.y ?? p.y,
+      sx:steerTarget?.x ?? p.x,
+      sy:steerTarget?.y ?? p.y,
+      mx:moveX,
+      my:moveY,
+      t:now,
+      anomalies:p.anomalyCount519||0
+    };
+  }
+
+  function detectAnomaly519(p,si,now,tx,ty,moveX,moveY){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return;
+
+    const dx=tx-p.x, dy=ty-p.y;
+    const targetDist=Math.hypot(dx,dy);
+    const lateralTarget=Math.abs(dx*s.nx+dy*s.ny);
+    const lateralMove=Math.abs(moveX*s.nx+moveY*s.ny);
+
+    let reason="";
+    if(targetDist>13.5) reason="FAR_TARGET";
+    else if(lateralTarget>2.4) reason="WIDE_TARGET";
+    else if(lateralMove>.82) reason="WIDE_MOVE";
+
+    const prev=p.lastMoveSign519||0;
+    const cur=Math.abs(lateralMove)>.12 ? Math.sign(moveX*s.nx+moveY*s.ny) : 0;
+    if(!reason && prev && cur && prev!==cur && now-(p.lastMoveFlip519||0)<420){
+      reason="RAPID_FLIP";
+    }
+
+    if(cur && prev && cur!==prev) p.lastMoveFlip519=now;
+    if(cur) p.lastMoveSign519=cur;
+
+    if(reason){
+      p.anomalyCount519=(p.anomalyCount519||0)+1;
+      p.lastAnomaly519={reason,seg:si,x:p.x,y:p.y,tx,ty,t:now};
+      p.anomalyUntil519=now+900;
+    }
+  }
+
+
+  function drawDebugHud519(ctx){
+    const p=players && players.length ? players[0] : null;
+    if(!p || !p.debug519) return;
+    const d=p.debug519;
+    ctx.save();
+    ctx.globalAlpha=.90;
+    ctx.fillStyle="rgba(0,0,0,.68)";
+    ctx.fillRect(8,8,260,92);
+    ctx.fillStyle="#fff";
+    ctx.font="12px monospace";
+    ctx.textBaseline="top";
+    ctx.fillText("v5.19 DRIVE DEBUG",16,14);
+    ctx.fillText("P1 seg "+d.seg+"  mode "+d.mode+"  anomaly "+d.anomalies,16,31);
+    ctx.fillText("route "+d.rx.toFixed(1)+","+d.ry.toFixed(1),16,48);
+    ctx.fillText("steer "+d.sx.toFixed(1)+","+d.sy.toFixed(1),16,64);
+    ctx.fillText("move  "+d.mx.toFixed(2)+","+d.my.toFixed(2),16,80);
+    if((p.anomalyUntil519||0)>performance.now() && p.lastAnomaly519){
+      ctx.fillStyle="#ffdf6b";
+      ctx.fillText("! "+p.lastAnomaly519.reason,178,31);
+    }
+    ctx.restore();
+  }
+
 function updatePlayer(p, now, dt){
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
@@ -6208,6 +6289,22 @@ targetOff=clampRoadOffset(si,targetOff,p);
     tx=steerTarget516.x;
     ty=steerTarget516.y;
 
+    // v5.19: after an abnormal move, briefly shrink the next steering target
+    // instead of letting a second large correction compound the mistake.
+    if(now<(p.anomalyUntil519||0) && !liveEvade){
+      const s519=segs[Math.max(0,Math.min(segs.length-1,si))];
+      const dx519=tx-p.x, dy519=ty-p.y;
+      const f519=dx519*s519.ux+dy519*s519.uy;
+      let l519=dx519*s519.nx+dy519*s519.ny;
+      l519=Math.max(-.72,Math.min(.72,l519));
+      const ff519=Math.max(2.0,Math.min(6.5,f519));
+      tx=p.x+s519.ux*ff519+s519.nx*l519;
+      ty=p.y+s519.uy*ff519+s519.ny*l519;
+    }
+
+    // v5.17: capture route-vs-steering authority before movement.
+    recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,0,0,liveEvade);
+
     // v4.59.9 AI DEATH BLACKBOX: sample what the racer actually sees/decides before
     // the virtual mouse consumes the planner output. Diagnostic only; no steering changes.
     recordAiBlackboxSample(p,now,tx,ty);
@@ -6425,6 +6522,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const step=p.speed*speedMul*dt/1000;
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
+
+    // v5.18: abnormal-driving detector.
+    detectAnomaly519(p,si,now,tx,ty,moveDirX,moveDirY);
+
+    // v5.17 debug HUD data uses the actual final movement vector.
+    recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
+
     p.x += moveDirX*move;
     p.y += moveDirY*move;
 
