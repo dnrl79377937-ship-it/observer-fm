@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.99";
+  const BUILD_ID = "v7.09";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8191,6 +8191,178 @@ function farthestVisibleFastTarget91(p,si){
     }
   }
 
+
+  // ============================================================
+  // v7.09 Race Engine 10.0 FINAL (v7.00 ~ v7.09)
+  // Single authoritative calm-racing geometry layer.
+  // Observer survival / Racecraft remain higher-priority tactical systems.
+  // ============================================================
+
+  // v7.00: authoritative core registry. Old helpers stay available for compatibility,
+  // but final calm movement is resolved only through raceEngine1000.
+  const RACE_CORE_700={
+    engine:"RaceEngine10", geometry:"SMapGeometry3", line:"RacingLine6",
+    transition:"SegmentTransition3", boundary:"RoadBoundary3"
+  };
+
+  // v7.01 Segment Transition 3.0
+  function segmentTransition701(p,si,target){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+    const along=(p.x-s.a[0])*s.ux+(p.y-s.a[1])*s.uy;
+    const remain=s.L-along;
+    if(si>=segs.length-1){
+      const f=route[route.length-1];
+      return {x:f[0],y:f[1],kind:"finish-transition701"};
+    }
+    if(remain<=5.4){
+      const n=segs[si+1],push=Math.max(1.25,Math.min(2.8,n.L*.14));
+      const q={x:s.b[0]+n.ux*push,y:s.b[1]+n.uy*push,kind:"segment-transition701"};
+      return finalRoadTarget636(p,si,q)||target;
+    }
+    return target;
+  }
+
+  // v7.02: actual corrected S-map corner geometry.
+  const CORNERS702=[
+    {x:128,y:132.8,inSeg:3,outSeg:4,half:8.45},
+    {x:128,y:74,inSeg:7,outSeg:8,half:8.35},
+    {x:44,y:74,inSeg:12,outSeg:13,half:7.55},
+    {x:44,y:23.5,inSeg:16,outSeg:17,half:7.55}
+  ];
+  function cornerGeometry702(si){
+    return CORNERS702.find(c=>si===c.inSeg||si===c.outSeg)||null;
+  }
+
+  // v7.03 ability-dependent apex precision. High skill hugs the legal apex;
+  // lower skill misses by a small amount, never by choosing a slower macro route.
+  function apexPrecision703(p,si,now){
+    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)],c=cornerGeometry702(si);
+    if(!s||!n||!c||si!==c.inSeg) return null;
+    const turn=s.ux*n.uy-s.uy*n.ux;if(Math.abs(turn)<.1)return null;
+    const a=driverAbilityBase645(p),de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
+    if(de>12.5)return null;
+    const sign=turn>0?1:-1;
+    const skill=Math.max(.45,Math.min(.98,a.corner*.58+a.line*.42));
+    const miss=(1-skill)*.62;
+    const phase=Math.max(0,Math.min(1,1-de/12.5)),sm=phase*phase*(3-2*phase);
+    const lat=sign*c.half*Math.max(.22,Math.min(.70,.26+.44*sm-miss*.12));
+    const f=Math.max(2.8,Math.min(6.0,de*.50+1.55));
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*f+s.nx*lat,y:p.y+s.uy*f+s.ny*lat,kind:"apex703"
+    });
+  }
+
+  // v7.04: after crossing an apex, converge to the shortest exit chord quickly.
+  function cornerExit704(p,si,now){
+    const c=cornerGeometry702(si),s=segs[si];
+    if(!c||!s||si!==c.outSeg)return null;
+    const from=Math.hypot(p.x-c.x,p.y-c.y);
+    if(from>9.5)return null;
+    const rx=p.x-s.a[0],ry=p.y-s.a[1],lat=rx*s.nx+ry*s.ny;
+    const decay=Math.max(.12,Math.min(.48,from/9.5*.42));
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*5.5-s.nx*lat*decay,
+      y:p.y+s.uy*5.5-s.ny*lat*decay,kind:"corner-exit704"
+    });
+  }
+
+  // v7.05: stable shortest straight, eliminating needless left/right correction.
+  function straightOptimization705(p,si){
+    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)];
+    if(!s)return null;
+    const turn=n?s.ux*n.uy-s.uy*n.ux:0;
+    const de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
+    if(Math.abs(turn)>=.1&&de<13)return null;
+    const rx=p.x-s.a[0],ry=p.y-s.a[1],lat=rx*s.nx+ry*s.ny;
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*Math.max(4.4,Math.min(7.2,de*.58+2.0))-s.nx*lat*.16,
+      y:p.y+s.uy*Math.max(4.4,Math.min(7.2,de*.58+2.0))-s.ny*lat*.16,
+      kind:"straight-opt705"
+    });
+  }
+
+  // v7.06: final corner -> finish uses one stable legal shortest approach.
+  function finishApproach706(p,si){
+    if(si<17)return null;
+    const s=segs[si];if(!s)return null;
+    const fin=route[route.length-1];
+    if(si===segs.length-1)
+      return finalRoadTarget636(p,si,{x:fin[0],y:fin[1],kind:"finish706"});
+    const rx=p.x-s.a[0],ry=p.y-s.a[1],lat=rx*s.nx+ry*s.ny;
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*6.2-s.nx*lat*.18,y:p.y+s.uy*6.2-s.ny*lat*.18,kind:"finish-approach706"
+    });
+  }
+
+  // v7.07: same physical spawn, but initial micro-line identity unfolds smoothly.
+  function startLaunch707(p,si,now){
+    if(si>1||currentProgress(p)>20)return null;
+    const s=segs[si];if(!s)return null;
+    const ability=driverAbilityBase645(p);
+    const sig=Math.max(-.62,Math.min(.62,(p.openingLineBias||0)*.48));
+    const settle=Math.max(0,Math.min(1,currentProgress(p)/18));
+    const lat=sig*(1-settle*.55)*(1.08-ability.line*.18);
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*5.4+s.nx*lat,y:p.y+s.uy*5.4+s.ny*lat,kind:"start-launch707"
+    });
+  }
+
+  // v7.08: strict road legality while preserving the legal in-course edge.
+  function roadBoundary708(p,si,t){
+    if(!t)return null;
+    let q=finalRoadTarget636(p,si,t);
+    if(!q)return strictInside620(p,si,gameNow());
+    if(!courseContainsPoint(q.x,q.y,0)||!lineStaysOnCourse(p.x,p.y,q.x,q.y,0)){
+      q=clampVisualRoad674(p,si,q)||strictInside620(p,si,gameNow());
+    }
+    return q?finalRoadTarget636(p,si,q):null;
+  }
+
+  function calmRacingLine709(p,si,now){
+    let t=startLaunch707(p,si,now);
+    if(!t)t=finishApproach706(p,si);
+    if(!t)t=cornerExit704(p,si,now);
+    if(!t)t=apexPrecision703(p,si,now);
+    if(!t)t=straightOptimization705(p,si);
+    if(!t)t=racingLine576(p,si,now);
+    t=segmentTransition701(p,si,t);
+    return roadBoundary708(p,si,t);
+  }
+
+  function raceEngine1000(p,si,now){
+    // Priority:
+    // road -> observer survival -> minimum dodge -> shortest racing line
+    // -> racecraft -> smooth rejoin -> driver execution -> final road/endpoint safety.
+    const threat=falseThreatFilter482(p,collisionTTC479(p));
+    let t=observerAvoidance483(p,si,now);
+    const avoiding=!!t&&/avoidance4/.test(t.kind||"");
+
+    if(!t){
+      const rejoin=smoothRejoin483(p,si,now);
+      t=rejoin||calmRacingLine709(p,si,now)||survivalRacingAI435(p,si,now);
+    }
+
+    if(!threat&&!avoiding){
+      const rc=racecraft590(p,si,now);
+      if(rc)t=rc;
+    }
+
+    t=westToUpperClimbGuard635(p,si,t);
+    t=executionDifference660(p,si,now,t,!!threat);
+    t=pressureConsistency694(p,now,t,threat?"avoid":"race");
+    t=preventSlowMacroRoute659(p,si,now,t,!!threat);
+
+    // Tactical targets keep their intent; calm targets are normalized by Engine 10.
+    const tactical=t&&/racecraft|overtake|traffic|avoidance/i.test(t.kind||"");
+    if(!threat&&!tactical)t=calmRacingLine709(p,si,now)||t;
+
+    t=segmentTransition701(p,si,t);
+    t=roadBoundary708(p,si,t);
+    if(t)p._lastRaceTargetKind699=t.kind||"race1000";
+    return t;
+  }
+
   function raceEngine999(p,si,now){
     // 1 road legality -> 2 observer prediction -> 3 minimum survival dodge
     // -> 4 shortest inside -> 5 opponent prediction/racecraft
@@ -8218,7 +8390,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function raceAI769(p,si,now){
-    return raceEngine999(p,si,now);
+    return raceEngine1000(p,si,now);
   }
 
   function auditedRaceTarget636(p,si,now){
