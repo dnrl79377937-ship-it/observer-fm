@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.72";
+  const BUILD_ID = "v6.77";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7522,6 +7522,115 @@ function farthestVisibleFastTarget91(p,si){
     return t;
   }
 
+
+  // v6.73~v6.77 Road Geometry / Visual Road / Racing Line 5.0
+  function roadGeometryAudit673(si){
+    const data=[
+      ["h",132.8,8.9],["h",132.8,8.9],["h",132.8,8.9],["h",132.8,8.9],
+      ["v",128,8.6],["v",128,8.6],["v",128,8.6],["v",128,8.6],
+      ["h",74,8.7],["h",74,8.7],["h",74,8.7],["h",74,8.7],["h",74,8.7],
+      ["v",44,7.7],["v",44,7.7],["v",44,7.7],["v",44,7.7],
+      ["h",23.5,8.3],["h",23.5,8.3],["h",23.5,8.3],["h",23.5,8.3]
+    ];
+    const d=data[Math.max(0,Math.min(data.length-1,si))];
+    return d?{axis:d[0],center:d[1],half:d[2]}:null;
+  }
+
+  function visualRoadMask674(x,y,si){
+    if(!courseContainsPoint(x,y,0)) return false;
+    if(y>=123.2&&y<=142.2&&x>=20.5&&x<=130.5) return true;
+    if(x>=119&&x<=137&&y>=72&&y<=134) return true;
+    if(y>=64.8&&y<=83.2&&x>=43&&x<=130) return true;
+    if(x>=36.2&&x<=51.8&&y>=22&&y<=75.5) return true;
+    if(y>=15&&y<=32.2&&x>=42&&x<=144.2) return true;
+    for(const c of [[128,132.8,12],[128,74,11.5],[44,74,10.5],[44,23.5,10.5]])
+      if(Math.hypot(x-c[0],y-c[1])<=c[2]) return true;
+    return false;
+  }
+
+  function lineStaysVisualRoad674(x0,y0,x1,y1,si){
+    const n=Math.max(4,Math.ceil(Math.hypot(x1-x0,y1-y0)/1.1));
+    for(let i=1;i<=n;i++){
+      const t=i/n,x=x0+(x1-x0)*t,y=y0+(y1-y0)*t;
+      if(!visualRoadMask674(x,y,si)) return false;
+    }
+    return true;
+  }
+
+  function clampVisualRoad674(p,si,t){
+    if(!t) return null;
+    if(visualRoadMask674(t.x,t.y,si)&&lineStaysVisualRoad674(p.x,p.y,t.x,t.y,si)) return t;
+    for(let k=19;k>=2;k--){
+      const q=k/20,x=p.x+(t.x-p.x)*q,y=p.y+(t.y-p.y)*q;
+      if(visualRoadMask674(x,y,si)&&lineStaysVisualRoad674(p.x,p.y,x,y,si))
+        return {...t,x,y,kind:(t.kind||"target")+"-visual674"};
+    }
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return null;
+    for(const f of [2.8,2,1.2,.7]){
+      const x=p.x+s.ux*f,y=p.y+s.uy*f;
+      if(visualRoadMask674(x,y,si)) return {x,y,kind:"visual-fallback674"};
+    }
+    return null;
+  }
+
+  function cornerInsideLimit675(p,si,t){
+    if(!t) return null;
+    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)];
+    if(!s||!n) return clampVisualRoad674(p,si,t);
+    const turn=s.ux*n.uy-s.uy*n.ux;
+    if(Math.abs(turn)<.1) return clampVisualRoad674(p,si,t);
+    const audit=roadGeometryAudit673(si);
+    const half=Math.max(3.2,Math.min((widths[si]||14)*.48,audit?.half||7.5));
+    const sign=turn>0?1:-1,rx=t.x-p.x,ry=t.y-p.y;
+    const f=rx*s.ux+ry*s.uy;
+    let lat=rx*s.nx+ry*s.ny;
+    if(lat*sign>half*.76) lat=sign*half*.76;
+    return clampVisualRoad674(p,si,{...t,x:p.x+s.ux*f+s.nx*lat,y:p.y+s.uy*f+s.ny*lat,kind:(t.kind||"target")+"-limit675"});
+  }
+
+  function racingLine576(p,si,now){
+    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)];
+    if(!s) return null;
+    const turn=n?s.ux*n.uy-s.uy*n.ux:0;
+    const de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
+    let f=Math.max(3.8,Math.min(8.2,de*.62+2.1)),lat=0;
+    if(Math.abs(turn)>=.1){
+      const sign=turn>0?1:-1,a=roadGeometryAudit673(si);
+      const half=Math.max(3.2,Math.min((widths[si]||14)*.48,a?.half||7.5));
+      const phase=Math.max(0,Math.min(1,1-de/13)),smooth=phase*phase*(3-2*phase);
+      lat=sign*half*(.18+.50*smooth); f=Math.max(3.4,Math.min(7,de*.58+1.8));
+    }else{
+      const rx=p.x-s.a[0],ry=p.y-s.a[1]; lat=(rx*s.nx+ry*s.ny)*.20;
+    }
+    return cornerInsideLimit675(p,si,{x:p.x+s.ux*f+s.nx*lat,y:p.y+s.uy*f+s.ny*lat,kind:"racingline5-676"});
+  }
+
+  function microLineOptimization677(p,si,t){
+    if(!t) return null;
+    const s=segs[si]; if(!s) return t;
+    let best=null,score=Infinity;
+    for(const d of [-.42,-.28,-.14,0,.14,.28,.42]){
+      const c=clampVisualRoad674(p,si,{...t,x:t.x+s.nx*d,y:t.y+s.ny*d,kind:"micro677"});
+      if(!c) continue;
+      const travel=Math.hypot(c.x-p.x,c.y-p.y),prog=(c.x-p.x)*s.ux+(c.y-p.y)*s.uy;
+      const sc=travel-prog*.93+Math.abs(d)*.025;
+      if(sc<score){score=sc;best=c;}
+    }
+    return best||t;
+  }
+
+  function roadRacing577(p,si,now,t,threat){
+    if(!threat){
+      const rl=racingLine576(p,si,now);
+      const tactical=t&&/racecraft|overtake|traffic/i.test(t.kind||"");
+      if(rl&&!tactical) t=rl;
+    }
+    t=cornerInsideLimit675(p,si,t);
+    t=microLineOptimization677(p,si,t);
+    return clampVisualRoad674(p,si,t);
+  }
+
   function raceAI769(p,si,now){
     sanitizeRaceState666(p);
     const threat=collisionTTC622(p);
@@ -7535,6 +7644,7 @@ function farthestVisibleFastTarget91(p,si){
     t=westToUpperClimbGuard635(p,si,t);
     t=executionDifference660(p,si,now,t,!!threat);
     t=preventSlowMacroRoute659(p,si,now,t,!!threat);
+    t=roadRacing577(p,si,now,t,!!threat);
     return finalAISafety667(p,si,t);
   }
 
@@ -8397,6 +8507,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     enforcePhysicalRoad636(p);
     enforceProtectedClimb635(p);
     enforcePhysicalRoad636(p);
+    if(visualRoadMask674(p.x,p.y,p.seg||0)){
+      p._lastVisualLegal674={x:p.x,y:p.y};
+    }else if(p._lastVisualLegal674){
+      p.x=p._lastVisualLegal674.x;p.y=p._lastVisualLegal674.y;
+    }
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
