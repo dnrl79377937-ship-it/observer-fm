@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.56";
+  const BUILD_ID = "v6.69";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -721,6 +721,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];
     broadcastFocusId=-1; broadcastFocusUntil=0; previousUiRanks=new Map();
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
+    raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
+    players.forEach(p=>{p._personality657=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -7346,13 +7348,15 @@ function farthestVisibleFastTarget91(p,si){
     const a=driverAbilityBase645(p);
     if(!front||!space||!costInfo) return {allow:false};
 
-    const aggression=aggression649(p);
-    const risk=riskTolerance650(p);
+    const pd=personalityDecision658(p,"overtake");
+    const aggression=Math.max(0,Math.min(1,(aggression649(p)*.55)+(pd.aggression*.45)));
+    const risk=Math.max(0,Math.min(1,(riskTolerance650(p)*.55)+(pd.risk*.45)));
     const quality=a.overtake;
 
-    // Better/aggressive drivers accept smaller positive margins; weak drivers wait.
-    const threshold=1.18-(quality*.22)-(aggression*.10)-(risk*.06);
-    const allow=costInfo.gain>costInfo.cost*threshold && space.score<(9.5+risk*3.0);
+    // Better/aggressive drivers accept smaller positive margins; weak/stable drivers wait.
+    // Personality changes commitment only; target geometry is still handled by shortest-line guards.
+    const threshold=1.20-(quality*.22)-(aggression*.10)-(risk*.06)+(pd.patience*.035);
+    const allow=costInfo.gain>costInfo.cost*threshold && space.score<(9.2+risk*3.1);
     return {allow,threshold};
   }
 
@@ -7372,7 +7376,154 @@ function farthestVisibleFastTarget91(p,si){
     return finalRoadTarget636(p,si,t);
   }
 
-  function auditedRaceTarget636(p,si,now){
+
+  // ============================================================
+  // v6.69 Race AI 7.0 FINAL (v6.57 ~ v6.69)
+  // ============================================================
+
+  function driverPersonality357(p){
+    if(!p._personality657){
+      const profiles=[
+        {name:"balanced", aggression:0.56, risk:0.48, patience:0.62, commitment:0.62},
+        {name:"attacker", aggression:0.80, risk:0.66, patience:0.40, commitment:0.78},
+        {name:"stable", aggression:0.40, risk:0.34, patience:0.80, commitment:0.54},
+        {name:"opportunist", aggression:0.68, risk:0.52, patience:0.58, commitment:0.70},
+        {name:"balanced", aggression:0.58, risk:0.46, patience:0.66, commitment:0.64},
+        {name:"attacker", aggression:0.76, risk:0.62, patience:0.44, commitment:0.75},
+        {name:"stable", aggression:0.38, risk:0.31, patience:0.84, commitment:0.52},
+        {name:"opportunist", aggression:0.64, risk:0.49, patience:0.61, commitment:0.68}
+      ];
+      p._personality657={...profiles[(p.index||0)%profiles.length]};
+    }
+    return p._personality657;
+  }
+
+  function personalityDecision658(p,kind){
+    const ps=driverPersonality357(p);
+    // Personality affects decision timing/commitment only. It never creates a route offset.
+    if(kind==="overtake") return {aggression:ps.aggression,risk:ps.risk,patience:ps.patience,commitment:ps.commitment};
+    if(kind==="avoid") return {risk:Math.min(.72,ps.risk),commitment:Math.max(.56,ps.commitment)};
+    return {commitment:ps.commitment,patience:ps.patience};
+  }
+
+  function preventSlowMacroRoute659(p,si,now,target,threat){
+    if(!target) return null;
+    let t=finalRoadTarget636(p,si,target);
+    if(!t) return null;
+    if(threat) return t; // survival is allowed to spend distance when required.
+
+    const ideal=strictInside620(p,si,now);
+    if(!ideal) return t;
+    const idealSafe=finalRoadTarget636(p,si,ideal);
+    if(!idealSafe) return t;
+
+    const lt=estimatedPathLength528(p,si,t);
+    const li=estimatedPathLength528(p,si,idealSafe);
+    // Personality/ability cannot knowingly choose a materially slower macro line.
+    if(Number.isFinite(lt)&&Number.isFinite(li)&&lt>li+0.82){
+      return {...idealSafe,kind:"macro-shortest659"};
+    }
+    return t;
+  }
+
+  function executionDifference660(p,si,now,target,threat){
+    if(!target) return null;
+    // Skill differences are expressed as precision/reaction/judgment, never raw catch-up speed.
+    let t=driverAbility356(p,si,now,target,threat?"avoid":"race");
+    return preventSlowMacroRoute659(p,si,now,t,threat);
+  }
+
+  let raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
+  function rebuildRaceFrameCache668(now){
+    const active=[];
+    for(const p of players){
+      if(p.done||p.dead) continue;
+      active.push({p,prog:currentProgress(p)});
+    }
+    active.sort((a,b)=>b.prog-a.prog);
+    raceFrameCache668={stamp:now,active,leader:active[0]?.p||null,top:active.slice(0,4)};
+    return raceFrameCache668;
+  }
+
+  function cameraSubject661(now){
+    const cache=(raceFrameCache668.stamp===now)?raceFrameCache668:rebuildRaceFrameCache668(now);
+    return cache.leader;
+  }
+
+  function closeBattleFrame662(leader,cache){
+    if(!leader||!cache||cache.active.length<2) return {x:leader?.x||camX,y:leader?.y||camY,weight:1};
+    const second=cache.active[1];
+    const first=cache.active[0];
+    const gap=Math.abs(first.prog-second.prog);
+    if(gap>=0.70) return {x:leader.x,y:leader.y,weight:1};
+    // Leader stays dominant; P2 only nudges composition.
+    const w2=Math.max(.03,Math.min(.12,(.70-gap)*.15));
+    return {x:leader.x*(1-w2)+second.p.x*w2,y:leader.y*(1-w2)+second.p.y*w2,weight:1};
+  }
+
+  function overtakeFrame663(leader,cache,now,base){
+    if(!leader||!cache) return base;
+    let challenger=null;
+    for(const e of cache.active.slice(0,3)){
+      if(e.p===leader) continue;
+      if((e.p._overtake642Until||0)>now-180){challenger=e.p;break;}
+    }
+    if(!challenger) return base;
+    // Overtake emphasis is modest and may never pull the camera away from P1.
+    return {x:leader.x*.91+challenger.x*.09,y:leader.y*.91+challenger.y*.09,weight:1};
+  }
+
+  function packFrame664(leader,cache,base){
+    if(!leader||!cache||cache.top.length<3) return base;
+    const lp=cache.top[0].prog;
+    const close=cache.top.filter(e=>lp-e.prog<1.45);
+    if(close.length<3) return base;
+    let cx=0,cy=0;
+    for(const e of close){cx+=e.p.x;cy+=e.p.y;}
+    cx/=close.length;cy/=close.length;
+    // Maximum 10% pack influence, so actual P1 remains the camera anchor.
+    return {x:leader.x*.90+cx*.10,y:leader.y*.90+cy*.10,weight:1};
+  }
+
+  function smoothCamera665(dt,tx,ty){
+    const dx=tx-camX,dy=ty-camY;
+    const dist=Math.hypot(dx,dy);
+    const a=Math.min(.22,Math.max(.095,dt*.0062));
+    let sx=dx*a,sy=dy*a;
+    const maxStep=Math.max(1.25,dt*.115);
+    const step=Math.hypot(sx,sy);
+    if(step>maxStep&&step>0){sx*=maxStep/step;sy*=maxStep/step;}
+    // Tiny dead zone prevents camera micro-jitter on nearly tied progress samples.
+    if(dist<.10) return;
+    camX+=sx;camY+=sy;
+  }
+
+  function sanitizeRaceState666(p){
+    if(!p) return false;
+    if(!Number.isFinite(p.x)||!Number.isFinite(p.y)){
+      p.x=31.05;p.y=132.55;p.seg=0;
+      p.prevX=p.x;p.prevY=p.y;p.simPrevX=p.x;p.simPrevY=p.y;
+      p._lastLegal636={x:p.x,y:p.y};p._lastLegal619={x:p.x,y:p.y};
+    }
+    if(!Number.isFinite(p.seg)) p.seg=0;
+    p.seg=Math.max(0,Math.min(segs.length-1,p.seg|0));
+    if(p.done&&p.dead) p.dead=false;
+    return true;
+  }
+
+  function finalAISafety667(p,si,target){
+    if(!target) return null;
+    let t=finalRoadTarget636(p,si,target);
+    if(!t) return null;
+    if(!courseContainsPoint(t.x,t.y,0.00) || !lineStaysOnCourse(p.x,p.y,t.x,t.y,0.00)){
+      const ideal=strictInside620(p,si,gameNow());
+      t=ideal?finalRoadTarget636(p,si,ideal):null;
+    }
+    return t;
+  }
+
+  function raceAI769(p,si,now){
+    sanitizeRaceState666(p);
     const threat=collisionTTC622(p);
     let t=survivalRacingAI435(p,si,now);
 
@@ -7382,8 +7533,13 @@ function farthestVisibleFastTarget91(p,si){
     }
 
     t=westToUpperClimbGuard635(p,si,t);
-    t=driverAbility356(p,si,now,t,threat?"avoid":"race");
-    return finalRoadTarget636(p,si,t);
+    t=executionDifference660(p,si,now,t,!!threat);
+    t=preventSlowMacroRoute659(p,si,now,t,!!threat);
+    return finalAISafety667(p,si,t);
+  }
+
+  function auditedRaceTarget636(p,si,now){
+    return raceAI769(p,si,now);
   }
 
   function racingLine529(p,si,now){
@@ -8657,44 +8813,25 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function updateCamera(dt){
     const now=gameNow();
 
-    // Manual POV remains the only intentional override.
+    // Manual POV is the only intentional override of P1 following.
     const pov=players[povPlayerIndex];
     if(povPlayerIndex>=0 && pov && !pov.done && !pov.dead){
       cameraLeaderId=pov.index;
-      const a=Math.min(0.22,Math.max(0.10,dt*0.0065));
-      camX+=(pov.x-camX)*a;
-      camY+=(pov.y-camY)*a;
+      smoothCamera665(dt,pov.x,pov.y);
       return;
     }
 
-    // v6.36 AUTO CAMERA:
-    // Always derive the camera subject from the exact same currentProgress()
-    // ordering used for the race. No previous-leader hold and no event cutaway.
-    const active=players
-      .filter(p=>!p.done && !p.dead)
-      .sort((a,b)=>currentProgress(b)-currentProgress(a));
+    const cache=(raceFrameCache668.stamp===now)?raceFrameCache668:rebuildRaceFrameCache668(now);
+    const leader=cameraSubject661(now);
+    if(!leader) return;
 
-    if(!active.length) return;
-    const leader=active[0];
-    const second=active[1]||null;
     cameraLeaderId=leader.index;
-    cameraLeaderHoldUntil=now; // compatibility only; no hold behavior.
+    cameraLeaderHoldUntil=now;
 
-    let tx=leader.x, ty=leader.y;
-
-    // Keep P1 visually dominant. A very close P2 may affect framing only 2%.
-    if(second){
-      const gap=Math.abs(currentProgress(leader)-currentProgress(second));
-      if(gap<0.55){
-        tx=leader.x*.98+second.x*.02;
-        ty=leader.y*.98+second.y*.02;
-      }
-    }
-
-    // Faster response than the old 0.65s hold + slow smoothing.
-    const a=Math.min(0.18,Math.max(0.085,dt*0.0055));
-    camX+=(tx-camX)*a;
-    camY+=(ty-camY)*a;
+    let frame=closeBattleFrame662(leader,cache);
+    frame=overtakeFrame663(leader,cache,now,frame);
+    frame=packFrame664(leader,cache,frame);
+    smoothCamera665(dt,frame.x,frame.y);
   }
 
   function finalizeIndividualClear(finishers,now){
@@ -9053,7 +9190,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
       precomputeObserverPredictions(now);
     }
 
-    for(let i=0;i<players.length;i++) updatePlayer(players[i],now,dt);
+    for(let i=0;i<players.length;i++){
+      sanitizeRaceState666(players[i]);
+      updatePlayer(players[i],now,dt);
+      sanitizeRaceState666(players[i]);
+    }
+    rebuildRaceFrameCache668(now);
     updateCamera(dt);
     captureReplayFrame(now);
   }
