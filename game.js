@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.90";
+  const BUILD_ID = "v6.99";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -722,7 +722,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     broadcastFocusId=-1; broadcastFocusUntil=0; previousUiRanks=new Map();
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
-    players.forEach(p=>{p._personality657=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;sanitizeRaceState666(p);});
+    telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -7197,25 +7198,24 @@ function farthestVisibleFastTarget91(p,si){
   // ============================================================
 
   function driverAbilityBase645(p){
-    // Stable deterministic defaults from player index.
-    // Existing player speed remains untouched: ability changes execution quality,
-    // not macro route choice or rubber-band speed.
+    // v6.91 Real Player Stats Integration:
+    // execution quality comes from the racer's actual stats, never slot/index seeds.
     if(!p._ability645){
-      const i=(p.index||0);
-      const seeds=[0.88,0.82,0.76,0.71,0.66,0.61,0.56,0.51];
-      const base=seeds[i%seeds.length]||0.65;
+      const st=p.stats||{};
+      const n=(k,f=84)=>Math.max(.42,Math.min(.98,((Number(st[k])||f)-58)/44));
+      const avg=(...v)=>v.reduce((a,b)=>a+b,0)/v.length;
       p._ability645={
-        line:Math.max(.45,Math.min(.96,base+.05)),
-        reaction:Math.max(.45,Math.min(.96,base+.02)),
-        judgment:Math.max(.45,Math.min(.96,base+.01)),
-        stability:Math.max(.45,Math.min(.96,base+.04)),
-        aggression:Math.max(.30,Math.min(.92,.48+(i%4)*.10)),
-        risk:Math.max(.30,Math.min(.90,.42+((i*3)%5)*.08)),
-        composure:Math.max(.45,Math.min(.96,base+.03)),
-        corner:Math.max(.45,Math.min(.96,base+.05)),
-        straight:Math.max(.45,Math.min(.96,base+.02)),
-        avoidance:Math.max(.45,Math.min(.96,base+.01)),
-        overtake:Math.max(.45,Math.min(.96,base))
+        line:avg(n("insideLine"),n("routeReading"),n("control")),
+        reaction:avg(n("reaction"),n("prediction"),n("focus")),
+        judgment:avg(n("routeReading"),n("prediction"),n("riskControl")),
+        stability:avg(n("stability"),n("control"),n("consistency")),
+        aggression:n("aggression"),
+        risk:1-n("riskControl"),
+        composure:avg(n("pressure"),n("focus"),n("consistency")),
+        corner:avg(n("cornering"),n("braking"),n("insideLine")),
+        straight:avg(n("pace"),n("acceleration"),n("control")),
+        avoidance:avg(n("avoidance"),n("reaction"),n("prediction")),
+        overtake:avg(n("aggression"),n("prediction"),n("routeReading"),n("control"))
       };
     }
     return p._ability645;
@@ -8011,24 +8011,214 @@ function farthestVisibleFastTarget91(p,si){
     return null;
   }
 
-  function raceAI769(p,si,now){
+
+  // ============================================================
+  // v6.99 Race Engine 9.0 FINAL (v6.91 ~ v6.99)
+  // ============================================================
+
+  function abilityPersonality693(p,kind){
+    const a=driverAbilityBase645(p);
+    const ps=driverPersonality357(p);
+    if(kind==="overtake"){
+      return {
+        skill:a.overtake,
+        aggression:Math.max(.25,Math.min(.95,(a.aggression*.58+ps.aggression*.42))),
+        risk:Math.max(.18,Math.min(.88,(a.risk*.55+ps.risk*.45))),
+        commitment:Math.max(.35,Math.min(.92,(a.judgment*.48+ps.commitment*.52)))
+      };
+    }
+    if(kind==="avoid"){
+      return {skill:a.avoidance,reaction:a.reaction,risk:a.risk,commitment:ps.commitment};
+    }
+    return {skill:a.line,judgment:a.judgment,stability:a.stability,commitment:ps.commitment};
+  }
+
+  function pressureConsistency694(p,now,target,kind="race"){
+    if(!target) return null;
+    const st=p.stats||{}, s=segs[Math.max(0,Math.min(segs.length-1,p.seg||0))];
+    if(!s) return target;
+    const pressure=Math.max(0,Math.min(1,((Number(st.pressure)||84)-72)/27));
+    const consistency=Math.max(0,Math.min(1,((Number(st.consistency)||84)-72)/27));
+    const focus=Math.max(0,Math.min(1,((Number(st.focus)||84)-72)/27));
+
+    let nearest=99;
+    for(const q of players){
+      if(q===p||q.dead||q.done) continue;
+      const d=Math.abs(currentProgress(q)-currentProgress(p));
+      if(d<nearest) nearest=d;
+    }
+    const battle=Math.max(0,Math.min(1,(2.4-nearest)/2.4));
+    const stress=battle*(1-pressure*.55-focus*.25);
+    const err=(1-consistency)*stress*.28;
+    if(err<.006) return target;
+
+    // deterministic micro execution variation, not random route wandering.
+    const phase=(now*.0057+(p.index||0)*1.91);
+    const lat=Math.sin(phase)*err;
+    return finalRoadTarget636(p,p.seg||0,{
+      ...target,
+      x:target.x+s.nx*lat,
+      y:target.y+s.ny*lat,
+      kind:(target.kind||kind)+"-pressure694"
+    })||target;
+  }
+
+  function broadcastCamera695(now,dt,leader,cache){
+    if(!leader) return;
+    const s=segs[Math.max(0,Math.min(segs.length-1,leader.seg||0))];
+    let frame=closeBattleFrame662(leader,cache);
+    frame=overtakeFrame663(leader,cache,now,frame);
+    frame=packFrame664(leader,cache,frame);
+
+    // P1/leader stays the anchor. Add a small look-ahead in travel direction.
+    if(s){
+      const lead=1.15;
+      const fx=leader.x+s.ux*lead, fy=leader.y+s.uy*lead;
+      frame.x=frame.x*.88+fx*.12;
+      frame.y=frame.y*.88+fy*.12;
+    }
+    smoothCamera665(dt,frame.x,frame.y);
+  }
+
+  let telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
+
+  function ensureTelemetry696(p,now){
+    if(!p.telemetry696){
+      p.telemetry696={
+        startedAt:now,lastX:p.x,lastY:p.y,pathLength:0,
+        leaderMs:0,overtakes:0,positionsLost:0,avoidanceCount:0,
+        avoidanceSuccess:0,insideErrorSum:0,insideSamples:0,
+        maxProgress:currentProgress(p),finishTime:null,deathProgress:null,
+        lastAvoidKind:"",lastAvoidAt:0,lastRank:null
+      };
+    }
+    return p.telemetry696;
+  }
+
+  function telemetryStep696(now,dt){
+    const active=players.slice().filter(p=>!p.dead&&!p.done)
+      .sort((a,b)=>currentProgress(b)-currentProgress(a));
+    const ranks=new Map();
+    active.forEach((p,i)=>ranks.set(p.index,i+1));
+
+    for(const p of players){
+      const t=ensureTelemetry696(p,now);
+      const d=Math.hypot(p.x-t.lastX,p.y-t.lastY);
+      if(Number.isFinite(d)&&d<5) t.pathLength+=d;
+      t.lastX=p.x;t.lastY=p.y;
+      const prog=currentProgress(p);
+      t.maxProgress=Math.max(t.maxProgress,prog);
+
+      const s=segs[Math.max(0,Math.min(segs.length-1,p.seg||0))];
+      if(s){
+        const rx=p.x-s.a[0],ry=p.y-s.a[1];
+        t.insideErrorSum+=Math.abs(rx*s.nx+ry*s.ny);
+        t.insideSamples++;
+      }
+
+      const rk=ranks.get(p.index);
+      if(rk!=null&&t.lastRank!=null){
+        if(rk<t.lastRank) t.overtakes+=t.lastRank-rk;
+        if(rk>t.lastRank) t.positionsLost+=rk-t.lastRank;
+      }
+      if(rk!=null) t.lastRank=rk;
+
+      const ak=(p._lastRaceTargetKind699||"");
+      if(/avoidance4/.test(ak)&&t.lastAvoidKind!==ak&&now-t.lastAvoidAt>180){
+        t.avoidanceCount++;t.lastAvoidAt=now;t.lastAvoidKind=ak;
+      }
+      if(p.done&&t.finishTime==null) t.finishTime=p.finishTime??(now-t.startedAt);
+      if(p.dead&&t.deathProgress==null) t.deathProgress=prog;
+    }
+
+    const leader=active[0];
+    if(leader){
+      const lt=ensureTelemetry696(leader,now);
+      lt.leaderMs+=dt;
+      if(telemetry696.leaderId!==leader.index){
+        if(telemetry696.leaderId!==-1) telemetry696.leaderChanges++;
+        telemetry696.leaderId=leader.index;telemetry696.leaderSince=now;
+      }
+    }
+    telemetry696.lastRanks=ranks;
+  }
+
+  function advancedStats697(p){
+    const t=p?.telemetry696;
+    if(!t) return null;
+    const avgInside=t.insideSamples?t.insideErrorSum/t.insideSamples:0;
+    const optimal=Math.max(1,currentProgress(p));
+    return {
+      leaderShare: Math.max(0,t.leaderMs/Math.max(1,gameNow()-(t.startedAt||0))),
+      overtakes:t.overtakes,
+      positionsLost:t.positionsLost,
+      avoidanceCount:t.avoidanceCount,
+      pathLength:t.pathLength,
+      racingLineEfficiency:Math.max(0,Math.min(1,optimal/Math.max(optimal,t.pathLength))),
+      insideLineAccuracy:Math.max(0,Math.min(1,1-avgInside/8)),
+      finishTime:t.finishTime,
+      deathProgress:t.deathProgress
+    };
+  }
+
+  function stabilityAudit698(p,now){
     sanitizeRaceState666(p);
-    const threat=falseThreatFilter482(p,collisionTTC479(p));
+    if(!p||p.dead||p.done) return;
+
+    if(!p._stable698) p._stable698={x:p.x,y:p.y,at:now,stallSince:0};
+    const st=p._stable698;
+    const moved=Math.hypot(p.x-st.x,p.y-st.y);
+    if(moved>.08){
+      st.x=p.x;st.y=p.y;st.at=now;st.stallSince=0;
+      return;
+    }
+    if(now-st.at<650) return;
+    if(!st.stallSince) st.stallSince=now;
+
+    // Only repair endpoint deadlocks; never teleport a normally slow racer.
+    const si=Math.max(0,Math.min(segs.length-1,p.seg||0)),s=segs[si];
+    if(!s) return;
+    const de=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
+    if(de<2.0 && si<segs.length-1 && now-st.stallSince>180){
+      p.seg=Math.min(segs.length-1,si+1);
+      p._steer617={x:p.x,y:p.y};
+      p.mouseTargetX=p.x;p.mouseTargetY=p.y;
+      st.x=p.x;st.y=p.y;st.at=now;st.stallSince=0;
+    }
+    if(si===segs.length-1){
+      const fin=route[route.length-1];
+      p.mouseTargetX=fin[0];p.mouseTargetY=fin[1];
+    }
+  }
+
+  function raceEngine999(p,si,now){
+    // 1 road legality -> 2 observer prediction -> 3 minimum survival dodge
+    // -> 4 shortest inside -> 5 opponent prediction/racecraft
+    // -> 6 smooth rejoin -> 7 ability/personality -> 8 pressure execution
+    let threat=falseThreatFilter482(p,collisionTTC479(p));
     let t=observerAvoidance483(p,si,now);
-    const avoiding=!!t && /avoidance4/.test(t.kind||"");
+    const avoiding=!!t&&/avoidance4/.test(t.kind||"");
 
     if(!t) t=survivalRacingAI435(p,si,now);
 
-    if(!threat && !avoiding){
+    if(!threat&&!avoiding){
       const rc=racecraft590(p,si,now);
       if(rc) t=rc;
     }
 
     t=westToUpperClimbGuard635(p,si,t);
     t=executionDifference660(p,si,now,t,!!threat);
+    t=pressureConsistency694(p,now,t,threat?"avoid":"race");
     t=preventSlowMacroRoute659(p,si,now,t,!!threat);
     t=roadRacing577(p,si,now,t,!!threat);
-    return finalAISafety667(p,si,t);
+    t=endpointHandoff677(p,si,t);
+    t=finalAISafety667(p,si,t);
+    if(t) p._lastRaceTargetKind699=t.kind||"race999";
+    return t;
+  }
+
+  function raceAI769(p,si,now){
+    return raceEngine999(p,si,now);
   }
 
   function auditedRaceTarget636(p,si,now){
@@ -9321,10 +9511,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     cameraLeaderId=leader.index;
     cameraLeaderHoldUntil=now;
 
-    let frame=closeBattleFrame662(leader,cache);
-    frame=overtakeFrame663(leader,cache,now,frame);
-    frame=packFrame664(leader,cache,frame);
-    smoothCamera665(dt,frame.x,frame.y);
+    broadcastCamera695(now,dt,leader,cache);
   }
 
   function finalizeIndividualClear(finishers,now){
@@ -9687,7 +9874,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
       sanitizeRaceState666(players[i]);
       updatePlayer(players[i],now,dt);
       sanitizeRaceState666(players[i]);
+      stabilityAudit698(players[i],now);
     }
+    telemetryStep696(now,dt);
     rebuildRaceFrameCache668(now);
     updateCamera(dt);
     captureReplayFrame(now);
@@ -11592,4 +11781,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   map.addEventListener("load",reset);
   if(map.complete) reset();
+
+  window.ObserverFMStats = { advancedStats697, getAll:()=>players.map(p=>({name:p.name,...(advancedStats697(p)||{})})) };
 })();
