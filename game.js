@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.44";
+  const BUILD_ID = "v6.56";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7177,6 +7177,9 @@ function farthestVisibleFastTarget91(p,si){
     const cost=overtakeCost639(p,si,front,space);
     if(shouldAbortOvertake641(p,si,front,space,cost)) return null;
 
+    const abilityPass655=overtakeSkill655(p,si,front,space,cost);
+    if(!abilityPass655.allow) return null;
+
     const side=insideOvertakeSide640(p,si,space);
     const target=overtakeTarget642(p,si,front,side);
     if(!target) return null;
@@ -7186,15 +7189,200 @@ function farthestVisibleFastTarget91(p,si){
     return {...target,kind:"racecraft3-644"};
   }
 
+
+  // ============================================================
+  // v6.56 Driver Ability 3.0 (v6.45 ~ v6.56)
+  // ============================================================
+
+  function driverAbilityBase645(p){
+    // Stable deterministic defaults from player index.
+    // Existing player speed remains untouched: ability changes execution quality,
+    // not macro route choice or rubber-band speed.
+    if(!p._ability645){
+      const i=(p.index||0);
+      const seeds=[0.88,0.82,0.76,0.71,0.66,0.61,0.56,0.51];
+      const base=seeds[i%seeds.length]||0.65;
+      p._ability645={
+        line:Math.max(.45,Math.min(.96,base+.05)),
+        reaction:Math.max(.45,Math.min(.96,base+.02)),
+        judgment:Math.max(.45,Math.min(.96,base+.01)),
+        stability:Math.max(.45,Math.min(.96,base+.04)),
+        aggression:Math.max(.30,Math.min(.92,.48+(i%4)*.10)),
+        risk:Math.max(.30,Math.min(.90,.42+((i*3)%5)*.08)),
+        composure:Math.max(.45,Math.min(.96,base+.03)),
+        corner:Math.max(.45,Math.min(.96,base+.05)),
+        straight:Math.max(.45,Math.min(.96,base+.02)),
+        avoidance:Math.max(.45,Math.min(.96,base+.01)),
+        overtake:Math.max(.45,Math.min(.96,base))
+      };
+    }
+    return p._ability645;
+  }
+
+  function lineAccuracy645(p,si,target){
+    if(!target) return null;
+    const a=driverAbilityBase645(p);
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+
+    // Lower skill creates only tiny local execution error inside the same legal corridor.
+    const maxErr=(1-a.line)*0.70;
+    const phase=((p.index||0)*1.37+(p.lastProgress||0)*0.19);
+    const err=Math.sin(phase)*maxErr;
+    let t={...target,x:target.x+s.nx*err,y:target.y+s.ny*err,kind:(target.kind||"target")+"-line645"};
+    return finalRoadTarget636(p,si,t);
+  }
+
+  function reactionDelay646(p,now,kind){
+    const a=driverAbilityBase645(p);
+    if(!p._reaction646) p._reaction646={};
+    const key=kind||"general";
+    const minDelay=35, maxDelay=175;
+    const delay=minDelay+(1-a.reaction)*(maxDelay-minDelay);
+    const last=p._reaction646[key]||0;
+    if(now-last<delay) return false;
+    p._reaction646[key]=now;
+    return true;
+  }
+
+  function judgmentQuality647(p,choices){
+    const a=driverAbilityBase645(p);
+    if(!choices||!choices.length) return null;
+    const ranked=choices.filter(Boolean).sort((x,y)=>(x.score??Infinity)-(y.score??Infinity));
+    if(!ranked.length) return null;
+    if(ranked.length===1) return ranked[0];
+
+    // Weak drivers may choose the second-best legal option, never an illegal macro route.
+    const wobble=(1-a.judgment)*0.34;
+    const r=Math.abs(Math.sin((p.index||0)*2.17+(p.lastProgress||0)*0.11));
+    return r<wobble?ranked[Math.min(1,ranked.length-1)]:ranked[0];
+  }
+
+  function stability648(p,si,target,now){
+    if(!target) return null;
+    const a=driverAbilityBase645(p);
+    if(!p._stab648) p._stab648={x:target.x,y:target.y,t:now};
+
+    const blend=.58+a.stability*.34;
+    const x=p._stab648.x+(target.x-p._stab648.x)*blend;
+    const y=p._stab648.y+(target.y-p._stab648.y)*blend;
+    p._stab648={x,y,t:now};
+
+    return finalRoadTarget636(p,si,{...target,x,y,kind:(target.kind||"target")+"-stable648"});
+  }
+
+  function aggression649(p){
+    return driverAbilityBase645(p).aggression;
+  }
+
+  function riskTolerance650(p){
+    return driverAbilityBase645(p).risk;
+  }
+
+  function composure651(p){
+    return driverAbilityBase645(p).composure;
+  }
+
+  function cornerSkill652(p,si,target){
+    if(!target) return null;
+    const a=driverAbilityBase645(p);
+    const s0=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const s1=segs[Math.max(0,Math.min(segs.length-1,si+1))];
+    if(!s0||!s1) return target;
+    const turn=s0.ux*s1.uy-s0.uy*s1.ux;
+    if(Math.abs(turn)<0.12) return target;
+
+    // Better corner drivers commit more precisely to the legal inside target.
+    const ideal=strictInside620(p,si,gameNow());
+    if(!ideal) return target;
+    const w=.30+a.corner*.55;
+    return finalRoadTarget636(p,si,{
+      ...target,
+      x:target.x*(1-w)+ideal.x*w,
+      y:target.y*(1-w)+ideal.y*w,
+      kind:(target.kind||"target")+"-corner652"
+    });
+  }
+
+  function straightSkill653(p,si,target){
+    if(!target) return null;
+    const a=driverAbilityBase645(p);
+    const s0=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const s1=segs[Math.max(0,Math.min(segs.length-1,si+1))];
+    if(!s0) return target;
+    const turn=s1?(s0.ux*s1.uy-s0.uy*s1.ux):0;
+    if(Math.abs(turn)>=0.12) return target;
+
+    // Strong straight driver reduces pointless lateral motion.
+    const rx=target.x-p.x, ry=target.y-p.y;
+    const f=rx*s0.ux+ry*s0.uy;
+    const l=rx*s0.nx+ry*s0.ny;
+    const l2=l*(1-(a.straight*.72));
+    return finalRoadTarget636(p,si,{
+      ...target,
+      x:p.x+s0.ux*f+s0.nx*l2,
+      y:p.y+s0.uy*f+s0.ny*l2,
+      kind:(target.kind||"target")+"-straight653"
+    });
+  }
+
+  function avoidanceSkill654(p,si,now,target){
+    if(!target) return null;
+    const a=driverAbilityBase645(p);
+
+    // High avoidance skill = closer to minimum required dodge and faster rejoin.
+    const min=minimumForward618(p,si,target);
+    if(!min) return target;
+    const w=.42+a.avoidance*.50;
+    return finalRoadTarget636(p,si,{
+      ...target,
+      x:target.x*(1-w)+min.x*w,
+      y:target.y*(1-w)+min.y*w,
+      kind:(target.kind||"target")+"-avoid654"
+    });
+  }
+
+  function overtakeSkill655(p,si,front,space,costInfo){
+    const a=driverAbilityBase645(p);
+    if(!front||!space||!costInfo) return {allow:false};
+
+    const aggression=aggression649(p);
+    const risk=riskTolerance650(p);
+    const quality=a.overtake;
+
+    // Better/aggressive drivers accept smaller positive margins; weak drivers wait.
+    const threshold=1.18-(quality*.22)-(aggression*.10)-(risk*.06);
+    const allow=costInfo.gain>costInfo.cost*threshold && space.score<(9.5+risk*3.0);
+    return {allow,threshold};
+  }
+
+  function driverAbility356(p,si,now,target,mode){
+    if(!target) return null;
+    let t=target;
+
+    if(mode==="avoid"){
+      if(reactionDelay646(p,now,"avoid")) t=avoidanceSkill654(p,si,now,t);
+    }else{
+      t=cornerSkill652(p,si,t);
+      t=straightSkill653(p,si,t);
+    }
+
+    t=lineAccuracy645(p,si,t);
+    t=stability648(p,si,t,now);
+    return finalRoadTarget636(p,si,t);
+  }
+
   function auditedRaceTarget636(p,si,now){
+    const threat=collisionTTC622(p);
     let t=survivalRacingAI435(p,si,now);
 
-    if(!collisionTTC622(p)){
+    if(!threat){
       const rc=racecraft344(p,si,now);
       if(rc) t=rc;
     }
 
     t=westToUpperClimbGuard635(p,si,t);
+    t=driverAbility356(p,si,now,t,threat?"avoid":"race");
     return finalRoadTarget636(p,si,t);
   }
 
