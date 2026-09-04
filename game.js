@@ -7559,13 +7559,20 @@ function farthestVisibleFastTarget91(p,si){
 
   function clampVisualRoad674(p,si,t){
     if(!t) return null;
+    // At segment joints the old/new legal capsules overlap differently. Let the
+    // authoritative logical-road guard handle the short handoff chord.
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const nearJoint=s && Math.hypot(p.x-s.b[0],p.y-s.b[1])<6.5;
+    if(nearJoint){
+      const logical=finalRoadTarget636(p,si,t);
+      if(logical) return logical;
+    }
     if(visualRoadMask674(t.x,t.y,si)&&lineStaysVisualRoad674(p.x,p.y,t.x,t.y,si)) return t;
     for(let k=19;k>=2;k--){
       const q=k/20,x=p.x+(t.x-p.x)*q,y=p.y+(t.y-p.y)*q;
       if(visualRoadMask674(x,y,si)&&lineStaysVisualRoad674(p.x,p.y,x,y,si))
         return {...t,x,y,kind:(t.kind||"target")+"-visual674"};
     }
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
     if(!s) return null;
     for(const f of [2.8,2,1.2,.7]){
       const x=p.x+s.ux*f,y=p.y+s.uy*f;
@@ -7620,6 +7627,35 @@ function farthestVisibleFastTarget91(p,si){
     return best||t;
   }
 
+
+  // v6.77 HOTFIX1: endpoint handoff.
+  // Visual Road Mask is planning-only. Near a segment end, deliberately point into
+  // the next segment so the sequential segment advancement can complete instead of
+  // oscillating at the boundary.
+  function endpointHandoff677(p,si,target){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return target;
+    const ex=p.x-s.b[0],ey=p.y-s.b[1];
+    const distEnd=Math.hypot(ex,ey);
+
+    // Final segment: aim directly at the actual finish endpoint. Never target beyond it.
+    if(si>=segs.length-1){
+      const last=route[route.length-1];
+      return {x:last[0],y:last[1],kind:"finish-handoff677"};
+    }
+
+    // Enter the next segment slightly past the joint. This guarantees the current
+    // segment can cross its end plane without a mask/clamp deadlock.
+    if(distEnd<6.2){
+      const n=segs[si+1];
+      const push=Math.min(3.0,Math.max(1.4,n.L*.12));
+      const q={x:s.b[0]+n.ux*push,y:s.b[1]+n.uy*push,kind:"endpoint-handoff677"};
+      const safe=finalRoadTarget636(p,si,q);
+      return safe||target;
+    }
+    return target;
+  }
+
   function roadRacing577(p,si,now,t,threat){
     if(!threat){
       const rl=racingLine576(p,si,now);
@@ -7628,7 +7664,9 @@ function farthestVisibleFastTarget91(p,si){
     }
     t=cornerInsideLimit675(p,si,t);
     t=microLineOptimization677(p,si,t);
-    return clampVisualRoad674(p,si,t);
+    t=clampVisualRoad674(p,si,t);
+    t=endpointHandoff677(p,si,t);
+    return t;
   }
 
   function raceAI769(p,si,now){
@@ -8507,11 +8545,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
     enforcePhysicalRoad636(p);
     enforceProtectedClimb635(p);
     enforcePhysicalRoad636(p);
-    if(visualRoadMask674(p.x,p.y,p.seg||0)){
-      p._lastVisualLegal674={x:p.x,y:p.y};
-    }else if(p._lastVisualLegal674){
-      p.x=p._lastVisualLegal674.x;p.y=p._lastVisualLegal674.y;
-    }
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
