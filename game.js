@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.83";
+  const BUILD_ID = "v6.90";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7803,6 +7803,214 @@ function farthestVisibleFastTarget91(p,si){
     return smoothRejoin483(p,si,now);
   }
 
+
+  // ============================================================
+  // v6.90 Racecraft 5.0 FINAL (v6.84 ~ v6.90)
+  // ============================================================
+
+  function opponentPrediction484(p,q,si,horizon=.55){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s||!q) return null;
+    const qvx=(q.x-(q.simPrevX??q.prevX??q.x))*60;
+    const qvy=(q.y-(q.simPrevY??q.prevY??q.y))*60;
+    const pvx=(p.x-(p.simPrevX??p.prevX??p.x))*60;
+    const pvy=(p.y-(p.simPrevY??p.prevY??p.y))*60;
+    return {
+      q,
+      x:q.x+qvx*horizon, y:q.y+qvy*horizon,
+      px:p.x+pvx*horizon, py:p.y+pvy*horizon,
+      qvx,qvy,pvx,pvy,
+      relForward:(q.x-p.x)*s.ux+(q.y-p.y)*s.uy,
+      relLat:(q.x-p.x)*s.nx+(q.y-p.y)*s.ny
+    };
+  }
+
+  function overtakeState485(p,si,now,front){
+    if(!p._pass485) p._pass485={state:"idle",targetId:null,side:0,since:0,commitUntil:0};
+    const st=p._pass485;
+    const prog=currentProgress(p);
+    let target=players.find(q=>q.index===st.targetId&&!q.dead&&!q.done)||null;
+
+    if(st.state==="idle"){
+      if(front&&front.forward<10.5){
+        st.state="prepare"; st.targetId=front.q.index; st.since=now;
+      }
+    } else if(!target){
+      st.state="idle"; st.targetId=null; st.side=0;
+    } else {
+      const dp=prog-currentProgress(target);
+      if(st.state==="prepare"&&now-st.since>100){
+        st.state="commit"; st.since=now; st.commitUntil=now+520;
+      }
+      if(st.state==="commit"&&Math.abs(dp)<1.2){
+        st.state="side-by-side"; st.since=now;
+      }
+      if((st.state==="commit"||st.state==="side-by-side")&&dp>1.35){
+        st.state="passed"; st.since=now; st.commitUntil=now+420;
+      }
+      if(st.state==="passed"&&now-st.since>420){
+        st.state="rejoin"; st.since=now;
+      }
+      if(st.state==="rejoin"&&now-st.since>520){
+        st.state="idle"; st.targetId=null; st.side=0;
+      }
+    }
+    return st;
+  }
+
+  function defensiveRacing486(p,si,now){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return null;
+    const pp=currentProgress(p);
+    let challenger=null,bestGap=999;
+    for(const q of players){
+      if(q===p||q.dead||q.done) continue;
+      const gap=pp-currentProgress(q);
+      if(gap<=0||gap>2.2) continue;
+      const dx=q.x-p.x,dy=q.y-p.y;
+      const f=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
+      if(f>-6&&f<1.5&&Math.abs(lat)<6&&gap<bestGap){bestGap=gap;challenger={q,lat};}
+    }
+    if(!challenger) return null;
+
+    const ideal=racingLine576(p,si,now); if(!ideal) return null;
+    const rx=ideal.x-p.x,ry=ideal.y-p.y;
+    const idealLat=rx*s.nx+ry*s.ny;
+    const desired=challenger.lat>=0?Math.min(idealLat,.65):Math.max(idealLat,-.65);
+    const t=clampVisualRoad674(p,si,{
+      x:p.x+s.ux*4.8+s.nx*desired,
+      y:p.y+s.uy*4.8+s.ny*desired,
+      kind:"defensive486"
+    });
+    if(!t) return null;
+
+    const extra=Math.hypot(t.x-p.x,t.y-p.y)-Math.hypot(ideal.x-p.x,ideal.y-p.y);
+    return extra<=.45?t:null;
+  }
+
+  function sideBySide487(p,si,now,st){
+    if(!st||st.state!=="side-by-side") return null;
+    const q=players.find(x=>x.index===st.targetId&&!x.dead&&!x.done);
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!q||!s) return null;
+    const pred=opponentPrediction484(p,q,si,.42); if(!pred) return null;
+    let side=st.side||Math.sign(-pred.relLat)||1;
+    st.side=side;
+    const half=Math.max(2.3,Math.min((widths[si]||14)*.44,(roadGeometryAudit673(si)?.half||7.5)*.84));
+    const off=Math.max(-half*.68,Math.min(half*.68,side*half*.52));
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*5.2+s.nx*off,
+      y:p.y+s.uy*5.2+s.ny*off,
+      kind:"side-by-side487"
+    });
+  }
+
+  function multiTraffic588(p,si,now){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return null;
+    const near=[];
+    for(const q of players){
+      if(q===p||q.dead||q.done) continue;
+      const pred=opponentPrediction484(p,q,si,.50); if(!pred) continue;
+      const dx=pred.x-p.x,dy=pred.y-p.y;
+      const f=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
+      if(f>-2.5&&f<14&&Math.abs(lat)<8) near.push({q,pred,f,lat});
+    }
+    if(near.length<2) return null;
+
+    const half=Math.max(2.4,Math.min((widths[si]||14)*.46,(roadGeometryAudit673(si)?.half||7.5)*.88));
+    let best=null,bestScore=Infinity;
+    for(const k of [-.72,-.48,-.24,0,.24,.48,.72]){
+      const off=half*k;
+      let t=clampVisualRoad674(p,si,{x:p.x+s.ux*5.8+s.nx*off,y:p.y+s.uy*5.8+s.ny*off,kind:"multi-traffic588"});
+      if(!t) continue;
+      let score=Math.abs(off)*.10;
+      for(const n of near){
+        const d=Math.hypot(t.x-n.pred.x,t.y-n.pred.y);
+        if(d<2.0) score+=30;
+        else if(d<3.0) score+=10;
+        else if(d<4.5) score+=3;
+      }
+      const obs=futureObserverRisk480(p,t.x,t.y,.45);
+      score+=obs.risk*4.5;
+      if(score<bestScore){bestScore=score;best=t;}
+    }
+    return best;
+  }
+
+  function cornerBattle489(p,si,now,front){
+    if(!front) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const n=segs[Math.max(0,Math.min(segs.length-1,si+1))];
+    if(!s||!n) return null;
+    const turn=s.ux*n.uy-s.uy*n.ux;
+    if(Math.abs(turn)<.1) return null;
+
+    const de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
+    const pred=opponentPrediction484(p,front.q,si,.45);
+    if(!pred) return null;
+
+    // Prefer pre-entry only when there is a clearly open inside lane.
+    if(de>7.5&&de<13){
+      const inside=turn>0?1:-1;
+      const half=Math.max(2.3,Math.min((widths[si]||14)*.45,(roadGeometryAudit673(si)?.half||7.5)*.84));
+      const t=clampVisualRoad674(p,si,{
+        x:p.x+s.ux*5.4+s.nx*inside*half*.48,
+        y:p.y+s.uy*5.4+s.ny*inside*half*.48,
+        kind:"corner-battle-entry489"
+      });
+      if(t&&Math.hypot(t.x-pred.x,t.y-pred.y)>3.2) return t;
+    }
+    // At apex, avoid initiating a new pass; preserve current line.
+    if(de<=7.5&&de>2.6) return null;
+
+    // On exit, only attack if target will still be within reach.
+    if(de<=2.6&&front.forward<7){
+      const side=Math.sign(-pred.relLat)||1;
+      return overtakeTarget642(p,si,front,side);
+    }
+    return null;
+  }
+
+  function racecraft590(p,si,now){
+    // Observer survival always has higher authority.
+    if(falseThreatFilter482(p,collisionTTC479(p))) return null;
+
+    const front=frontRacer637(p,si);
+    const st=overtakeState485(p,si,now,front);
+
+    const side=sideBySide487(p,si,now,st);
+    if(side) return side;
+
+    if(st.state==="passed"||st.state==="rejoin"){
+      const r=strictInside620(p,si,now);
+      if(r) return {...r,kind:"racecraft5-rejoin590"};
+    }
+
+    const multi=multiTraffic588(p,si,now);
+    if(multi) return multi;
+
+    const defend=defensiveRacing486(p,si,now);
+    if(defend) return defend;
+
+    if(!front) return null;
+
+    const corner=cornerBattle489(p,si,now,front);
+    if(corner) return corner;
+
+    const space=overtakeSpace638(p,si,front);
+    if(!space) return null;
+    const cost=overtakeCost639(p,si,front,space);
+    const ability=overtakeSkill655(p,si,front,space,cost);
+    if(!ability.allow) return null;
+    if(shouldAbortOvertake641(p,si,front,space,cost) && st.state!=="commit") return null;
+
+    const sideChoice=st.side||insideOvertakeSide640(p,si,space);
+    st.side=sideChoice;
+    if(st.state==="prepare"||st.state==="commit"){
+      const t=overtakeTarget642(p,si,front,sideChoice);
+      if(t) return {...t,kind:"racecraft5-overtake590"};
+    }
+    return null;
+  }
+
   function raceAI769(p,si,now){
     sanitizeRaceState666(p);
     const threat=falseThreatFilter482(p,collisionTTC479(p));
@@ -7812,7 +8020,7 @@ function farthestVisibleFastTarget91(p,si){
     if(!t) t=survivalRacingAI435(p,si,now);
 
     if(!threat && !avoiding){
-      const rc=racecraft344(p,si,now);
+      const rc=racecraft590(p,si,now);
       if(rc) t=rc;
     }
 
