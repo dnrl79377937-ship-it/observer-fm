@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.69";
+  const BUILD_ID = "v6.71";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -164,7 +164,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     [128,118],[128,100],[128,84],[128,74],
     [110,74],[92,74],[74,74],[58,74],[44,74],
     [44,60],[44,46],[44,32],[44,23.5],
-    [70,23.5],[96,23.5],[122,23.5],[148.65,23.5]
+    [70,23.5],[96,23.5],[122,23.5],[143.0,23.5]
   ];
 
   // v6.04: road width matches the approved visual; planning is kept inside the road.
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v620_only_big_start_goal_corrected.png?v=62001";
+  map.src = "map_v671_finish_left_natural_outer.png?v=671-natural-outer";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -333,7 +333,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const SAFE_ZONES_620 = {
     start:{x0:21.00,y0:123.00,x1:41.00,y1:142.00},
-    goal:{x0:139.00,y0:13.00,x1:158.00,y1:32.00}
+    goal:{x0:132.00,y0:13.00,x1:151.00,y1:32.00}
   };
 
   function safeAt(x,y){
@@ -9447,7 +9447,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   const renderOrder=[];
 
-  const MINI_CROP={x:24,y:8,w:134,h:150};
+  const MINI_CROP={x:24,y:8,w:127,h:150};
   let lastMiniMapRender=0;
   function renderMiniMap(){
     const now=performance.now();
