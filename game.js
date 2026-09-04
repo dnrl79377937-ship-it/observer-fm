@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.71";
+  const BUILD_ID = "v6.72";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -181,7 +181,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   const map = new Image();
-  map.src = "map_v671_finish_left_natural_outer.png?v=671-natural-outer";
+  map.src = "map_v672_equal_medium_start_goal.png?v=672-equal-medium-markers";
   const MAP_IMAGE_SCALE_X=696/172;
   const MAP_IMAGE_SCALE_Y=720/178;
 
@@ -332,8 +332,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
   const SAFE_ZONES_620 = {
-    start:{x0:21.00,y0:123.00,x1:41.00,y1:142.00},
-    goal:{x0:132.00,y0:13.00,x1:151.00,y1:32.00}
+    start:{x0:22.80,y0:124.30,x1:39.30,y1:140.80},
+    goal:{x0:133.25,y0:14.25,x1:149.75,y1:30.75}
   };
 
   function safeAt(x,y){
