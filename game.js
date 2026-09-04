@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.36";
+  const BUILD_ID = "v6.44";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7014,8 +7014,186 @@ function farthestVisibleFastTarget91(p,si){
     return true;
   }
 
+
+  // ============================================================
+  // v6.44 Racecraft 3.0 (v6.37 ~ v6.44)
+  // ============================================================
+  function frontRacer637(p,si){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return null;
+    let best=null;
+    const pp=currentProgress(p);
+    for(const q of players){
+      if(q===p||q.dead||q.done) continue;
+      const dx=q.x-p.x, dy=q.y-p.y;
+      const f=dx*s.ux+dy*s.uy;
+      const l=Math.abs(dx*s.nx+dy*s.ny);
+      if(f<=0.15||f>16||l>6) continue;
+      if(currentProgress(q)+0.10<pp) continue;
+      const cand={q,forward:f,lateral:l};
+      if(!best||f<best.forward) best=cand;
+    }
+    return best;
+  }
+
+  function trafficSideScore638(p,si,side,front){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return Infinity;
+    const half=Math.max(2.4,(widths[si]||14)*0.48);
+    const off=half*0.72*side;
+    const forward=Math.max(4.8,Math.min(9.0,(front?.forward||6.5)+2.6));
+    const t=finalRoadTarget636(p,si,{
+      x:p.x+s.ux*forward+s.nx*off,
+      y:p.y+s.uy*forward+s.ny*off,
+      kind:"overtake-space638"
+    });
+    if(!t) return Infinity;
+
+    let score=0;
+    for(const q of players){
+      if(q===p||q.dead||q.done) continue;
+      const d=Math.hypot(t.x-q.x,t.y-q.y);
+      if(d<2.4) score+=12;
+      else if(d<4.2) score+=4.5;
+    }
+    score+=multiObserverRisk626(p,t.x,t.y,0.55).risk*3.5;
+    score+=Math.abs(off)*0.30;
+    return score;
+  }
+
+  function overtakeSpace638(p,si,front){
+    if(!front) return null;
+    const l=trafficSideScore638(p,si,-1,front);
+    const r=trafficSideScore638(p,si,1,front);
+    if(!Number.isFinite(l)&&!Number.isFinite(r)) return null;
+    return l<=r?{side:-1,score:l}:{side:1,score:r};
+  }
+
+  function overtakeCost639(p,si,front,space){
+    if(!front||!space) return {worth:false,cost:Infinity,gain:0};
+    const my=p._frameSpeed||p.speed||0;
+    const his=front.q._frameSpeed||front.q.speed||0;
+    const closing=Math.max(0,my-his);
+    const gain=closing*1.9+Math.max(0,5.5-front.forward)*0.22;
+    const half=Math.max(2.4,(widths[si]||14)*0.48);
+    const extra=Math.abs(half*0.72)*0.78+0.55;
+    const cost=extra*0.42+space.score*0.18;
+    return {worth:gain>cost*0.92,cost,gain};
+  }
+
+  function insideOvertakeSide640(p,si,space){
+    if(!space) return null;
+    const a=segs[Math.max(0,Math.min(segs.length-1,si))];
+    const b=segs[Math.max(0,Math.min(segs.length-1,si+1))];
+    if(!a||!b) return space.side;
+    const turn=a.ux*b.uy-a.uy*b.ux;
+    if(Math.abs(turn)<0.15) return space.side;
+    const inside=turn>0?1:-1;
+    const front=frontRacer637(p,si);
+    const siScore=trafficSideScore638(p,si,inside,front);
+    const soScore=trafficSideScore638(p,si,-inside,front);
+    return Number.isFinite(siScore)&&siScore<=soScore+2.4?inside:space.side;
+  }
+
+  function shouldAbortOvertake641(p,si,front,space,cost){
+    if(!front||!space||!cost||!cost.worth) return true;
+    if(front.forward<1.7) return true;
+    if(space.score>11.0) return true;
+    return false;
+  }
+
+  function overtakeTarget642(p,si,front,side){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s||!front||!side) return null;
+    const half=Math.max(2.4,(widths[si]||14)*0.48);
+    const off=half*0.66*side;
+    const forward=Math.max(5.5,Math.min(9.5,front.forward+3.0));
+    return finalRoadTarget636(p,si,{
+      x:p.x+s.ux*forward+s.nx*off,
+      y:p.y+s.uy*forward+s.ny*off,
+      kind:"overtake642"
+    });
+  }
+
+  function rejoinAfterPass642(p,si,now){
+    const until=p._overtake642Until||0;
+    if(!until||now<until||now-until>1200) return null;
+    const front=frontRacer637(p,si);
+    if(front&&front.forward<3.0) return null;
+    const t=strictInside620(p,si,now);
+    return t?{...t,kind:"overtake-rejoin642"}:null;
+  }
+
+  function multiRacerTraffic643(p,si,now){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s) return null;
+    const near=[];
+    for(const q of players){
+      if(q===p||q.dead||q.done) continue;
+      const dx=q.x-p.x,dy=q.y-p.y;
+      const f=dx*s.ux+dy*s.uy,l=dx*s.nx+dy*s.ny;
+      if(f>-1.5&&f<13.5&&Math.abs(l)<7.5) near.push({q,f,l});
+    }
+    if(near.length<2) return null;
+
+    const half=Math.max(2.4,(widths[si]||14)*0.48);
+    let best=null,bestScore=Infinity;
+    for(const k of [-0.78,-0.50,-0.24,0,0.24,0.50,0.78]){
+      const off=half*k,forward=6.2;
+      const t=finalRoadTarget636(p,si,{
+        x:p.x+s.ux*forward+s.nx*off,
+        y:p.y+s.uy*forward+s.ny*off,
+        kind:"multi-traffic643"
+      });
+      if(!t) continue;
+      let score=Math.abs(off)*0.24;
+      for(const n of near){
+        const d=Math.hypot(t.x-n.q.x,t.y-n.q.y);
+        if(d<2.2) score+=20;
+        else if(d<3.8) score+=7;
+        else if(d<5) score+=2;
+      }
+      score+=multiObserverRisk626(p,t.x,t.y,0.52).risk*3.2;
+      const inside=strictInside620(p,si,now);
+      if(inside) score+=Math.hypot(t.x-inside.x,t.y-inside.y)*0.07;
+      if(score<bestScore){bestScore=score;best=t;}
+    }
+    return bestScore<14?best:null;
+  }
+
+  function racecraft344(p,si,now){
+    if(collisionTTC622(p)) return null;
+
+    const rejoin=rejoinAfterPass642(p,si,now);
+    if(rejoin) return rejoin;
+
+    const multi=multiRacerTraffic643(p,si,now);
+    if(multi) return multi;
+
+    const front=frontRacer637(p,si);
+    if(!front) return null;
+    const space=overtakeSpace638(p,si,front);
+    if(!space) return null;
+    const cost=overtakeCost639(p,si,front,space);
+    if(shouldAbortOvertake641(p,si,front,space,cost)) return null;
+
+    const side=insideOvertakeSide640(p,si,space);
+    const target=overtakeTarget642(p,si,front,side);
+    if(!target) return null;
+
+    p._overtake642Until=now+420;
+    p._overtake642TargetId=front.q.index;
+    return {...target,kind:"racecraft3-644"};
+  }
+
   function auditedRaceTarget636(p,si,now){
     let t=survivalRacingAI435(p,si,now);
+
+    if(!collisionTTC622(p)){
+      const rc=racecraft344(p,si,now);
+      if(rc) t=rc;
+    }
+
     t=westToUpperClimbGuard635(p,si,t);
     return finalRoadTarget636(p,si,t);
   }
