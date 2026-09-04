@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v6.77";
+  const BUILD_ID = "v6.83";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7669,12 +7669,149 @@ function farthestVisibleFastTarget91(p,si){
     return t;
   }
 
+
+  // ============================================================
+  // v6.83 Observer Avoidance 4.0 FINAL (v6.78 ~ v6.83)
+  // ============================================================
+  function observerPrediction478(p,o){
+    const pvx=(p.x-(p.simPrevX??p.prevX??p.x))*60;
+    const pvy=(p.y-(p.simPrevY??p.prevY??p.y))*60;
+    const ovx=Number.isFinite(o.vx)?o.vx:0, ovy=Number.isFinite(o.vy)?o.vy:0;
+    const samples=[.20,.40,.70,1.00].map(t=>({
+      t,px:p.x+pvx*t,py:p.y+pvy*t,ox:o.x+ovx*t,oy:o.y+ovy*t
+    }));
+    return {o,pvx,pvy,ovx,ovy,samples};
+  }
+
+  function dynamicTTC479(p,o){
+    const pr=observerPrediction478(p,o);
+    const rx=o.x-p.x,ry=o.y-p.y,vx=pr.ovx-pr.pvx,vy=pr.ovy-pr.pvy;
+    const vv=vx*vx+vy*vy;
+    if(vv<1e-7) return null;
+    const closing=-(rx*vx+ry*vy);
+    if(closing<=0) return null;
+    const raw=closing/vv;
+    if(raw<0||raw>1.45) return null;
+    const fx=rx+vx*raw,fy=ry+vy*raw,miss=Math.hypot(fx,fy);
+    const dist=Math.hypot(rx,ry);
+    if(miss>3.05||dist>22) return null;
+    return {o,t:raw,miss,dist,rx,ry,closingSpeed:closing/Math.max(.001,dist)};
+  }
+
+  function collisionTTC479(p){
+    let best=null;
+    for(const o of observers){
+      const q=dynamicTTC479(p,o);
+      if(!q) continue;
+      if(!best||q.t<best.t||(Math.abs(q.t-best.t)<.06&&q.miss<best.miss)) best=q;
+    }
+    return best;
+  }
+
+  function futureObserverRisk480(p,x,y,horizon=.62){
+    let risk=0,nearest=999,count=0;
+    for(const o of observers){
+      const ovx=Number.isFinite(o.vx)?o.vx:0,ovy=Number.isFinite(o.vy)?o.vy:0;
+      const ox=o.x+ovx*horizon,oy=o.y+ovy*horizon,d=Math.hypot(x-ox,y-oy);
+      nearest=Math.min(nearest,d);
+      if(d<7.2){count++; const w=(7.2-d)/7.2; risk+=w*w;}
+    }
+    return {risk,nearest,count};
+  }
+
+  function safeGapSearch480(p,si,threat){
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return null;
+    const half=Math.max(2.5,Math.min((widths[si]||14)*.46,(roadGeometryAudit673(si)?.half||7.5)*.88));
+    let best=null,bestScore=Infinity;
+    for(let j=-12;j<=12;j++){
+      const off=half*j/12,forward=3.2+Math.max(0,Math.min(1,(threat?.t||.7)))*1.8;
+      let t={x:p.x+s.ux*forward+s.nx*off,y:p.y+s.uy*forward+s.ny*off,kind:"safe-gap480"};
+      t=clampVisualRoad674(p,si,t); if(!t) continue;
+      const r1=futureObserverRisk480(p,t.x,t.y,.35),r2=futureObserverRisk480(p,t.x,t.y,.68);
+      if(r1.nearest<1.5||r2.nearest<1.5) continue;
+      const score=r1.risk*5.0+r2.risk*4.0+Math.abs(off)*.115-Math.max(0,forward)*.035;
+      if(score<bestScore){bestScore=score;best={...t,gapScore480:score};}
+    }
+    return best;
+  }
+
+  function minimumEscape481(p,si,threat,target){
+    if(!target||!threat) return target;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return target;
+    const dx=target.x-p.x,dy=target.y-p.y;
+    const lat=dx*s.nx+dy*s.ny,forward=dx*s.ux+dy*s.uy,side=Math.sign(lat)||1;
+    // Required displacement grows only with actual TTC urgency / predicted miss.
+    const urgency=Math.max(0,Math.min(1,(1.05-threat.t)/1.05));
+    const need=Math.min((widths[si]||14)*.38,.72+Math.max(0,2.35-threat.miss)*.72+urgency*1.25);
+    const use=Math.min(Math.abs(lat),need);
+    return clampVisualRoad674(p,si,{
+      ...target,x:p.x+s.ux*Math.max(2.5,forward)+s.nx*side*use,
+      y:p.y+s.uy*Math.max(2.5,forward)+s.ny*side*use,kind:"minimum-escape481"
+    });
+  }
+
+  function falseThreatFilter482(p,threat){
+    if(!threat) return null;
+    if(threat.t>1.35||threat.miss>3.05) return null;
+    if(threat.closingSpeed<=.02) return null;
+    // Very distant / late crossing threats are not worth abandoning the line for.
+    if(threat.dist>15&&threat.t>.82) return null;
+    return threat;
+  }
+
+  function avoidance483(p,si,now){
+    const threat=falseThreatFilter482(p,collisionTTC479(p));
+    if(!threat) return null;
+    let gap=safeGapSearch480(p,si,threat);
+    let left=clampVisualRoad674(p,si,minimumDodge623(p,si,threat,-1));
+    let right=clampVisualRoad674(p,si,minimumDodge623(p,si,threat,1));
+    const cand=[gap,left,right].filter(Boolean);
+    let best=null,bestScore=Infinity;
+    for(let t of cand){
+      t=minimumEscape481(p,si,threat,t); if(!t) continue;
+      const r=futureObserverRisk480(p,t.x,t.y,.55);
+      const d=Math.hypot(t.x-p.x,t.y-p.y);
+      const score=r.risk*5.2+Math.max(0,2-r.nearest)*3+d*.12;
+      if(score<bestScore){bestScore=score;best=t;}
+    }
+    if(best){
+      p.avoidance483Until=now+260;
+      p.lastAvoidance483=now;
+      return {...best,kind:"avoidance4-final483"};
+    }
+    return null;
+  }
+
+  function smoothRejoin483(p,si,now){
+    if(now<(p.avoidance483Until||0)) return null;
+    const last=p.lastAvoidance483||0;
+    if(!last||now-last>1150) return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))],ideal=racingLine576(p,si,now);
+    if(!s||!ideal) return null;
+    const rx=ideal.x-p.x,ry=ideal.y-p.y;
+    const f=Math.max(2.8,Math.min(5.2,rx*s.ux+ry*s.uy));
+    const lat=rx*s.nx+ry*s.ny;
+    const capped=Math.max(-1.15,Math.min(1.15,lat));
+    return clampVisualRoad674(p,si,{
+      x:p.x+s.ux*f+s.nx*capped,y:p.y+s.uy*f+s.ny*capped,kind:"smooth-rejoin483"
+    });
+  }
+
+  function observerAvoidance483(p,si,now){
+    let t=avoidance483(p,si,now);
+    if(t) return t;
+    return smoothRejoin483(p,si,now);
+  }
+
   function raceAI769(p,si,now){
     sanitizeRaceState666(p);
-    const threat=collisionTTC622(p);
-    let t=survivalRacingAI435(p,si,now);
+    const threat=falseThreatFilter482(p,collisionTTC479(p));
+    let t=observerAvoidance483(p,si,now);
+    const avoiding=!!t && /avoidance4/.test(t.kind||"");
 
-    if(!threat){
+    if(!t) t=survivalRacingAI435(p,si,now);
+
+    if(!threat && !avoiding){
       const rc=racecraft344(p,si,now);
       if(rc) t=rc;
     }
