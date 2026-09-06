@@ -20,12 +20,12 @@
   const restartBtn = document.getElementById("restartBtn");
 
   const MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 100;
+  const OBSERVER_COUNT = 130;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.24";
+  const BUILD_ID = "v7.24(130)";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8520,13 +8520,13 @@ function farthestVisibleFastTarget91(p,si){
       }
     }
 
-    // Full prediction is capped near the racer and throttled to ~30 Hz.
+    // v7.24(130): normal prediction is capped at 11.1; emergency 4.0 stays immediate.
     if(now<(p._nextThreatScan724||0))
       return p._cachedThreat724||null;
-    p._nextThreatScan724=now+34;
+    p._nextThreatScan724=now+40;
 
     let best=null,bestScore=Infinity;
-    const nearby=localObservers723(p,12.2);
+    const nearby=localObservers723(p,11.1);
 
     for(const o of nearby){
       const ox=o.x-p.x,oy=o.y-p.y;
@@ -8690,8 +8690,8 @@ function farthestVisibleFastTarget91(p,si){
     const stop=/stop|brake/.test(st.action);
     const thread=/thread|diag/.test(st.action);
 
-    st.actionUntil=now+(back?255:stop?205:thread?215:245);
-    st.planHoldUntil723=now+(back?205:thread?145:160);
+    st.actionUntil=now+(back?255:stop?205:thread?225:245);
+    st.planHoldUntil723=now+(back?205:thread?185:175);
     st.rejoinUntil=0;
 
     if(back){
@@ -9603,8 +9603,21 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.steerX=moveDirX;p.steerY=moveDirY;
       p.mouseTargetX=tx;p.mouseTargetY=ty;
     }else if(engineAuthority719){
-      moveDirX=dx/d;
-      moveDirY=dy/d;
+      const wantX=dx/d,wantY=dy/d;
+      if(st723.mode==="EVADE" || st723.mode==="REJOIN"){
+        // v7.24(130): smooth only tactical direction changes.
+        // NORMAL remains exact on the racing spline.
+        let sx=Number.isFinite(p.steerX)?p.steerX:wantX;
+        let sy=Number.isFinite(p.steerY)?p.steerY:wantY;
+        const hard=/hard/.test(st723.action||"");
+        const tau=st723.mode==="REJOIN"?72:(hard?34:52);
+        const a=1-Math.exp(-Math.max(1,dt)/tau);
+        sx+=(wantX-sx)*a; sy+=(wantY-sy)*a;
+        const sl=Math.hypot(sx,sy)||1;
+        moveDirX=sx/sl; moveDirY=sy/sl;
+      }else{
+        moveDirX=wantX; moveDirY=wantY;
+      }
       p.steerX=moveDirX;p.steerY=moveDirY;
       p.mouseTargetX=tx;p.mouseTargetY=ty;
     }else if(legacyCalm502){
