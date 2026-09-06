@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.09";
+  const BUILD_ID = "v7.10";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6807,6 +6807,11 @@ function farthestVisibleFastTarget91(p,si){
     p.lastProgress=0;
     p._lastLegal619={x:sx,y:sy};
     p._steer617={x:sx,y:sy};
+    // v7.10: normal racing no longer fans out by identity.
+    p.openingLineBias=0;
+    p.routeBand=0;
+    p.routeIdentityBias=0;
+    p.laneSignatureWave=0;
   }
 
 
@@ -7786,7 +7791,7 @@ function farthestVisibleFastTarget91(p,si){
     if(now<(p.avoidance483Until||0)) return null;
     const last=p.lastAvoidance483||0;
     if(!last||now-last>1150) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))],ideal=racingLine576(p,si,now);
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))],ideal=globalOptimalLine710(p,si,now,5.2);
     if(!s||!ideal) return null;
     const rx=ideal.x-p.x,ry=ideal.y-p.y;
     const f=Math.max(2.8,Math.min(5.2,rx*s.ux+ry*s.uy));
@@ -8320,14 +8325,117 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function calmRacingLine709(p,si,now){
-    let t=startLaunch707(p,si,now);
-    if(!t)t=finishApproach706(p,si);
-    if(!t)t=cornerExit704(p,si,now);
-    if(!t)t=apexPrecision703(p,si,now);
-    if(!t)t=straightOptimization705(p,si);
-    if(!t)t=racingLine576(p,si,now);
+    return normalRaceAuthority710(p,si,now);
+  }
+
+
+  // ============================================================
+  // v7.10 GLOBAL OPTIMAL RACING LINE REBUILD
+  // Normal racing has ONE shared mathematical line for all 8 racers.
+  // Driver identity may affect tiny execution precision only; it may not choose
+  // a different macro/micro lane. Avoidance and racecraft are the only exceptions.
+  // ============================================================
+
+  const GLOBAL_OPTIMAL_LINE_710=[
+    [31.05,132.55],
+    [72.0,129.9],
+    [108.0,126.3],
+    [121.4,126.3],       // corner 1 inner overlap
+    [121.4,80.6],        // corner 2 inner overlap
+    [103.0,77.4],
+    [76.0,71.7],
+    [56.0,67.5],
+    [50.1,67.5],         // corner 3 inner overlap
+    [50.1,30.0],         // corner 4 inner overlap
+    [61.0,29.4],
+    [96.0,27.4],
+    [122.0,25.4],
+    [143.0,23.5]
+  ];
+
+  const GLOBAL_OPTIMAL_SEGS_710=(()=>{
+    const a=[];let total=0;
+    for(let i=0;i<GLOBAL_OPTIMAL_LINE_710.length-1;i++){
+      const p=GLOBAL_OPTIMAL_LINE_710[i],q=GLOBAL_OPTIMAL_LINE_710[i+1];
+      const dx=q[0]-p[0],dy=q[1]-p[1],L=Math.hypot(dx,dy)||1;
+      a.push({a:p,b:q,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
+      total+=L;
+    }
+    a.total=total;
+    return a;
+  })();
+
+  function nearestOptimalProgress710(x,y){
+    let bestD=Infinity,bestP=0;
+    for(const s of GLOBAL_OPTIMAL_SEGS_710){
+      const t=Math.max(0,Math.min(1,((x-s.a[0])*s.dx+(y-s.a[1])*s.dy)/(s.L*s.L)));
+      const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t;
+      const d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
+      if(d<bestD){bestD=d;bestP=s.start+s.L*t;}
+    }
+    return bestP;
+  }
+
+  function optimalPointAt710(progress){
+    const p=Math.max(0,Math.min(GLOBAL_OPTIMAL_SEGS_710.total,progress));
+    for(let i=0;i<GLOBAL_OPTIMAL_SEGS_710.length;i++){
+      const s=GLOBAL_OPTIMAL_SEGS_710[i];
+      if(p<=s.start+s.L||i===GLOBAL_OPTIMAL_SEGS_710.length-1){
+        const t=Math.max(0,Math.min(1,(p-s.start)/s.L));
+        return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,seg:i};
+      }
+    }
+    const f=GLOBAL_OPTIMAL_LINE_710[GLOBAL_OPTIMAL_LINE_710.length-1];
+    return {x:f[0],y:f[1],seg:GLOBAL_OPTIMAL_SEGS_710.length-1};
+  }
+
+  function globalOptimalLine710(p,si,now,lookahead=6.0){
+    if(!p)return null;
+    const prog=nearestOptimalProgress710(p.x,p.y);
+    const a=driverAbilityBase645(p);
+    // Same line for everybody. Skill changes only how far ahead the driver can
+    // confidently read the identical line, not lateral lane choice.
+    const read=Math.max(.50,Math.min(.98,(a.line+a.judgment+a.corner)/3));
+    const la=Math.max(4.6,Math.min(7.0,lookahead*(.90+read*.12)));
+    let q=optimalPointAt710(prog+la);
+
+    // End of race always converges to the exact logical finish.
+    if(si>=segs.length-1||GLOBAL_OPTIMAL_SEGS_710.total-prog<9.0){
+      const f=GLOBAL_OPTIMAL_LINE_710[GLOBAL_OPTIMAL_LINE_710.length-1];
+      q={x:f[0],y:f[1],seg:GLOBAL_OPTIMAL_SEGS_710.length-1};
+    }
+
+    let t={x:q.x,y:q.y,kind:"global-optimal710"};
+    t=finalRoadTarget636(p,si,t);
+    if(!t)t=clampVisualRoad674(p,si,{x:q.x,y:q.y,kind:"global-optimal710"});
+    if(!t)t=strictInside620(p,si,now);
+    return t;
+  }
+
+  function globalOptimalRejoin710(p,si,now){
+    const ideal=globalOptimalLine710(p,si,now,5.2);
+    if(!ideal)return null;
+    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
+    if(!s)return ideal;
+    const dx=ideal.x-p.x,dy=ideal.y-p.y;
+    const f=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
+    // Rejoin rapidly but without a giant diagonal snap.
+    const cappedLat=Math.max(-1.35,Math.min(1.35,lat));
+    const forward=Math.max(3.6,Math.min(5.8,f));
+    return roadBoundary708(p,si,{
+      x:p.x+s.ux*forward+s.nx*cappedLat,
+      y:p.y+s.uy*forward+s.ny*cappedLat,
+      kind:"global-rejoin710"
+    })||ideal;
+  }
+
+  function normalRaceAuthority710(p,si,now){
+    // Absolute normal-race authority. No routeBand, lane signature, opening bias,
+    // personality lane or per-driver apex selection is allowed here.
+    let t=globalOptimalLine710(p,si,now,6.0);
     t=segmentTransition701(p,si,t);
-    return roadBoundary708(p,si,t);
+    t=roadBoundary708(p,si,t);
+    return t;
   }
 
   function raceEngine1000(p,si,now){
@@ -8340,7 +8448,7 @@ function farthestVisibleFastTarget91(p,si){
 
     if(!t){
       const rejoin=smoothRejoin483(p,si,now);
-      t=rejoin||calmRacingLine709(p,si,now)||survivalRacingAI435(p,si,now);
+      t=rejoin||normalRaceAuthority710(p,si,now);
     }
 
     if(!threat&&!avoiding){
@@ -8355,7 +8463,7 @@ function farthestVisibleFastTarget91(p,si){
 
     // Tactical targets keep their intent; calm targets are normalized by Engine 10.
     const tactical=t&&/racecraft|overtake|traffic|avoidance/i.test(t.kind||"");
-    if(!threat&&!tactical)t=calmRacingLine709(p,si,now)||t;
+    if(!threat&&!tactical)t=normalRaceAuthority710(p,si,now)||t;
 
     t=segmentTransition701(p,si,t);
     t=roadBoundary708(p,si,t);
