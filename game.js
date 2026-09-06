@@ -18,6 +18,8 @@
   const cameraLabel = document.getElementById("cameraLabel");
   const startBtn = document.getElementById("startBtn");
   const restartBtn = document.getElementById("restartBtn");
+  const mapSelect774 = document.getElementById("mapSelect774");
+  const mapSelectIcon774 = document.getElementById("mapSelectIcon774");
 
   const MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 130;
@@ -25,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.72";
+  const BUILD_ID = "v7.75";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -369,7 +371,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
-      mapEngine:"Approved 11 Map Geometry + Racing Line Generator v7.72",
+      mapEngine:"Approved 11 Map Geometry + Racing Line Generator v7.72 · Map Select UI v7.74",
       currentMap770:{id:currentMap770().id,name:currentMap770().name,en:currentMap770().en},
       mapPoolSize770:MAP_POOL_770.length,
       mapGeometryReady770:MAP_POOL_770.filter(m=>m.geometryReady).length,
@@ -911,7 +913,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._integrated759=null;p._normalEntryAt759=0;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._splineRepair770=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._integrated759=null;p._normalEntryAt759=0;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._splineRepair770=0;
+      p._lapCheckpoint775=false;p._lapArmed775=false;p._lapComplete775=false;p._lapMaxFraction775=0;
+      p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -5574,6 +5578,104 @@ function calibratedFastCorridor79(si){
   }
   bindMapGeometry771();
 
+
+  const CIRCUIT_MAPS_775=new Set(["desert_oasis","double_hairpin","ice_ring","industrial_zone","neon_city","rubber_duck","star_fish"]);
+  const POINT_TO_POINT_MAPS_775=new Set(["cliff_hanger","river_cross","skyway"]);
+  const CIRCUIT_CLOSURES_775={"rubber_duck":[[126.3,26.7],[130,42],[132,60],[132,78],[131,96],[127,110],[120,120],[112,125],[103,127],[94,130],[86,136],[78,144],[70,150],[61.1,153.1]],"ice_ring":[[126.3,24.9],[138,34],[145,47],[150,63],[152,82],[151,100],[146,116],[137,129],[124,137],[108,142],[90,145],[73,145],[57.5,142.4]],"desert_oasis":[[100.2,24.9],[116,28],[130,37],[140,50],[145,66],[146,83],[143,99],[137,113],[128,124],[118,134],[110,142],[105,147.7]],"neon_city":[[114.5,23.1],[127,31],[136,44],[141,61],[142,80],[140,99],[135,116],[127,131],[115,141],[101,147],[84,150],[68.2,149.5]],"double_hairpin":[[125.1,24.9],[139,30],[146,43],[149,60],[149,80],[147,99],[143,116],[135,131],[123,141],[108,146],[93,148],[86,147.7]],"star_fish":[[88.4,28.5],[81,33],[75,39],[70,46],[65,53],[60,58],[57.5,58.7]],"industrial_zone":[[126.3,21.4],[138,30],[146,43],[150,59],[151,77],[151,96],[148,113],[141,128],[131,139],[117,146],[100,150],[80,152],[62,153],[56.3,153.1]]};
+
+  function densifyClosure775(points,maxStep=1.45){
+    if(!Array.isArray(points)||points.length<2)return [];
+    const out=[[+points[0][0],+points[0][1]]];
+    for(let i=0;i<points.length-1;i++){
+      const a=points[i],b=points[i+1],dx=b[0]-a[0],dy=b[1]-a[1];
+      const d=Math.hypot(dx,dy),n=Math.max(1,Math.ceil(d/maxStep));
+      for(let k=1;k<=n;k++){
+        const t=k/n;out.push([a[0]+dx*t,a[1]+dy*t]);
+      }
+    }
+    return out;
+  }
+
+  function safeBox775(pt,size=16.5){
+    const h=size*.5;
+    return {x0:pt[0]-h,y0:pt[1]-h,x1:pt[0]+h,y1:pt[1]+h};
+  }
+
+  function adjacentFinish775(start,closure){
+    if(!closure?.length)return [start[0],start[1]];
+    let remain=4.2;
+    for(let i=closure.length-1;i>0;i--){
+      const a=closure[i-1],b=closure[i],d=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      if(d>=remain){
+        const t=(d-remain)/Math.max(.0001,d);
+        return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
+      }
+      remain-=d;
+    }
+    return [closure[0][0],closure[0][1]];
+  }
+
+  function applyStartFinishRules775(){
+    for(const m of MAP_POOL_770){
+      if(m.id==="s_map"){
+        m.courseType775="point-to-point";
+        m.finishRule775="end-gate";
+        m.lapRequired775=false;
+        continue;
+      }
+      const oldRoute=(m.route770||[]).map(p=>[p[0],p[1]]);
+      const oldWidths=[...(m.widths770||[])];
+      if(oldRoute.length<2)continue;
+
+      const yellowStart=[oldRoute[oldRoute.length-1][0],oldRoute[oldRoute.length-1][1]];
+      const oldGreen=[oldRoute[0][0],oldRoute[0][1]];
+      let newRoute=[...oldRoute].reverse();
+      let newWidths=[...oldWidths].reverse();
+
+      if(CIRCUIT_MAPS_775.has(m.id)){
+        const raw=CIRCUIT_CLOSURES_775[m.id]||[];
+        const finish=adjacentFinish775(yellowStart,raw);
+        const closure=densifyClosure775([...raw.slice(0,-1),finish]);
+        if(closure.length>1){
+          newRoute.push(...closure.slice(1));
+          const baseW=oldWidths.length?oldWidths[Math.floor(oldWidths.length*.5)]:10;
+          for(let i=1;i<closure.length;i++)newWidths.push(baseW);
+        }
+        m.start={x:yellowStart[0],y:yellowStart[1]};
+        m.goal={x:finish[0],y:finish[1]};
+        m.safeZones={start:safeBox775(yellowStart),goal:safeBox775(finish)};
+        m.courseType775="circuit";
+        m.finishRule775="one-lap-gate";
+        m.lapRequired775=true;
+        m.lapArmFraction775=.82;
+      }else{
+        m.start={x:yellowStart[0],y:yellowStart[1]};
+        m.goal={x:oldGreen[0],y:oldGreen[1]};
+        m.safeZones={start:safeBox775(yellowStart),goal:safeBox775(oldGreen)};
+        m.courseType775="point-to-point";
+        m.finishRule775="end-gate";
+        m.lapRequired775=false;
+      }
+
+      m.route770=newRoute;
+      m.widths770=newWidths;
+      const line=generateRacingLine772(m);
+      m.racingSpline770=line;
+      m.globalOptimal770=line;
+      m.racingLineMode772="generated-v7.75";
+    }
+  }
+  applyStartFinishRules775();
+
+  function mapLapRule775(m=currentMap770()){
+    return {
+      type:m.courseType775||"point-to-point",
+      lapRequired:!!m.lapRequired775,
+      armFraction:m.lapArmFraction775||0,
+      finishRule:m.finishRule775||"end-gate"
+    };
+  }
+
   function applyMapDefinition770(id,opts={}){
     const next=MAP_DEFINITIONS_770[id];
     if(!next)return {ok:false,reason:"unknown-map",id};
@@ -5593,7 +5695,65 @@ function calibratedFastCorridor79(si){
     return {ok:true,id:next.id,name:next.name,routeLength,splineLength:RACING_SPLINE_LENGTH_720};
   }
 
+
   function selectMap770(id){return applyMapDefinition770(id,{reset:true});}
+
+  // ============================================================
+  // v7.74 STEP 1 — MAP SELECT UI
+  // UI only: map geometry / start-finish rules are intentionally unchanged here.
+  // ============================================================
+  function populateMapSelect774(){
+    if(!mapSelect774)return;
+    const selected=currentMap770().id;
+    mapSelect774.textContent="";
+    [...MAP_POOL_770].sort((a,b)=>a.slot-b.slot).forEach(m=>{
+      const opt=document.createElement("option");
+      opt.value=m.id;
+      opt.textContent=`${m.slot}. ${m.name} · ${m.en}`;
+      opt.disabled=!m.geometryReady;
+      mapSelect774.appendChild(opt);
+    });
+    mapSelect774.value=selected;
+    mapSelect774.title=`현재 맵: ${currentMap770().name}`;
+  }
+
+  function syncMapSelect774(){
+    if(!mapSelect774)return;
+    mapSelect774.value=currentMap770().id;
+    mapSelect774.title=`현재 맵: ${currentMap770().name}`;
+  }
+
+  function clearMiniMap774(){
+    const mc=document.getElementById("miniMap");
+    if(!mc)return;
+    const mx=mc.getContext("2d");
+    mx.clearRect(0,0,mc.width,mc.height);
+  }
+
+  function selectMapFromUI774(id){
+    const result=selectMap770(id);
+    if(!result.ok){
+      syncMapSelect774();
+      return result;
+    }
+    syncMapSelect774();
+    clearMiniMap774();
+    // renderMiniMap() is forced again when the new image fires its load event.
+    if(typeof lastMiniMapRender!=="undefined")lastMiniMapRender=0;
+    return result;
+  }
+
+  if(mapSelect774){
+    populateMapSelect774();
+    mapSelect774.addEventListener("change",e=>selectMapFromUI774(e.target.value));
+  }
+  if(mapSelectIcon774){
+    mapSelectIcon774.addEventListener("click",()=>{
+      if(!mapSelect774)return;
+      mapSelect774.focus();
+      try{ if(typeof mapSelect774.showPicker==="function")mapSelect774.showPicker(); }catch(e){}
+    });
+  }
 
   function clamp01720(v){ return Math.max(0,Math.min(1,v)); }
   function stat720(p,key,fallback=60){
@@ -7524,14 +7684,41 @@ targetOff=clampRoadOffset(si,targetOff,p);
       } else break;
     }
 
-    // Final section: once the finish gate is reached/passed, finish immediately.
+    // v7.75 START/FINISH + one-lap finish authority.
     const last=route[route.length-1];
     const fs=segs[segs.length-1];
     const frx=p.x-fs.a[0], fry=p.y-fs.a[1];
     const finishAlong=frx*fs.ux+fry*fs.uy;
     const finishDx=p.x-last[0], finishDy=p.y-last[1];
-    if(p.seg>=segs.length-1 && (finishAlong>=fs.L*0.88 || finishDx*finishDx+finishDy*finishDy<38.44)){
+
+    const lapRule775=mapLapRule775();
+    const splineTotal775=Math.max(1,RACING_SPLINE_SEGS_720.total||1);
+    const splineFrac775=Math.max(0,Math.min(1,(Number(p._splineProg720)||0)/splineTotal775));
+    const segFrac775=segs.length>1?Math.max(0,Math.min(1,p.seg/(segs.length-1))):0;
+    const lapFrac775=Math.max(splineFrac775,segFrac775);
+    p._lapMaxFraction775=Math.max(p._lapMaxFraction775||0,lapFrac775);
+
+    // A real lap must physically pass the middle of the course before FINISH can arm.
+    // This prevents a circuit whose START/FINISH boxes overlap from finishing at launch.
+    if(lapRule775.lapRequired && !p._lapCheckpoint775){
+      const mid775=splinePointAt720(splineTotal775*.50);
+      const checkpointRadius775=Math.max(5.5,(widths[Math.min(p.seg,widths.length-1)]||10)*.72);
+      if(lapFrac775>=.38 && lapFrac775<=.68 &&
+         Math.hypot(p.x-mid775.x,p.y-mid775.y)<=checkpointRadius775)
+        p._lapCheckpoint775=true;
+    }
+    if(lapRule775.lapRequired && p._lapCheckpoint775 &&
+       p._lapMaxFraction775>=lapRule775.armFraction)
+      p._lapArmed775=true;
+
+    const finishGate775=
+      p.seg>=segs.length-1 &&
+      (finishAlong>=fs.L*0.88 || finishDx*finishDx+finishDy*finishDy<38.44);
+    const finishEligible775=!lapRule775.lapRequired || !!p._lapArmed775;
+
+    if(finishEligible775 && finishGate775){
       p.done=true;
+      p._lapComplete775=!!lapRule775.lapRequired;
 
       // v2.29 sub-tick finish interpolation. Simulation remains 50Hz, but the
       // crossing time is estimated inside the final 20ms step for millisecond results.
@@ -8490,10 +8677,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   function miniCrop770(){return currentMap770().miniCrop||{x:0,y:0,w:MAP_W,h:MAP_H};}
   let lastMiniMapRender=0;
-  function renderMiniMap(){
+  function renderMiniMap(force=false){
     const now=performance.now();
     const miniInterval=fpsProtectLevel>=2?200:125;
-    if(now-lastMiniMapRender<miniInterval)return;
+    if(!force&&now-lastMiniMapRender<miniInterval)return;
     lastMiniMapRender=now;
     const mc=document.getElementById("miniMap");
     if(!mc||!map.complete)return;
@@ -8504,6 +8691,17 @@ targetOff=clampRoadOffset(si,targetOff,p);
     mx.drawImage(map,MINI_CROP.x*MAP_IMAGE_SCALE_X,MINI_CROP.y*MAP_IMAGE_SCALE_Y,MINI_CROP.w*MAP_IMAGE_SCALE_X,MINI_CROP.h*MAP_IMAGE_SCALE_Y,0,0,W,H);
     mx.globalAlpha=1;
     const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
+
+    const zones775=safeZones770();
+    const miniZone775=(z,color)=>{
+      const x=(z.x0-MINI_CROP.x)*sx,y=(z.y0-MINI_CROP.y)*sy;
+      const w=(z.x1-z.x0)*sx,h=(z.y1-z.y0)*sy;
+      mx.save();mx.strokeStyle=color;mx.lineWidth=1.8;
+      mx.strokeRect(x,y,w,h);mx.restore();
+    };
+    miniZone775(zones775.start,"#ffd92f");
+    miniZone775(zones775.goal,"#39ff6a");
+
     for(let i=0;i<players.length;i++){
       const p=players[i];
       if(p.dead) continue;
@@ -8553,6 +8751,24 @@ targetOff=clampRoadOffset(si,targetOff,p);
     ctx.restore();
   }
 
+  function drawStartFinish775(view){
+    if(!view)return;
+    const zones=safeZones770();
+    const drawZone=(z,color)=>{
+      const x=(z.x0-view.sx)*view.scale,y=(z.y0-view.sy)*view.scale;
+      const w=(z.x1-z.x0)*view.scale,h=(z.y1-z.y0)*view.scale;
+      if(x+w<0||y+h<0||x>canvas.width||y>canvas.height)return;
+      ctx.save();
+      ctx.strokeStyle=color;
+      ctx.lineWidth=Math.max(2.5,Math.min(6,view.scale*.75));
+      ctx.shadowColor=color;ctx.shadowBlur=Math.max(2,view.scale*.7);
+      ctx.strokeRect(x,y,w,h);
+      ctx.restore();
+    };
+    drawZone(zones.start,"#ffd92f");
+    drawZone(zones.goal,"#39ff6a");
+  }
+
   function render(ts){
     const W=canvas.width,H=canvas.height;
     ctx.clearRect(0,0,W,H);
@@ -8562,6 +8778,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     ctx.imageSmoothingEnabled=true;
     ctx.imageSmoothingQuality="high";
     ctx.drawImage(map,view.sx*MAP_IMAGE_SCALE_X,view.sy*MAP_IMAGE_SCALE_Y,view.viewW*MAP_IMAGE_SCALE_X,view.viewH*MAP_IMAGE_SCALE_Y,0,0,W,H);
+    drawStartFinish775(view);
 
     // v2.07: cull + batch all visible observers into a few canvas paths.
     // This sharply reduces per-observer draw calls while preserving their look.
@@ -10245,7 +10462,9 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.length!==11)issues.push("맵풀11");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("11맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.72"))issues.push("레이싱라인772");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.75"))issues.push("레이싱라인775");
+    if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
+    if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
     if(!["rubber_duck","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","star_fish","cliff_hanger","river_cross","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록");
@@ -10295,12 +10514,33 @@ function seasonCardHtml(p){
       theme:currentMap770().theme,tags:[...(currentMap770().tags||[])],
       geometryReady:!!currentMap770().geometryReady,start:{...mapStart770()},goal:{...mapGoal770()},
       special:{...(currentMap770().special||{})},
+      miniCrop774:{...miniCrop770()},
       extraRoadCount771:(currentMap770().extraRoads771||[]).length,
       racingLineMode772:currentMap770().racingLineMode772||"unknown",
       approvedImageShape772:!!currentMap770().approvedImageShape772,
+      courseType775:currentMap770().courseType775||"point-to-point",
+      finishRule775:currentMap770().finishRule775||"end-gate",
+      lapRequired775:!!currentMap770().lapRequired775,
+      startFinishDistance775:Math.hypot(mapGoal770().x-mapStart770().x,mapGoal770().y-mapStart770().y),
       routeLength,splineLength:RACING_SPLINE_LENGTH_720
     }),
     selectMap770,
+    getMapSelectUI774:()=>({
+      value:mapSelect774?.value||null,
+      optionCount:mapSelect774?.options?.length||0,
+      options:mapSelect774?[...mapSelect774.options].map(o=>({value:o.value,text:o.textContent,disabled:o.disabled})):[]
+    }),
+    getLapRules775:()=>MAP_POOL_770.map(m=>({
+      id:m.id,name:m.name,type:m.courseType775||"point-to-point",
+      lapRequired:!!m.lapRequired775,finishRule:m.finishRule775||"end-gate",
+      start:{...(m.start||{})},finish:{...(m.goal||{})},
+      startFinishDistance:Math.hypot((m.goal?.x||0)-(m.start?.x||0),(m.goal?.y||0)-(m.start?.y||0))
+    })),
+    getLapState775:()=>players.map(p=>({
+      name:p.name,checkpoint:!!p._lapCheckpoint775,
+      armed:!!p._lapArmed775,complete:!!p._lapComplete775,
+      maxFraction:p._lapMaxFraction775||0,done:!!p.done
+    })),
     getTeleportAudit754:()=>players.map(p=>({
       name:p.name,trips:p._teleportGuardTrips754||0,
       backtrackPrevented:p._backtrackPrevented754||0,
@@ -10312,8 +10552,18 @@ function seasonCardHtml(p){
     }))
   };
 
-  map.addEventListener("load",reset);
-  if(map.complete) reset();
+  map.addEventListener("load",()=>{
+    reset();
+    syncMapSelect774();
+    lastMiniMapRender=0;
+    renderMiniMap(true);
+  });
+  if(map.complete){
+    reset();
+    syncMapSelect774();
+    lastMiniMapRender=0;
+    renderMiniMap(true);
+  }
 
   window.ObserverFMStats = { advancedStats697, getAll:()=>players.map(p=>({name:p.name,...(advancedStats697(p)||{})})) };
 })();

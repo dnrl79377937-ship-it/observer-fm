@@ -6,17 +6,54 @@
   <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observer Avoid FM v7.72 — Live</title>
+  <title>Observer Avoid FM v7.75 — Lap Finish</title>
   <link rel="stylesheet" href="style.css">
+
+  <style id="mapSelectStyle774">
+    .map-picker-774{
+      display:inline-flex;align-items:center;gap:7px;
+      padding:4px 6px;border:1px solid rgba(77,184,255,.58);
+      border-radius:9px;background:rgba(5,18,32,.92);
+      box-shadow:0 0 14px rgba(0,148,255,.13);
+    }
+    .map-picker-icon-774{
+      width:36px;height:34px;border:1px solid rgba(89,195,255,.55);
+      border-radius:7px;background:linear-gradient(180deg,#123752,#092338);
+      color:#dff6ff;font-size:18px;line-height:1;cursor:pointer;
+    }
+    .map-picker-select-774{
+      min-width:188px;height:34px;padding:0 32px 0 10px;
+      border:1px solid rgba(75,180,244,.5);border-radius:7px;
+      background:#071b2d;color:#f4fbff;font-weight:800;font-size:13px;
+      outline:none;cursor:pointer;
+    }
+    .map-picker-select-774:focus{border-color:#71dcff;box-shadow:0 0 0 2px rgba(66,199,255,.14)}
+    .map-picker-select-774 option{background:#071b2d;color:#fff}
+    .map-picker-label-774{
+      color:#79dfff;font-size:11px;font-weight:900;letter-spacing:.04em;
+      white-space:nowrap
+    }
+    @media (max-width:980px){
+      .map-picker-label-774{display:none}
+      .map-picker-select-774{min-width:150px}
+    }
+  </style>
+
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Observer Avoid FM</h1>
-      <p>v7.72 · OBS 130 · HIT 0.56</p>
+      <p>v7.75 · LAP FINISH · OBS 130 · HIT 0.56</p>
     </div>
     
     <div class="controls">
+
+      <div class="map-picker-774" id="mapPicker774">
+        <button id="mapSelectIcon774" class="map-picker-icon-774" type="button" title="맵 선택" aria-label="맵 선택">🗺️</button>
+        <span class="map-picker-label-774">맵 선택</span>
+        <select id="mapSelect774" class="map-picker-select-774" aria-label="레이싱 맵 선택"></select>
+      </div>
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
       <button id="resultBtn">경기 통계</button> <button id="eloBtn" class="secondaryBtn">ELO 랭킹</button> <button id="balanceBtn" class="secondaryBtn">밸런스 테스트</button> <button id="replayBtn" class="secondaryBtn">리플레이</button>
@@ -28,7 +65,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v7.72 · OBS 130 · HIT 0.56</span>
+        <span id="cameraLabel">v7.75 · LAP FINISH · OBS 130 · HIT 0.56</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <select id="povSelect" class="focus-mode-btn" title="AI 선수 POV"><option value="-1">POV: OFF</option></select>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
@@ -103,7 +140,7 @@
         </div>
       </section>
 
-      <div class="qa-final-strip">v7.72 · OBS 130 · HIT 0.56</div>
+      <div class="qa-final-strip">v7.75 · LAP FINISH · OBS 130 · HIT 0.56</div>
       <div class="highlight-title">선수 경기 평점</div>
       <div id="matchRatings" class="match-ratings"></div>
       <div class="highlight-title">경기 분석 리포트</div>
@@ -141,7 +178,7 @@
   <div id="balancePanel" class="overlay hidden">
     <div class="modalCard balanceCard">
       <button id="balanceClose" class="closeBtn">×</button>
-      <h2>v7.72 · 자동 밸런스 테스트</h2>
+      <h2>v7.75 · 자동 밸런스 테스트</h2>
       <p class="balance-note"><b>실전 누적</b>은 실제 레이스 엔진에서 끝난 라운드를 저장합니다. 아래 빠른 반복 테스트는 밸런스 방향을 빠르게 확인하는 근사 시뮬레이션입니다.</p>
       <div class="balance-section-head"><b>실전 경기 누적 대시보드</b><button id="liveBalanceReset">실전 기록 초기화</button></div>
       <div id="liveBalanceSummary" class="balance-summary"></div>
@@ -173,7 +210,7 @@
   <div id="replayPanel" class="overlay hidden">
     <div class="modalCard replayCard">
       <button id="replayClose" class="closeBtn">×</button>
-      <h2>v7.72 · 경기 리플레이</h2>
+      <h2>v7.75 · 경기 리플레이</h2>
       <div id="replayRounds" class="replay-rounds"></div>
       <canvas id="replayCanvas" width="771" height="534"></canvas>
       <div class="highlight-title">자동 하이라이트</div>
@@ -189,6 +226,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=7.72-approved-map-art-racing-line-generator"></script>
+  <script src="game.js?v=7.75-start-finish-one-lap"></script>
 </body>
 </html>
