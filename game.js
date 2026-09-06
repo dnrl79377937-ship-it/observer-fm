@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.19-HOTFIX4";
+  const BUILD_ID = "v7.20";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -724,7 +724,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -8728,6 +8728,340 @@ function farthestVisibleFastTarget91(p,si){
     return fastestShortestTarget719(p,si,now);
   }
 
+
+  // ============================================================
+  // v7.20 FINAL DRIVING AI — Optimal Racing Spline + 3-State Survival
+  // NORMAL -> EVADE -> REJOIN
+  // This is the intended final AI layer before FM stats/team/league work.
+  // ============================================================
+
+  const RACING_SPLINE_720=[
+    [31.05000,132.55000],
+    [117.55840,123.35848],
+    [117.89916,123.43059],
+    [118.20141,123.46350],
+    [118.46487,123.45750],
+    [118.68928,123.41287],
+    [118.87440,123.32991],
+    [119.01997,123.20891],
+    [119.12571,123.05014],
+    [119.19138,122.85390],
+    [119.21671,122.62048],
+    [119.20145,122.35017],
+    [119.14534,122.04324],
+    [119.04813,121.70000],
+    [119.00187,84.70000],
+    [119.09802,84.35584],
+    [119.15391,84.04443],
+    [119.16977,83.76610],
+    [119.14587,83.52117],
+    [119.08245,83.30998],
+    [118.97977,83.13285],
+    [118.83808,82.99011],
+    [118.65763,82.88210],
+    [118.43867,82.80914],
+    [118.18145,82.77156],
+    [117.88623,82.76970],
+    [117.55325,82.80387],
+    [53.24675,65.19613],
+    [52.91379,65.23030],
+    [52.61860,65.22844],
+    [52.36145,65.19086],
+    [52.14259,65.11790],
+    [51.96226,65.00989],
+    [51.82071,64.86715],
+    [51.71820,64.69002],
+    [51.65498,64.47883],
+    [51.63130,64.23390],
+    [51.64741,63.95557],
+    [51.70356,63.64416],
+    [51.80000,63.30000],
+    [51.80000,33.70000],
+    [51.69417,33.34796],
+    [51.63107,33.03409],
+    [51.61045,32.75868],
+    [51.63203,32.52201],
+    [51.69557,32.32437],
+    [51.80080,32.16604],
+    [51.94746,32.04730],
+    [52.13530,31.96845],
+    [52.36406,31.92976],
+    [52.63347,31.93153],
+    [52.94328,31.97403],
+    [53.29322,32.05755],
+    [143.00000,23.50000]
+  ];
+
+  const RACING_SPLINE_SEGS_720=(()=>{
+    const out=[];let total=0;
+    for(let i=0;i<RACING_SPLINE_720.length-1;i++){
+      const a=RACING_SPLINE_720[i],b=RACING_SPLINE_720[i+1];
+      const dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
+      out.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
+      total+=L;
+    }
+    out.total=total;
+    return out;
+  })();
+
+  const RACING_SPLINE_LENGTH_720=322.968847525496;
+
+  function clamp01720(v){ return Math.max(0,Math.min(1,v)); }
+  function stat720(p,key,fallback=84){
+    const v=Number(p?.stats?.[key]);
+    return clamp01720(((Number.isFinite(v)?v:fallback)-72)/27);
+  }
+
+  function driverExecution720(p){
+    return {
+      maxSpeed:stat720(p,"pace"),
+      inside:stat720(p,"insideLine"),
+      corner:stat720(p,"cornering"),
+      control:stat720(p,"control"),
+      prediction:stat720(p,"prediction"),
+      reaction:stat720(p,"reaction"),
+      avoidance:stat720(p,"avoidance"),
+      recovery:stat720(p,"recovery"),
+      riskControl:stat720(p,"riskControl"),
+      consistency:stat720(p,"consistency")
+    };
+  }
+
+  function nearestSplineProgress720(x,y){
+    let bestD=Infinity,bestP=0;
+    for(const s of RACING_SPLINE_SEGS_720){
+      const t=Math.max(0,Math.min(1,((x-s.a[0])*s.dx+(y-s.a[1])*s.dy)/(s.L*s.L)));
+      const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t;
+      const d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
+      if(d<bestD){bestD=d;bestP=s.start+s.L*t;}
+    }
+    return bestP;
+  }
+
+  function splinePointAt720(progress){
+    const p=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,progress));
+    for(let i=0;i<RACING_SPLINE_SEGS_720.length;i++){
+      const s=RACING_SPLINE_SEGS_720[i];
+      if(p<=s.start+s.L || i===RACING_SPLINE_SEGS_720.length-1){
+        const t=Math.max(0,Math.min(1,(p-s.start)/s.L));
+        return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy,seg:i};
+      }
+    }
+    const f=RACING_SPLINE_720[RACING_SPLINE_720.length-1];
+    return {x:f[0],y:f[1],ux:1,uy:0,seg:RACING_SPLINE_SEGS_720.length-1};
+  }
+
+  function splineCurvature720(progress){
+    const a=splinePointAt720(Math.max(0,progress-.75));
+    const b=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,progress+.75));
+    const dot=Math.max(-1,Math.min(1,a.ux*b.ux+a.uy*b.uy));
+    return Math.acos(dot)/1.5;
+  }
+
+  function roadClearance720(q,nx,ny,side){
+    let d=0;
+    for(let x=.18;x<=3.6;x+=.18){
+      if(!visualRoadMask674(q.x+nx*side*x,q.y+ny*side*x,0)) break;
+      d=x;
+    }
+    return d;
+  }
+
+  function executedSplinePoint720(p,progress){
+    const q=splinePointAt720(progress);
+    const nx=-q.uy,ny=q.ux;
+    const plus=roadClearance720(q,nx,ny,1),minus=roadClearance720(q,nx,ny,-1);
+    const wideSide=plus>=minus?1:-1;
+    const ex=driverExecution720(p);
+
+    // Everyone knows the same optimal line. Lower inside/control stats only create
+    // a small wider execution miss — never a different macro route.
+    const miss=(1-ex.inside)*.52+(1-ex.control)*.16;
+    const stable=.82+.18*Math.sin(progress*.035+(p.index||0)*.73);
+    const off=wideSide*Math.min(.72,Math.max(0,miss*stable));
+    const x=q.x+nx*off,y=q.y+ny*off;
+    if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
+      return {...q,x,y,executionOffset720:off};
+    return {...q,executionOffset720:0};
+  }
+
+  function advanceOnSpline720(p,distance){
+    if(!p || !(distance>0)) return false;
+    let prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+    prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+distance);
+    const q=executedSplinePoint720(p,prog);
+    p.x=q.x;p.y=q.y;p._splineProg720=prog;
+    p._lineOffset720=q.executionOffset720||0;
+    return true;
+  }
+
+  function splineDeviation720(p){
+    const prog=nearestSplineProgress720(p.x,p.y),q=splinePointAt720(prog);
+    return Math.hypot(p.x-q.x,p.y-q.y);
+  }
+
+  function ensureRaceState720(p,now){
+    if(!p._raceState720){
+      p._raceState720={
+        mode:"NORMAL",since:now,lastThreatAt:0,reactionReadyAt:0,
+        pendingThreatId:-1,action:"none",target:null,actionUntil:0,rejoinUntil:0
+      };
+    }
+    return p._raceState720;
+  }
+
+  function readableThreat720(p,now){
+    const raw=falseThreatFilter482(p,collisionTTC479(p));
+    if(!raw)return null;
+    const ex=driverExecution720(p);
+    const horizon=.70+ex.prediction*.62;
+    if(raw.t>horizon)return null;
+
+    const st=ensureRaceState720(p,now),id=raw.o?.id??-1;
+    if(st.pendingThreatId!==id){
+      st.pendingThreatId=id;
+      const urgency=clamp01720((.72-raw.t)/.72);
+      const delay=(118-ex.reaction*82)*(1-urgency*.72);
+      st.reactionReadyAt=now+Math.max(12,delay);
+    }
+    if(now<st.reactionReadyAt && raw.t>.23)return null;
+    return raw;
+  }
+
+  function scoreEvadeCandidate720(p,c,kind,threat){
+    if(!c || !courseContainsPoint(c.x,c.y,0) || !actualRoadChord719(p.x,p.y,c.x,c.y))
+      return Infinity;
+    const ch=chainCollision714(p,p.seg||0,c);
+    const field=dangerField713(p,c.x,c.y);
+    const dev=Math.min(6,splineDeviationPoint720(c.x,c.y));
+    const dist=Math.hypot(c.x-p.x,c.y-p.y);
+    const urgent=threat?.t<.48;
+    let actionPenalty=0;
+    if(/back/.test(kind))actionPenalty=urgent?.45:4.2;
+    else if(/stop/.test(kind))actionPenalty=urgent?.75:2.4;
+    else if(/brake/.test(kind))actionPenalty=1.0;
+    return ch.risk*22+field.risk*12+Math.max(0,2.0-ch.nearest)*20+
+      dev*.72+dist*.10+actionPenalty;
+  }
+
+  function splineDeviationPoint720(x,y){
+    const prog=nearestSplineProgress720(x,y),q=splinePointAt720(prog);
+    return Math.hypot(x-q.x,y-q.y);
+  }
+
+  function chooseEvadeAction720(p,now,threat){
+    const prog=nearestSplineProgress720(p.x,p.y);
+    const frame=splinePointAt720(prog);
+    const nx=-frame.uy,ny=frame.ux,ex=driverExecution720(p);
+    const lat=1.55+(1-ex.avoidance)*.72;
+    const hardLat=2.55+(1-ex.avoidance)*.58;
+    const candidates=[
+      ["side-left", 2.8, -lat],["side-right",2.8,lat],
+      ["hard-left",1.9,-hardLat],["hard-right",1.9,hardLat],
+      ["brake",1.15,0],["stop",.35,0],
+      ["back-left",-1.25,-1.45],["back-right",-1.25,1.45],["back",-1.55,0]
+    ];
+    let best=null,bestScore=Infinity;
+    for(const [kind,f,l] of candidates){
+      const c={x:p.x+frame.ux*f+nx*l,y:p.y+frame.uy*f+ny*l,kind:"race720-evade-"+kind};
+      const score=scoreEvadeCandidate720(p,c,kind,threat);
+      if(score<bestScore){bestScore=score;best={kind,target:c,score};}
+    }
+    if(!best){
+      const fallback=escapeCorridor715(p,p.seg||0,now,threat);
+      if(fallback)best={kind:"side-fallback",target:{...fallback,kind:"race720-evade-fallback"},score:999};
+    }
+    return best;
+  }
+
+  function startEvade720(p,now,threat){
+    const st=ensureRaceState720(p,now);
+    const choice=chooseEvadeAction720(p,now,threat);
+    st.mode="EVADE";st.since=now;st.lastThreatAt=now;
+    st.action=choice?.kind||"brake";
+    st.target=choice?.target||{x:p.x,y:p.y,kind:"race720-evade-brake"};
+    const back=/back/.test(st.action),stop=/stop|brake/.test(st.action);
+    st.actionUntil=now+(back?330:stop?260:300);
+    st.rejoinUntil=0;
+    return st;
+  }
+
+  function rejoinTarget720(p,now){
+    const ex=driverExecution720(p);
+    const base=nearestSplineProgress720(p.x,p.y);
+    const look=4.6+ex.recovery*2.4;
+    for(let d=look;d>=2.2;d-=.35){
+      const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,base+d));
+      const t={x:q.x,y:q.y,kind:"race720-rejoin"};
+      if(actualRoadTarget719(p,p.seg||0,t))return t;
+    }
+    const q=executedSplinePoint720(p,base);
+    return {x:q.x,y:q.y,kind:"race720-rejoin"};
+  }
+
+  function updateRaceState720(p,now){
+    const st=ensureRaceState720(p,now);
+    const threat=readableThreat720(p,now);
+
+    if(threat){
+      st.lastThreatAt=now;
+      if(st.mode!=="EVADE")startEvade720(p,now,threat);
+      else if(now>=st.actionUntil || Math.hypot((st.target?.x??p.x)-p.x,(st.target?.y??p.y)-p.y)<.55)
+        startEvade720(p,now,threat);
+      return {st,threat};
+    }
+
+    if(st.mode==="EVADE" && now-st.lastThreatAt>105 && now>=st.actionUntil){
+      st.mode="REJOIN";st.since=now;st.target=null;
+      st.rejoinUntil=now+850+driverExecution720(p).recovery*350;
+    }else if(st.mode==="REJOIN"){
+      const dev=splineDeviation720(p);
+      if(dev<.32 || now>=st.rejoinUntil){
+        st.mode="NORMAL";st.since=now;st.action="none";st.target=null;
+        st._justRejoined=true;
+        p._splineProg720=nearestSplineProgress720(p.x,p.y);
+      }
+    }
+    if(st.mode==="NORMAL")st.pendingThreatId=-1;
+    return {st,threat:null};
+  }
+
+  function normalTarget720(p){
+    const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+    const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+8.0));
+    return {x:q.x,y:q.y,kind:"race720-normal"};
+  }
+
+  function raceEngine720(p,si,now){
+    const {st,threat}=updateRaceState720(p,now);
+    let t=null;
+    if(st.mode==="NORMAL")t=normalTarget720(p);
+    else if(st.mode==="EVADE")t=st.target;
+    else t=rejoinTarget720(p,now);
+
+    t=actualRoadTarget719(p,si,t)||normalTarget720(p);
+    if(t)p._lastRaceTargetKind699=t.kind||"race720";
+    p._raceMode720=st.mode;
+    return t;
+  }
+
+  function speedMultiplier720(p,now){
+    const st=ensureRaceState720(p,now),ex=driverExecution720(p);
+    if(st.mode==="EVADE"){
+      if(/back/.test(st.action))return .64+.10*ex.avoidance;
+      if(/stop/.test(st.action))return .18;
+      if(/brake/.test(st.action))return .48+.12*ex.control;
+      return .88+.08*ex.avoidance;
+    }
+    if(st.mode==="REJOIN")return .92+.07*ex.recovery;
+
+    const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+    const curve=Math.min(1,splineCurvature720(prog)*4.2);
+    // p.speed already carries max-speed/pace. Cornering controls how much of it is
+    // retained through the smoothed apex.
+    return 1-curve*(.060-.045*ex.corner);
+  }
+
   function raceEngine1019(p,si,now){
     const threat=falseThreatFilter482(p,collisionTTC479(p));
     let t=observerSystem519(p,si,now);
@@ -8808,7 +9142,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function raceAI769(p,si,now){
-    return raceEngine1019(p,si,now);
+    return raceEngine720(p,si,now);
   }
 
   function auditedRaceTarget636(p,si,now){
@@ -9395,9 +9729,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const racing529=racingLine529(p,si,now);
     p.routeSource523=racing529?.kind || "legacy";
     const engineAuthority719=!!racing529 &&
-      /true-shortest719|global-optimal710|fastest-rejoin719|observer5/i.test(racing529.kind||"");
+      /race720|true-shortest719|global-optimal710|fastest-rejoin719|observer5/i.test(racing529.kind||"");
     const shortestCalm719=engineAuthority719 &&
-      !/observer5/i.test(racing529.kind||"");
+      /race720-normal|true-shortest719|global-optimal710/i.test(racing529.kind||"");
     if(shortestCalm719){
       p.controlMode="normal";
       p.controlMistakeSide=0;
@@ -9696,6 +10030,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       if(!eastThreats.length) speedMul=Math.max(speedMul,1.0);
     }
 
+    if(engineAuthority719) speedMul=speedMultiplier720(p,now);
     const step=p.speed*speedMul*dt/1000;
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
 
@@ -9706,15 +10041,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     const preMoveX719=p.x, preMoveY719=p.y;
-    if(shortestCalm719 && move>0){
-      // v7.19 HOTFIX4 — ACTUAL POSITION LOCK:
-      // The rendered unit itself advances by distance along the exact shortest
-      // polyline. No legacy steering layer can alter the visible trajectory now.
-      if(!advanceExactlyOnShortest719(p,move)){
+    if(shortestCalm719 && /race720-normal/.test(racing529?.kind||"") && move>0){
+      // v7.20 NORMAL: actual rendered position advances on the rounded racing spline.
+      if(!advanceOnSpline720(p,move)){
         p.x=preMoveX719+moveDirX*move;
         p.y=preMoveY719+moveDirY*move;
       }
     }else{
+      // v7.20 EVADE / REJOIN: shortest-line lock is released.
       p.x += moveDirX*move;
       p.y += moveDirY*move;
     }
@@ -9725,16 +10059,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v7.19 HOTFIX3: do NOT apply legacy x=39.4..48.6 climb clamp.
     enforcePhysicalRoad636(p);
 
-    if(shortestCalm719){
-      const dev719=shortestDeviation719(p);
-      if(dev719>.015){
-        const prog719=Number.isFinite(p._actualShortestProgress719)
-          ? p._actualShortestProgress719
-          : nearestOptimalProgress710(p.x,p.y);
-        const q719=shortestPointAt719(prog719);
-        if(q719){ p.x=q719.x; p.y=q719.y; }
-      }
-      p._actualShortestDeviation719=shortestDeviation719(p);
+    if(shortestCalm719 && /race720-normal/.test(racing529?.kind||"")){
+      p._actualShortestDeviation719=splineDeviation720(p);
     }
 
     // v5.00 restricted zones are PLANNING-ONLY.
@@ -9874,7 +10200,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         }
       }
     }
-    if(shortestCalm719){
+    if(shortestCalm719 && /race720-normal/.test(racing529?.kind||"")){
       p._lastLegal619={x:p.x,y:p.y};
       p._lastLegal636={x:p.x,y:p.y};
     }else{
