@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.39";
+  const BUILD_ID = "v7.49";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -276,7 +276,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           controlByType:clonePlain(x.controlByType||{}),passPlans:clonePlain(x.passPlans||{}),
           insideRate:x.insideRate,extremeInsideRate:x.extremeInsideRate,efficiency:x.efficiency,
           rankGain:x.rankGain,bestSector:x.bestSector,raceForm:x.raceForm,
-          startReactionMs:x.startReactionMs,startExecution:x.startExecution}))})),
+          startReactionMs:x.startReactionMs,startExecution:x.startExecution,
+          analytics749:clonePlain(x.analytics749||null)}))})),
       highlights:clonePlain(tournamentHighlights),analysis:buildMatchAnalysisReport()};
   }
 
@@ -7519,10 +7520,83 @@ function farthestVisibleFastTarget91(p,si){
         leaderMs:0,overtakes:0,positionsLost:0,avoidanceCount:0,
         avoidanceSuccess:0,insideErrorSum:0,insideSamples:0,
         maxProgress:currentProgress(p),finishTime:null,deathProgress:null,
-        lastAvoidKind:"",lastAvoidAt:0,lastRank:null
+        lastAvoidKind:"",lastAvoidAt:0,lastRank:null,
+
+        // v7.40~v7.49 Statistics Engine
+        threatReads749:0,evadeAttempts749:0,evadeSuccess749:0,evadeFailures749:0,
+        actionCounts749:{thread:0,diag:0,hard:0,brake:0,stop:0,backcon:0},
+        reactionSum749:0,reactionSamples749:0,rejoinSum749:0,rejoinSamples749:0,
+        lineDevSum749:0,lineDevMax749:0,lineSamples749:0,
+        minObserverGap749:999,dangerMs749:0,highDangerMs749:0,
+        lastMode749:"NORMAL",lastAction749:"none",lastModeAt749:now,
+        activeEvadeCollision749:0,lastCollision749:0,
+        sampleAcc749:0,sector749:0,sectorStarted749:now,
+        sectors749:Array.from({length:6},()=>({
+          timeMs:0,path:0,threats:0,evades:0,lineDevSum:0,lineSamples:0,minGap:999
+        }))
       };
     }
     return p.telemetry696;
+  }
+
+  const SECTOR_NAMES_749=[
+    "스타트→첫 코너","5→3시 세로","3→9시 중단",
+    "9→11시 세로","11→12시 상단","마지막 직선"
+  ];
+
+  function sectorIndex749(p){
+    const prog=Number.isFinite(p?._splineProg720)?p._splineProg720:0;
+    const total=Math.max(1,RACING_SPLINE_SEGS_720?.total||1);
+    const r=Math.max(0,Math.min(.999999,prog/total));
+    // Geometry-aware approximate cuts for the current S map.
+    if(r<.29)return 0;
+    if(r<.42)return 1;
+    if(r<.66)return 2;
+    if(r<.77)return 3;
+    if(r<.84)return 4;
+    return 5;
+  }
+
+  function evadeBucket749(action){
+    const a=String(action||"");
+    if(a.includes("thread"))return "thread";
+    if(a.includes("diag"))return "diag";
+    if(a.includes("hard"))return "hard";
+    if(a.includes("brake"))return "brake";
+    if(a.includes("stop"))return "stop";
+    if(a.includes("back"))return "backcon";
+    return null;
+  }
+
+  function noteThreatRead749(p,now){
+    const t=ensureTelemetry696(p,now);
+    t.threatReads749++;
+    const si=sectorIndex749(p);
+    if(t.sectors749[si])t.sectors749[si].threats++;
+  }
+
+  function noteEvadeStart749(p,now,action){
+    const t=ensureTelemetry696(p,now);
+    t.evadeAttempts749++; t.avoidanceCount++;
+    const b=evadeBucket749(action);
+    if(b)t.actionCounts749[b]=(t.actionCounts749[b]||0)+1;
+    t.activeEvadeCollision749=p.match?.collisions||0;
+    const si=sectorIndex749(p);
+    if(t.sectors749[si])t.sectors749[si].evades++;
+
+    const st=p._raceState720;
+    if(st && Number.isFinite(st._detectedAt749)){
+      const rt=Math.max(0,now-st._detectedAt749);
+      if(rt<1000){t.reactionSum749+=rt;t.reactionSamples749++;}
+      st._detectedAt749=NaN;
+    }
+  }
+
+  function noteEvadeEnd749(p,now){
+    const t=ensureTelemetry696(p,now);
+    const hitNow=p.match?.collisions||0;
+    if(hitNow===t.activeEvadeCollision749){t.evadeSuccess749++;t.avoidanceSuccess++;}
+    else t.evadeFailures749++;
   }
 
   function telemetryStep696(now,dt){
@@ -7534,31 +7608,66 @@ function farthestVisibleFastTarget91(p,si){
     for(const p of players){
       const t=ensureTelemetry696(p,now);
       const d=Math.hypot(p.x-t.lastX,p.y-t.lastY);
-      if(Number.isFinite(d)&&d<5) t.pathLength+=d;
+      if(Number.isFinite(d)&&d<5)t.pathLength+=d;
       t.lastX=p.x;t.lastY=p.y;
       const prog=currentProgress(p);
       t.maxProgress=Math.max(t.maxProgress,prog);
 
-      const s=segs[Math.max(0,Math.min(segs.length-1,p.seg||0))];
-      if(s){
-        const rx=p.x-s.a[0],ry=p.y-s.a[1];
-        t.insideErrorSum+=Math.abs(rx*s.nx+ry*s.ny);
-        t.insideSamples++;
+      const sec=sectorIndex749(p);
+      if(t.sectors749[sec]){
+        t.sectors749[sec].timeMs+=(!p.dead&&!p.done)?dt:0;
+        if(Number.isFinite(d)&&d<5)t.sectors749[sec].path+=d;
       }
+      if(sec!==t.sector749){t.sector749=sec;t.sectorStarted749=now;}
 
       const rk=ranks.get(p.index);
       if(rk!=null&&t.lastRank!=null){
-        if(rk<t.lastRank) t.overtakes+=t.lastRank-rk;
-        if(rk>t.lastRank) t.positionsLost+=rk-t.lastRank;
+        if(rk<t.lastRank)t.overtakes+=t.lastRank-rk;
+        if(rk>t.lastRank)t.positionsLost+=rk-t.lastRank;
       }
-      if(rk!=null) t.lastRank=rk;
+      if(rk!=null)t.lastRank=rk;
 
-      const ak=(p._lastRaceTargetKind699||"");
-      if(/avoidance4/.test(ak)&&t.lastAvoidKind!==ak&&now-t.lastAvoidAt>180){
-        t.avoidanceCount++;t.lastAvoidAt=now;t.lastAvoidKind=ak;
+      // State transitions are nearly free and give exact control usage.
+      const rs=p._raceState720;
+      const mode=rs?.mode||"NORMAL",action=rs?.action||"none";
+      if(mode==="EVADE" && (t.lastMode749!=="EVADE" || action!==t.lastAction749)){
+        noteEvadeStart749(p,now,action);
       }
-      if(p.done&&t.finishTime==null) t.finishTime=p.finishTime??(now-t.startedAt);
-      if(p.dead&&t.deathProgress==null) t.deathProgress=prog;
+      if(t.lastMode749==="EVADE" && mode!=="EVADE"){
+        noteEvadeEnd749(p,now);
+        if(mode==="REJOIN")t.lastModeAt749=now;
+      }
+      if(t.lastMode749==="REJOIN" && mode==="NORMAL"){
+        const rj=Math.max(0,now-t.lastModeAt749);
+        if(rj<5000){t.rejoinSum749+=rj;t.rejoinSamples749++;}
+      }
+      if(mode!==t.lastMode749)t.lastModeAt749=now;
+      t.lastMode749=mode;t.lastAction749=action;
+
+      // v7.49 performance rule: detailed geometry/observer stats at 10 Hz, not 50 Hz.
+      t.sampleAcc749+=dt;
+      if(t.sampleAcc749>=100){
+        const sampleDt=t.sampleAcc749;t.sampleAcc749=0;
+        const dev=Math.abs(Number(p._lineOffset720)||0);
+        t.lineDevSum749+=dev;t.lineDevMax749=Math.max(t.lineDevMax749,dev);t.lineSamples749++;
+        t.insideErrorSum+=dev;t.insideSamples++;
+        if(t.sectors749[sec]){
+          t.sectors749[sec].lineDevSum+=dev;t.sectors749[sec].lineSamples++;
+        }
+
+        let minGap=999;
+        const near=localObservers723(p,6.0);
+        for(const o of near)minGap=Math.min(minGap,Math.hypot(p.x-o.x,p.y-o.y));
+        if(minGap<999){
+          t.minObserverGap749=Math.min(t.minObserverGap749,minGap);
+          if(t.sectors749[sec])t.sectors749[sec].minGap=Math.min(t.sectors749[sec].minGap,minGap);
+          if(minGap<4.0)t.dangerMs749+=sampleDt;
+          if(minGap<2.25)t.highDangerMs749+=sampleDt;
+        }
+      }
+
+      if(p.done&&t.finishTime==null)t.finishTime=p.finishTime??(now-t.startedAt);
+      if(p.dead&&t.deathProgress==null)t.deathProgress=prog;
     }
 
     const leader=active[0];
@@ -7566,7 +7675,7 @@ function farthestVisibleFastTarget91(p,si){
       const lt=ensureTelemetry696(leader,now);
       lt.leaderMs+=dt;
       if(telemetry696.leaderId!==leader.index){
-        if(telemetry696.leaderId!==-1) telemetry696.leaderChanges++;
+        if(telemetry696.leaderId!==-1)telemetry696.leaderChanges++;
         telemetry696.leaderId=leader.index;telemetry696.leaderSince=now;
       }
     }
@@ -7575,19 +7684,80 @@ function farthestVisibleFastTarget91(p,si){
 
   function advancedStats697(p){
     const t=p?.telemetry696;
-    if(!t) return null;
+    if(!t)return null;
     const avgInside=t.insideSamples?t.insideErrorSum/t.insideSamples:0;
     const optimal=Math.max(1,currentProgress(p));
+    const attempts=Math.max(0,t.evadeAttempts749||0);
+    const avgReaction=t.reactionSamples749?t.reactionSum749/t.reactionSamples749:null;
+    const avgRejoin=t.rejoinSamples749?t.rejoinSum749/t.rejoinSamples749:null;
     return {
-      leaderShare: Math.max(0,t.leaderMs/Math.max(1,gameNow()-(t.startedAt||0))),
-      overtakes:t.overtakes,
-      positionsLost:t.positionsLost,
-      avoidanceCount:t.avoidanceCount,
+      leaderShare:Math.max(0,t.leaderMs/Math.max(1,gameNow()-(t.startedAt||0))),
+      leaderMs:t.leaderMs,overtakes:t.overtakes,positionsLost:t.positionsLost,
+      avoidanceCount:attempts,avoidanceSuccess:t.evadeSuccess749||0,
+      avoidanceFailures:t.evadeFailures749||0,
+      avoidanceSuccessRate:attempts?(t.evadeSuccess749||0)/attempts:0,
+      threatReads:t.threatReads749||0,
+      actionCounts:{...(t.actionCounts749||{})},
+      avgReactionMs:avgReaction,avgRejoinMs:avgRejoin,
+      minObserverGap:t.minObserverGap749<999?t.minObserverGap749:null,
+      dangerMs:t.dangerMs749||0,highDangerMs:t.highDangerMs749||0,
       pathLength:t.pathLength,
       racingLineEfficiency:Math.max(0,Math.min(1,optimal/Math.max(optimal,t.pathLength))),
-      insideLineAccuracy:Math.max(0,Math.min(1,1-avgInside/8)),
-      finishTime:t.finishTime,
-      deathProgress:t.deathProgress
+      insideLineAccuracy:Math.max(0,Math.min(1,1-avgInside/2.5)),
+      avgLineDeviation:t.lineSamples749?t.lineDevSum749/t.lineSamples749:0,
+      maxLineDeviation:t.lineDevMax749||0,
+      finishTime:t.finishTime,deathProgress:t.deathProgress,
+      sectors:(t.sectors749||[]).map((x,i)=>({
+        name:SECTOR_NAMES_749[i],timeMs:x.timeMs,path:x.path,threats:x.threats,evades:x.evades,
+        avgLineDeviation:x.lineSamples?x.lineDevSum/x.lineSamples:0,
+        minObserverGap:x.minGap<999?x.minGap:null
+      }))
+    };
+  }
+
+  function performanceRating749(p,rank=8){
+    const a=advancedStats697(p)||{};
+    const finish=p.done?1:0;
+    const rankScore=Math.max(0,(9-rank)/8);
+    const avoid=a.avoidanceCount?a.avoidanceSuccessRate:.65;
+    const line=a.racingLineEfficiency||0;
+    const inside=a.insideLineAccuracy||0;
+    const over=Math.min(1,(a.overtakes||0)/6);
+    const lead=Math.min(1,(a.leaderMs||0)/12000);
+    const clean=(p.match?.collisions||0)===0?1:0;
+    return Math.max(4,Math.min(10,4+6*(
+      rankScore*.31+finish*.16+avoid*.18+line*.12+inside*.08+over*.06+lead*.05+clean*.04
+    )));
+  }
+
+  function styleProfile749(p){
+    const a=advancedStats697(p)||{}, c=a.actionCounts||{};
+    const attempts=Math.max(1,a.avoidanceCount||0);
+    const thread=(c.thread||0)+(c.diag||0);
+    const back=c.backcon||0;
+    const labels=[];
+    if(a.insideLineAccuracy>=.94)labels.push("인코스 정밀형");
+    if(a.avoidanceSuccessRate>=.82&&a.avoidanceCount>=2)labels.push("회피 특화");
+    if(thread/attempts>=.55)labels.push("대각선 돌파형");
+    if(back/attempts>=.20)labels.push("빽컨 대응형");
+    if((a.leaderMs||0)>7000)labels.push("선두 장악형");
+    if((a.overtakes||0)>=4)labels.push("추월 공격형");
+    if((p.match?.collisions||0)===0)labels.push("안정형");
+    return labels.slice(0,3);
+  }
+
+  function playerAnalytics749(p){
+    const a=advancedStats697(p)||{};
+    const sectors=a.sectors||[];
+    const valid=sectors.filter(s=>s.timeMs>0);
+    const strongest=valid.length?[...valid].sort((x,y)=>
+      (x.avgLineDeviation-y.avgLineDeviation)||(x.timeMs-y.timeMs))[0]:null;
+    const weakest=valid.length?[...valid].sort((x,y)=>
+      (y.threats-y.evades)-(x.threats-x.evades) || y.avgLineDeviation-x.avgLineDeviation)[0]:null;
+    return {
+      name:p.name,stats:{...p.stats},advanced:a,
+      styles:styleProfile749(p),
+      strongestSector:strongest?.name||null,weakestSector:weakest?.name||null
     };
   }
 
@@ -8877,10 +9047,13 @@ function farthestVisibleFastTarget91(p,si){
 
     if(raw.emergency){
       if(raw.dist<1.20){
+        if(st.pendingThreatId!==id){st._detectedAt749=now;noteThreatRead749(p,now);}
         st.pendingThreatId=id;st.reactionReadyAt=now;return raw;
       }
       if(st.pendingThreatId!==id){
         st.pendingThreatId=id;
+        st._detectedAt749=now;
+        noteThreatRead749(p,now);
         const emergencyDelay=10+(1-ex.reaction)*86+(1-ex.focus)*24+(1-ex.hand)*26;
         st.reactionReadyAt=now+emergencyDelay;
       }
@@ -8900,6 +9073,8 @@ function farthestVisibleFastTarget91(p,si){
 
     if(st.pendingThreatId!==id){
       st.pendingThreatId=id;
+      st._detectedAt749=now;
+      noteThreatRead749(p,now);
       const urgency=clamp01720((.52-eta)/.52);
       const delay=(132-ex.reaction*88-ex.focus*20-ex.hand*12)*(1-urgency*.58);
       st.reactionReadyAt=now+Math.max(13,delay);
@@ -10583,12 +10758,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
         raceForm:p.raceForm,
         startReactionMs:p.startReactionMs,
         startExecution:p.startExecution,
+        analytics749:playerAnalytics749(p),
         rating:0
       });
     });
 
     for(const x of result.players){
-      x.rating=roundPerformanceRating(x);
+      const pp=players[x.index];
+      x.rating=pp?performanceRating749(pp,x.rank):roundPerformanceRating(x);
       const rr=playerTournament[x.index]?.rounds?.find(q=>q.round===currentRound);
       if(rr) rr.rating=x.rating;
     }
@@ -10636,6 +10813,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       tournamentHighlights.push({round:currentRound,type:"CLEAN",text:`무충돌 베스트 · ${clean.name} · 무충돌 ${clean.rank}위`});
     }
 
+    recordAnalyticsRound749(result);
     roundHistory.push(result);
     rebuildTournamentStandings();
     recordLiveBalanceRound(result);
@@ -11677,7 +11855,97 @@ targetOff=clampRoadOffset(si,targetOff,p);
     return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
   }
 
-  function seasonCardHtml(p){
+  
+  const ANALYTICS_KEY_749="observerFM.analytics.v749";
+  function blankAnalytics749(){
+    return {races:0,wins:0,top3:0,finishes:0,rankSum:0,ratingSum:0,
+      threats:0,evades:0,evadeSuccess:0,collisions:0,overtakes:0,leadMs:0,
+      lineEffSum:0,insideAccSum:0,reactionSum:0,reactionN:0,rejoinSum:0,rejoinN:0,
+      actionCounts:{thread:0,diag:0,hard:0,brake:0,stop:0,backcon:0},
+      sectors:Array.from({length:6},()=>({races:0,timeSum:0,threats:0,evades:0,lineDevSum:0,lineN:0})),
+      recent:[]};
+  }
+  function loadAnalytics749(){
+    try{return JSON.parse(localStorage.getItem(ANALYTICS_KEY_749)||"{}")||{};}catch(e){return {};}
+  }
+  function saveAnalytics749(v){
+    try{localStorage.setItem(ANALYTICS_KEY_749,JSON.stringify(v));}catch(e){}
+  }
+  function recordAnalyticsRound749(result){
+    if(!result?.players)return;
+    const db=loadAnalytics749();
+    for(const x of result.players){
+      const r=db[x.name]||blankAnalytics749();
+      const a=x.analytics749?.advanced||{};
+      r.races++;r.wins+=x.rank===1?1:0;r.top3+=x.rank<=3?1:0;r.finishes+=x.time!=null?1:0;
+      r.rankSum+=x.rank;r.ratingSum+=x.rating||0;r.collisions+=x.collisions||0;
+      r.overtakes+=x.overtakes||0;r.leadMs+=a.leaderMs||x.leadMs||0;
+      r.threats+=a.threatReads||0;r.evades+=a.avoidanceCount||0;r.evadeSuccess+=a.avoidanceSuccess||0;
+      r.lineEffSum+=a.racingLineEfficiency||0;r.insideAccSum+=a.insideLineAccuracy||0;
+      if(a.avgReactionMs!=null){r.reactionSum+=a.avgReactionMs;r.reactionN++;}
+      if(a.avgRejoinMs!=null){r.rejoinSum+=a.avgRejoinMs;r.rejoinN++;}
+      for(const [k,v] of Object.entries(a.actionCounts||{}))r.actionCounts[k]=(r.actionCounts[k]||0)+(v||0);
+      (a.sectors||[]).forEach((s,i)=>{
+        if(!r.sectors[i])r.sectors[i]={races:0,timeSum:0,threats:0,evades:0,lineDevSum:0,lineN:0};
+        const q=r.sectors[i];q.races++;q.timeSum+=s.timeMs||0;q.threats+=s.threats||0;q.evades+=s.evades||0;
+        if(s.avgLineDeviation!=null){q.lineDevSum+=s.avgLineDeviation;q.lineN++;}
+      });
+      r.recent.push({round:result.round,rank:x.rank,time:x.time,rating:x.rating,
+        collisions:x.collisions,evadeRate:a.avoidanceSuccessRate||0,at:Date.now()});
+      if(r.recent.length>10)r.recent=r.recent.slice(-10);
+      db[x.name]=r;
+    }
+    saveAnalytics749(db);
+  }
+  function careerAnalytics749(name){
+    const r=loadAnalytics749()[name]||blankAnalytics749(),n=Math.max(1,r.races);
+    return {
+      ...r,winRate:r.wins/n,top3Rate:r.top3/n,finishRate:r.finishes/n,avgRank:r.rankSum/n,
+      avgRating:r.ratingSum/n,evadeSuccessRate:r.evades?r.evadeSuccess/r.evades:0,
+      avgLineEfficiency:r.lineEffSum/n,avgInsideAccuracy:r.insideAccSum/n,
+      avgReactionMs:r.reactionN?r.reactionSum/r.reactionN:null,
+      avgRejoinMs:r.rejoinN?r.rejoinSum/r.rejoinN:null
+    };
+  }
+  function analyticsProfileHtml749(p){
+    const live=playerAnalytics749(p),a=live.advanced||{},career=careerAnalytics749(p.name);
+    const actions=a.actionCounts||{};
+    const sectorRows=(a.sectors||[]).map(s=>`<tr><td>${s.name}</td><td>${(s.timeMs/1000).toFixed(2)}s</td>
+      <td>${s.threats}</td><td>${s.evades}</td><td>${s.avgLineDeviation.toFixed(2)}</td>
+      <td>${s.minObserverGap==null?"-":s.minObserverGap.toFixed(2)}</td></tr>`).join("");
+    const recent=(career.recent||[]).slice().reverse().map(x=>
+      `<span>${x.rank}위 · ${x.time==null?"사망":formatTime(x.time)} · ${Number(x.rating||0).toFixed(1)}</span>`).join("");
+    return `<div class="seasonBox analytics749">
+      <h3>v7.49 경기력 분석</h3>
+      <div class="seasonGrid">
+        <div><span>실전 스타일</span><b>${live.styles.length?live.styles.join(" · "):"데이터 수집 중"}</b></div>
+        <div><span>회피 성공률</span><b>${(100*(a.avoidanceSuccessRate||0)).toFixed(1)}%</b></div>
+        <div><span>평균 반응</span><b>${a.avgReactionMs==null?"-":a.avgReactionMs.toFixed(0)+"ms"}</b></div>
+        <div><span>라인 효율</span><b>${(100*(a.racingLineEfficiency||0)).toFixed(1)}%</b></div>
+        <div><span>인코스 정확도</span><b>${(100*(a.insideLineAccuracy||0)).toFixed(1)}%</b></div>
+        <div><span>최소 옵저버 간격</span><b>${a.minObserverGap==null?"-":a.minObserverGap.toFixed(2)}</b></div>
+        <div><span>대각/스레드</span><b>${(actions.diag||0)+(actions.thread||0)}회</b></div>
+        <div><span>빽컨</span><b>${actions.backcon||0}회</b></div>
+        <div><span>강한 구간</span><b>${live.strongestSector||"-"}</b></div>
+        <div><span>취약 구간</span><b>${live.weakestSector||"-"}</b></div>
+      </div>
+      <h3>구간 분석</h3>
+      <div class="tableWrap"><table class="resultTable"><thead><tr><th>구간</th><th>시간</th><th>위협</th><th>회피</th><th>라인이탈</th><th>최소간격</th></tr></thead>
+      <tbody>${sectorRows}</tbody></table></div>
+      <h3>누적 분석</h3>
+      <div class="seasonGrid">
+        <div><span>분석 경기</span><b>${career.races}</b></div>
+        <div><span>우승률</span><b>${(100*career.winRate).toFixed(1)}%</b></div>
+        <div><span>완주율</span><b>${(100*career.finishRate).toFixed(1)}%</b></div>
+        <div><span>평균 순위</span><b>${career.avgRank.toFixed(2)}</b></div>
+        <div><span>누적 회피율</span><b>${(100*career.evadeSuccessRate).toFixed(1)}%</b></div>
+        <div><span>누적 평균평점</span><b>${career.avgRating.toFixed(2)}</b></div>
+      </div>
+      <div class="analytics-recent">${recent||"<span>최근 경기 없음</span>"}</div>
+    </div>`;
+  }
+
+function seasonCardHtml(p){
     const s=loadSeason()[p.name]||blankSeasonRow();
     const pb=loadRecordBook().players[p.name];
     if(!s.starts) return `<div class="seasonBox"><h3>시즌 기록</h3><p>개인 최고기록 ${pb==null?"-":formatTime(pb)}</p></div>`;
@@ -11735,7 +12003,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
         <div><b>약점</b><span>${entries.slice(-3).reverse().map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
       </div>
       <div class="statGrid">${Object.entries(p.stats).map(([k,v])=>`<div class="statCell"><span>${statLabel(k)}</span><b>${v}</b></div>`).join("")}</div>
-      ${seasonCardHtml(p)}`;
+      ${seasonCardHtml(p)}
+      ${analyticsProfileHtml749(p)}`;
     modal.classList.remove("hidden");
   }
 
@@ -12821,7 +13090,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},finished:players.filter(p=>p.done).length}),
     startCurrent:start,resetMatch:reset,
     runStatLab739,
-    getStatProfiles739:()=>players.map(p=>({name:p.name,stats:{...p.stats},skill:{...driverSkill739(p)}}))
+    getStatProfiles739:()=>players.map(p=>({name:p.name,stats:{...p.stats},skill:{...driverSkill739(p)}})),
+    getAnalytics749:()=>players.map(p=>playerAnalytics749(p)),
+    getCareerAnalytics749:(name)=>careerAnalytics749(name),
+    resetAnalytics749:()=>{try{localStorage.removeItem(ANALYTICS_KEY_749);}catch(e){} return true;}
   };
 
   map.addEventListener("load",reset);
