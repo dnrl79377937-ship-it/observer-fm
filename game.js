@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.19";
+  const BUILD_ID = "v7.19-HOTFIX1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8338,23 +8338,15 @@ function farthestVisibleFastTarget91(p,si){
   // ============================================================
 
   const GLOBAL_OPTIMAL_LINE_710=[
-    // v7.19 FASTEST INSIDE LINE:
-    // diagonal across every broad straight, then clips the legal inside overlap
-    // of each 90-degree corner. No wide setup arc.
+    // v7.19 HOTFIX1: exact visibility-graph shortest path through the
+    // ACTUAL visible/legal road polygon. Length = 322.333 logical units.
+    // Legacy route centerline length is ~389.302, so this is ~17.2% shorter.
     [31.05,132.55],
-    [74.0,129.4],
-    [104.0,126.9],
-    [120.4,125.4],       // C1: maximum legal inside
-    [120.4,81.4],        // C2: same-side inside, no outward reset
-    [103.0,78.5],
-    [76.0,72.0],
-    [54.5,67.0],
-    [51.0,66.6],         // C3: maximum legal inside
-    [51.0,31.0],         // C4: same-side inside, no outward reset
-    [61.5,30.0],
-    [94.0,27.5],
-    [121.0,25.2],
-    [143.0,23.5]
+    [119.00,123.20],
+    [119.00,83.20],
+    [51.80,64.80],
+    [51.80,32.20],
+    [143.00,23.50]
   ];
 
   const GLOBAL_OPTIMAL_SEGS_710=(()=>{
@@ -8394,26 +8386,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function globalOptimalLine710(p,si,now,lookahead=6.0){
-    if(!p)return null;
-    const prog=nearestOptimalProgress710(p.x,p.y);
-    const a=driverAbilityBase645(p);
-    // Same line for everybody. Skill changes only how far ahead the driver can
-    // confidently read the identical line, not lateral lane choice.
-    const read=Math.max(.50,Math.min(.98,(a.line+a.judgment+a.corner)/3));
-    const la=Math.max(4.6,Math.min(7.0,lookahead*(.90+read*.12)));
-    let q=optimalPointAt710(prog+la);
-
-    // End of race always converges to the exact logical finish.
-    if(si>=segs.length-1||GLOBAL_OPTIMAL_SEGS_710.total-prog<9.0){
-      const f=GLOBAL_OPTIMAL_LINE_710[GLOBAL_OPTIMAL_LINE_710.length-1];
-      q={x:f[0],y:f[1],seg:GLOBAL_OPTIMAL_SEGS_710.length-1};
-    }
-
-    let t={x:q.x,y:q.y,kind:"global-optimal710"};
-    t=finalRoadTarget636(p,si,t);
-    if(!t)t=clampVisualRoad674(p,si,{x:q.x,y:q.y,kind:"global-optimal710"});
-    if(!t)t=strictInside620(p,si,now);
-    return t;
+    return fastestShortestTarget719(p,si,now);
   }
 
   function globalOptimalRejoin710(p,si,now){
@@ -8434,12 +8407,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function normalRaceAuthority710(p,si,now){
-    // Absolute normal-race authority. No routeBand, lane signature, opening bias,
-    // personality lane or per-driver apex selection is allowed here.
-    let t=globalOptimalLine710(p,si,now,6.0);
-    t=segmentTransition701(p,si,t);
-    t=roadBoundary708(p,si,t);
-    return t;
+    return shortestNormalAuthority719(p,si,now);
   }
 
 
@@ -8654,12 +8622,99 @@ function farthestVisibleFastTarget91(p,si){
   // Final v7.19 driving authority:
   // other racers NEVER cause a detour because racers are non-solid.
   // Only observer collision danger may override the fastest shared inside line.
+
+  // ============================================================
+  // v7.19 HOTFIX1 — TRUE SHORTEST PATH AUTHORITY
+  // ============================================================
+
+  const SHORTEST_PATH_LENGTH_719=322.3331564459016;
+
+  // Actual road legality only. IMPORTANT: ignores obsolete FORBIDDEN96 planning
+  // rectangles. Those boxes are not physical road and were forcing visible detours.
+  function actualRoadChord719(x0,y0,x1,y1){
+    const dist=Math.hypot(x1-x0,y1-y0);
+    const n=Math.max(3,Math.ceil(dist/.22));
+    for(let i=1;i<=n;i++){
+      const t=i/n,x=x0+(x1-x0)*t,y=y0+(y1-y0)*t;
+      if(!courseContainsPoint(x,y,0.00) || !visualRoadMask674(x,y,0)) return false;
+    }
+    return true;
+  }
+
+  function actualRoadTarget719(p,si,t){
+    if(!t)return null;
+    if(courseContainsPoint(t.x,t.y,0.00) &&
+       visualRoadMask674(t.x,t.y,si) &&
+       actualRoadChord719(p.x,p.y,t.x,t.y)) return t;
+
+    for(let k=30;k>=1;k--){
+      const q=k/31;
+      const x=p.x+(t.x-p.x)*q,y=p.y+(t.y-p.y)*q;
+      if(courseContainsPoint(x,y,0.00) &&
+         visualRoadMask674(x,y,si) &&
+         actualRoadChord719(p.x,p.y,x,y))
+        return {...t,x,y,kind:(t.kind||"target")+"-actual719"};
+    }
+    return null;
+  }
+
+  function shortestPointAt719(progress){
+    return optimalPointAt710(progress);
+  }
+
+  function fastestShortestTarget719(p,si,now){
+    if(!p)return null;
+    const prog=nearestOptimalProgress710(p.x,p.y);
+    const remain=GLOBAL_OPTIMAL_SEGS_710.total-prog;
+    if(remain<=8.0){
+      const f=GLOBAL_OPTIMAL_LINE_710[GLOBAL_OPTIMAL_LINE_710.length-1];
+      return actualRoadTarget719(p,si,{x:f[0],y:f[1],kind:"true-shortest719"});
+    }
+
+    // Long lookahead, then back off ONLY along the shortest polyline until
+    // current->target is a legal straight chord. No centerline handoff.
+    const maxLook=Math.min(13.5,remain);
+    for(let look=maxLook;look>=3.0;look-=.45){
+      const q=shortestPointAt719(prog+look);
+      const t={x:q.x,y:q.y,kind:"true-shortest719"};
+      if(actualRoadTarget719(p,si,t)) return t;
+    }
+
+    const q=shortestPointAt719(prog+Math.min(2.8,remain));
+    return actualRoadTarget719(p,si,{x:q.x,y:q.y,kind:"true-shortest719"});
+  }
+
+  // The shortest path turns before legacy centerline endpoints. Keep the old
+  // segment index synchronized to macro-corner crossings so old telemetry/finish
+  // code never traps the racer on the previous straight.
+  function syncShortestSegment719(p,now){
+    if(!p || p.dead || p.done) return;
+    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat ||
+       now<(p.hardRouteLockUntil||0) || now<(p.avoidance519Until||0)) return;
+
+    const prog=nearestOptimalProgress710(p.x,p.y);
+    const a=GLOBAL_OPTIMAL_SEGS_710;
+    const t1=a[0].L-.45;
+    const t2=a[0].L+a[1].L-.45;
+    const t3=a[0].L+a[1].L+a[2].L-.45;
+    const t4=a[0].L+a[1].L+a[2].L+a[3].L-.45;
+
+    if(prog>=t4 && p.seg<17) p.seg=17;
+    else if(prog>=t3 && p.seg<13) p.seg=13;
+    else if(prog>=t2 && p.seg<8) p.seg=8;
+    else if(prog>=t1 && p.seg<4) p.seg=4;
+  }
+
+  function shortestNormalAuthority719(p,si,now){
+    return fastestShortestTarget719(p,si,now);
+  }
+
   function raceEngine1019(p,si,now){
     const threat=falseThreatFilter482(p,collisionTTC479(p));
     let t=observerSystem519(p,si,now);
     const observerOverride=!!threat || (t&&/observer5/.test(t.kind||""));
 
-    if(!t)t=normalRaceAuthority710(p,si,now);
+    if(!t)t=shortestNormalAuthority719(p,si,now);
 
     // Ability changes tiny execution precision only. After normal execution,
     // snap the intention back to the identical optimal line.
@@ -8668,10 +8723,9 @@ function farthestVisibleFastTarget91(p,si){
     t=pressureConsistency694(p,now,t,observerOverride?"avoid":"race");
 
     if(!observerOverride && !/fastest-rejoin719/.test(t?.kind||""))
-      t=normalRaceAuthority710(p,si,now)||t;
+      t=shortestNormalAuthority719(p,si,now)||t;
 
-    t=segmentTransition701(p,si,t);
-    t=roadBoundary708(p,si,t);
+    t=actualRoadTarget719(p,si,t)||shortestNormalAuthority719(p,si,now);
     if(t)p._lastRaceTargetKind699=t.kind||"race1019";
     return t;
   }
@@ -9313,6 +9367,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.20~v5.23 Racing Line 3.0 phase 1.
     const racing529=racingLine529(p,si,now);
     p.routeSource523=racing529?.kind || "legacy";
+    const shortestCalm719=!!racing529 && !liveEvade &&
+      /true-shortest719|global-optimal710|fastest-rejoin719/i.test(racing529.kind||"") &&
+      now>=(p.hardRouteLockUntil||0) && now>=(p.routeBreakCombatUntil||0) &&
+      p.controlMode==="normal";
     let broad507=null;
     if(racing529 && !liveEvade){
       tx=racing529.x;
@@ -9329,20 +9387,26 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // Everything above chooses the route target. Only steeringTarget516 is allowed
     // to turn that route decision into the local movement target.
     const routeTarget516={x:tx,y:ty};
-    const steerTarget516=steeringTarget516(p,si,now,routeTarget516,liveEvade);
+    // v7.19 HOTFIX1: legacy corner stabilization was pulling the true shortest
+    // line back toward centerline. Bypass it only for calm shortest-path running.
+    const steerTarget516=shortestCalm719
+      ? routeTarget516
+      : steeringTarget516(p,si,now,routeTarget516,liveEvade);
     tx=steerTarget516.x;
     ty=steerTarget516.y;
 
     // v6.36 final planner invariant: even legacy steering layers cannot hand
     // the virtual mouse a target whose chord leaves the legal road.
     {
-      const road636=finalRoadTarget636(p,si,{x:tx,y:ty,kind:"post-steer636"});
+      const road636=shortestCalm719
+        ? actualRoadTarget719(p,si,{x:tx,y:ty,kind:"post-steer-shortest719"})
+        : finalRoadTarget636(p,si,{x:tx,y:ty,kind:"post-steer636"});
       if(road636){tx=road636.x;ty=road636.y;}
     }
 
     // v5.19: after an abnormal move, briefly shrink the next steering target
     // instead of letting a second large correction compound the mistake.
-    if(now<(p.anomalyUntil519||0) && !liveEvade){
+    if(now<(p.anomalyUntil519||0) && !liveEvade && !shortestCalm719){
       const s519=segs[Math.max(0,Math.min(segs.length-1,si))];
       const dx519=tx-p.x, dy519=ty-p.y;
       const f519=dx519*s519.ux+dy519*s519.uy;
@@ -9492,7 +9556,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // This prevents a leader from sweeping across the whole road and losing many places instantly.
     let dx=tx-p.x, dy=ty-p.y;
     const localSeg=segs[Math.min(si,segs.length-1)];
-    if(localSeg){
+    if(localSeg && !shortestCalm719){
       const forward=dx*localSeg.ux+dy*localSeg.uy;
       let lateral=dx*localSeg.nx+dy*localSeg.ny;
       const phase516=cornerPhase516(p,si);
@@ -9515,11 +9579,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(legacyCalm502){
       moveDirX=dx/d;
       moveDirY=dy/d;
-      if(finalStraight508(si) && Number.isFinite(p.finalStraightY508)){
+      if(!shortestCalm719 && finalStraight508(si) && Number.isFinite(p.finalStraightY508)){
         // v5.08: after the 11 o'clock corner, the finish run is a literal horizontal line.
         moveDirX=Math.sign(route[route.length-1][0]-p.x)||1;
         moveDirY=0;
-      }else if(horizontalHold503Active){
+      }else if(!shortestCalm719 && horizontalHold503Active){
         // The road itself is horizontal here; do not carry any stale vertical heading.
         const dir=Math.sign(s.ux)||1;
         const centerErr=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
@@ -9635,6 +9699,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.match.lastTraceAt=now;
       if(p.match.trace.length<260) p.match.trace.push([+p.x.toFixed(2),+p.y.toFixed(2)]);
     }
+
+    // v7.19 HOTFIX1: shortest corner cuts cross macro joints before the old
+    // centerline endpoint. Synchronize first, then retain legacy micro-segment advancement.
+    syncShortestSegment719(p,now);
 
     // Robust segment advancement: crossing the end plane OR entering the next joint zone.
     // A short while-loop handles high FPS drops without skipping/sticking.
