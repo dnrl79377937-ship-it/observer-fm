@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.54";
+  const BUILD_ID = "v7.59";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -237,7 +237,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       playerCollision:false,safeZoneInvulnerability:true,
       baseSpeedMultiplier:1.566903319,
       statExperiment733:{...STAT_EXPERIMENT_733},
-      statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"]};
+      statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
+      personalityEngine:"Driver Personality Engine FINAL v7.59"};
   }
 
   function buildMasterMatchResult(){
@@ -753,7 +754,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._integrated759=null;p._normalEntryAt759=0;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -7755,9 +7756,11 @@ function farthestVisibleFastTarget91(p,si){
       (x.avgLineDeviation-y.avgLineDeviation)||(x.timeMs-y.timeMs))[0]:null;
     const weakest=valid.length?[...valid].sort((x,y)=>
       (y.threats-y.evades)-(x.threats-x.evades) || y.avgLineDeviation-x.avgLineDeviation)[0]:null;
+    const personality759=personalitySummary759(p);
     return {
       name:p.name,stats:{...p.stats},advanced:a,
       styles:styleProfile749(p),
+      personality759,
       strongestSector:strongest?.name||null,weakestSector:weakest?.name||null
     };
   }
@@ -8813,6 +8816,87 @@ function farthestVisibleFastTarget91(p,si){
     st.sideLockUntil754=now+285;
   }
 
+  // ============================================================
+  // v7.55 ~ v7.59 DRIVER PERSONALITY ENGINE FINAL
+  // v7.55 clutch, v7.56 signatures, v7.57 rivalry,
+  // v7.58 stats x personality authority, v7.59 final integration.
+  // ============================================================
+  function rivalContext759(p){
+    if(!p||p.dead||p.done)return {rival:null,gap:99,ahead:false,intensity:0};
+    const my=Number.isFinite(p._splineProg720)?p._splineProg720:0;
+    let best=null,gap=99,ahead=false;
+    for(const q of players){
+      if(q===p||q.dead||q.done)continue;
+      const qp=Number.isFinite(q._splineProg720)?q._splineProg720:0;
+      const dg=Math.abs(qp-my);
+      if(dg<gap){gap=dg;best=q;ahead=qp>my;}
+    }
+    const intensity=Math.max(0,Math.min(1,(2.25-gap)/2.25));
+    return {rival:best,gap,ahead,intensity};
+  }
+
+  function clutchContext759(p){
+    const pers=driverPersonality754(p),ex=driverExecution720(p);
+    const prog=Number.isFinite(p?._splineProg720)?p._splineProg720:0;
+    const total=Math.max(1,RACING_SPLINE_SEGS_720.total);
+    const late=Math.max(0,Math.min(1,(prog/total-.70)/.30));
+    const rv=rivalContext759(p);
+    const load=Math.max(0,Math.min(1,rv.intensity*.66+late*.34));
+    // v7.55: clutch does not boost raw pace. It only protects judgment/hand quality.
+    const hold=Math.max(0,Math.min(1,
+      pers.clutch*.56+ex.pressure*.18+ex.focus*.14+ex.consistency*.12));
+    return {load,hold,rival:rv.rival,gap:rv.gap,ahead:rv.ahead,
+      executionPenalty:load*(1-hold)*.42,
+      judgmentPenalty:load*(1-hold)*.34};
+  }
+
+  function signatureProfile759(p){
+    const style=p?.drivingStyle?.style||"balanced";
+    const map={
+      apexHunter:{label:"WALL APEX",side:.12,thread:.16,diag:.04,hard:.02,brake:-.02,rejoin:.10},
+      safeReader:{label:"SAFE ARC",side:.18,thread:-.08,diag:.12,hard:-.05,brake:.10,rejoin:-.05},
+      attacker:{label:"THREAD ATTACK",side:.04,thread:.24,diag:.12,hard:.05,brake:-.10,rejoin:.08},
+      lineMaster:{label:"PERFECT LINE",side:.08,thread:.08,diag:.06,hard:-.04,brake:.02,rejoin:.14},
+      balanced:{label:"ADAPTIVE",side:.08,thread:.06,diag:.08,hard:0,brake:0,rejoin:.04},
+      controller:{label:"CONTROL CUT",side:.20,thread:.04,diag:.14,hard:-.02,brake:.02,rejoin:.02},
+      patient:{label:"WAIT & CUT",side:.18,thread:-.06,diag:.10,hard:-.06,brake:.13,rejoin:-.04},
+      opportunist:{label:"GAP HUNTER",side:.08,thread:.18,diag:.16,hard:.02,brake:-.06,rejoin:.08}
+    };
+    return map[style]||map.balanced;
+  }
+
+  function integratedDriver759(p){
+    if(p?._integrated759)return p._integrated759;
+    const ex=driverExecution720(p),pers=driverPersonality754(p),sig=signatureProfile759(p);
+    // v7.58: personality authority is bounded by real execution skill.
+    // A 30-stat racer cannot receive a large effective skill boost from a style label.
+    const execution=ex.hand*.30+ex.judgment*.25+ex.survival*.20+ex.mental*.15+ex.line*.10;
+    const personalityAuthority=.28+.50*execution; // 0.28~0.78, never full authority.
+    const r={
+      execution,personalityAuthority,
+      aggression:ex.aggression*(1-personalityAuthority*.24)+pers.aggression*(personalityAuthority*.24),
+      caution:ex.riskControl*(1-personalityAuthority*.27)+pers.caution*(personalityAuthority*.27),
+      lateral:ex.control*(1-personalityAuthority*.22)+pers.lateral*(personalityAuthority*.22),
+      thread:ex.prediction*(1-personalityAuthority*.20)+pers.thread*(personalityAuthority*.20),
+      clutch:ex.mental*(1-personalityAuthority*.22)+pers.clutch*(personalityAuthority*.22),
+      patience:ex.consistency*(1-personalityAuthority*.18)+pers.patience*(personalityAuthority*.18),
+      signature:sig
+    };
+    if(p)p._integrated759=r;
+    return r;
+  }
+
+  function personalitySummary759(p){
+    const q=integratedDriver759(p),c=clutchContext759(p);
+    return {
+      style:p?.drivingStyle?.style||"balanced",
+      signature:q.signature.label,
+      aggression:q.aggression,caution:q.caution,lateral:q.lateral,thread:q.thread,
+      clutch:q.clutch,personalityAuthority:q.personalityAuthority,
+      rival:c.rival?.name||null,rivalGap:c.gap,pressureLoad:c.load
+    };
+  }
+
   function nearestSplineProgress720(x,y){
     let bestD=Infinity,bestP=0;
     for(const s of RACING_SPLINE_SEGS_720){
@@ -8924,6 +9008,16 @@ function farthestVisibleFastTarget91(p,si){
         off=(51.25-q.x)/denom;
       }
     }
+    // v7.56: signature is a tiny execution fingerprint, never a macro route.
+    const mix759=integratedDriver759(p),sig759=mix759.signature;
+    const sigRaw=((sig759.insideBias||0) + ((sig759.rejoin||0)*.10));
+    const sigBias=Math.max(-.045,Math.min(.045,
+      (sig759.label==="WALL APEX"?.035:
+       sig759.label==="PERFECT LINE"?.020:
+       sig759.label==="SAFE ARC"?-.018:
+       sig759.label==="CONTROL CUT"?-.010:0) * mix759.personalityAuthority));
+    off+=sigBias;
+
     const x=q.x+nx*off,y=q.y+ny*off;
     if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
       return {...q,x,y,executionOffset720:off};
@@ -8991,7 +9085,7 @@ function farthestVisibleFastTarget91(p,si){
   function noTeleportGuard754(p,fromX,fromY,expectedMove,action){
     if(!p)return false;
     const dx=p.x-fromX,dy=p.y-fromY,d=Math.hypot(dx,dy);
-    const allow=Math.max(.72,Math.abs(expectedMove)*2.15+.18);
+    const allow=Math.max(.90,Math.abs(expectedMove)*2.30+.20);
     if(d<=allow||/back/.test(action||""))return false;
     const L=d||1;
     const attemptedX754=p.x,attemptedY754=p.y;
@@ -9182,7 +9276,9 @@ function farthestVisibleFastTarget91(p,si){
         st.pendingThreatId=id;
         st._detectedAt749=now;
         noteThreatRead749(p,now);
-        const emergencyDelay=10+(1-ex.reaction)*86+(1-ex.focus)*24+(1-ex.hand)*26;
+        const clutch759=clutchContext759(p);
+        const emergencyDelay=10+(1-ex.reaction)*86+(1-ex.focus)*24+
+          (1-ex.hand+clutch759.executionPenalty)*26;
         st.reactionReadyAt=now+emergencyDelay;
       }
       if(now<st.reactionReadyAt)return null;
@@ -9204,7 +9300,9 @@ function farthestVisibleFastTarget91(p,si){
       st._detectedAt749=now;
       noteThreatRead749(p,now);
       const urgency=clamp01720((.52-eta)/.52);
-      const delay=(132-ex.reaction*88-ex.focus*20-ex.hand*12)*(1-urgency*.58);
+      const clutch759=clutchContext759(p);
+      const delay=(132-ex.reaction*88-ex.focus*20-
+        Math.max(0,ex.hand-clutch759.executionPenalty)*12)*(1-urgency*.58);
       st.reactionReadyAt=now+Math.max(13,delay);
     }
 
@@ -9251,9 +9349,11 @@ function farthestVisibleFastTarget91(p,si){
     const prog=Math.max(oldProg,projected);
     const frame=splinePointAt720(prog);
     const nx=-frame.uy,ny=frame.ux,ex=driverExecution720(p);
-    const pers=driverPersonality754(p),st=ensureRaceState720(p,now);
+    const pers=driverPersonality754(p),mix=integratedDriver759(p);
+    const clutch759=clutchContext759(p),sig759=mix.signature;
+    const st=ensureRaceState720(p,now);
 
-    const lateralScale=.94+pers.lateral*.13;
+    const lateralScale=.94+mix.lateral*.13;
     const threadLat=(1.00+(1-ex.avoidance)*.25)*lateralScale;
     const sideLat=(1.36+(1-ex.control)*.24)*lateralScale;
     const diagLat=(1.62+(1-ex.avoidance)*.30)*lateralScale;
@@ -9282,11 +9382,21 @@ function farthestVisibleFastTarget91(p,si){
       const side=/left/.test(kind)?-1:/right/.test(kind)?1:0;
       if(side&&now<(st.sideLockUntil754||0)&&st.side754&&side!==st.side754)score+=2.9;
 
-      // v7.51 aggression + v7.53 risk control:
-      // aggression prefers forward threading; caution prefers a cleaner side gap.
-      if(/thread/.test(kind))score+=(pers.caution-pers.aggression)*.85;
-      if(/side|diag/.test(kind))score-=pers.lateral*.72+pers.caution*.22;
-      if(/brake/.test(kind))score-=pers.brake*.35;
+      // v7.56 signature + v7.57 rivalry + v7.58 bounded stats/personality mix.
+      if(/thread/.test(kind))score+=(mix.caution-mix.aggression)*.72-(sig759.thread||0);
+      if(/side/.test(kind))score-=mix.lateral*.66+mix.caution*.20+(sig759.side||0);
+      if(/diag/.test(kind))score-=mix.lateral*.48+mix.thread*.18+(sig759.diag||0);
+      if(/hard/.test(kind))score-=(sig759.hard||0);
+      if(/brake/.test(kind))score-=pers.brake*.28+(sig759.brake||0);
+
+      // Rivalry never creates a player collision detour. It only changes local
+      // willingness to commit to a safe forward gap when a racer is close.
+      if(clutch759.rival&&clutch759.gap<2.25){
+        if(clutch759.ahead&&/thread|diag/.test(kind))
+          score-=mix.aggression*.22*clutch759.load;
+        if(!clutch759.ahead&&/side/.test(kind))
+          score-=mix.caution*.10*clutch759.load;
+      }
       ranked.push({kind,target:c,score,local:localCandidateRisk723(p,c,obs723)});
     }
 
@@ -9294,13 +9404,13 @@ function farthestVisibleFastTarget91(p,si){
 
     // Backcon is a last-resort emergency only when every meaningful lateral
     // corridor is boxed. If one natural side escape exists, reverse is unavailable.
-    const minGap=1.48+pers.caution*.24;
-    const maxRisk=1.85-pers.caution*.35;
+    const minGap=1.48+mix.caution*.24;
+    const maxRisk=1.85-mix.caution*.35;
     const safeLateral=ranked.some(r=>
       /side|thread|diag|hard/.test(r.kind)&&
       r.local.nearest>minGap&&r.local.risk<maxRisk
     );
-    if(critical&&!safeLateral&&now>=(st.backCooldownUntil732||0)){
+    if(critical&&!safeLateral&&(threat?.dist??9)<2.20&&now>=(st.backCooldownUntil732||0)){
       addCandidate("back-left",-0.52,-0.44);
       addCandidate("back-right",-0.52,0.44);
       addCandidate("back",-0.62,0);
@@ -9309,22 +9419,23 @@ function farthestVisibleFastTarget91(p,si){
     ranked.sort((a,b)=>a.score-b.score);
     if(!ranked.length)return null;
 
-    const pressureLoad=racePressure754(p);
-    const judgment=ex.judgment*.57+ex.survival*.20+ex.mental*.13+pers.caution*.10;
+    const pressureLoad=clutch759.load;
+    const judgment=Math.max(0,
+      ex.judgment*.58+ex.survival*.20+ex.mental*.14+mix.caution*.08-
+      clutch759.judgmentPenalty);
     const threatId=threat?.o?.id??0;
     const stable=((p.index+3)*29+(threatId+5)*11+(currentRound||0)*7)%100/100;
-    // v7.54: low-pressure drivers degrade under P1/P2 or late-race stress.
-    const pressureError=pressureLoad*(1-pers.clutch)*.46;
-    const mistakeChance=Math.max(.012,(1-judgment)*.56+pressureError);
+    const pressureError=clutch759.judgmentPenalty*.58;
+    const mistakeChance=Math.max(.010,(1-judgment)*.54+pressureError);
     let pick=0;
     if(stable<mistakeChance&&ranked.length>1)pick=1;
     if(stable<mistakeChance*.18&&ranked.length>2)pick=2;
 
     const best=ranked[pick];
-    const hand=1-ex.hand;
+    const hand=Math.max(0,1-ex.hand+clutch759.executionPenalty*.45);
     if(hand>.03&&best&&!/back|stop/.test(best.kind)){
       const sign=(((p.index+1)*13+(threatId+1)*19)%2)?1:-1;
-      const mag=hand*.56*(1-pressureLoad*(pers.clutch-.5)*.25);
+      const mag=hand*.54;
       const tx=best.target.x+nx*sign*mag;
       const ty=best.target.y+ny*sign*mag;
       if(courseContainsPoint(tx,ty,0)&&actualRoadChord719(p.x,p.y,tx,ty)){
@@ -9385,6 +9496,16 @@ function farthestVisibleFastTarget91(p,si){
     return {x:q.x,y:q.y,kind:"race720-rejoin"};
   }
 
+  function syncNormalEntryOffset759(p){
+    if(!p)return;
+    const prog=Number.isFinite(p._splineProg720)?p._splineProg720:
+      nearestSplineProgress720(p.x,p.y);
+    const q=splinePointAt720(prog),nx=-q.uy,ny=q.ux;
+    const lateral=(p.x-q.x)*nx+(p.y-q.y)*ny;
+    p._lineOffset720=Math.max(-.72,Math.min(.72,lateral));
+    p._normalEntryAt759=gameNow();
+  }
+
   function updateRaceState720(p,now){
     const st=ensureRaceState720(p,now);
     const threat=readableThreat720(p,now);
@@ -9435,6 +9556,9 @@ function farthestVisibleFastTarget91(p,si){
         const projected=nearestSplineProgressLocal734(p.x,p.y,old,48);
         p._splineProg720=Math.max(old,Number(p._splineFloor754)||0,projected);
         p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
+        // v7.59: inherit the actual lateral offset at the REJOIN -> NORMAL handoff.
+        // This removes the small one-frame pull toward a stale execution offset.
+        syncNormalEntryOffset759(p);
       }else if(now>=st.rejoinUntil){
         const ex754=driverExecution720(p);
         st.rejoinUntil=now+360+ex754.recovery*180;
@@ -10398,7 +10522,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     const preMoveX719=p.x, preMoveY719=p.y;
-    if(shortestCalm719 && /race720-normal/.test(racing529?.kind||"") && move>0){
+    if(st723.mode==="NORMAL" && shortestCalm719 && /race720-normal/.test(racing529?.kind||"") && move>0){
       // v7.20 NORMAL: actual rendered position advances on the rounded racing spline.
       if(!advanceOnSpline720(p,move)){
         p.x=preMoveX719+moveDirX*move;
@@ -10423,7 +10547,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // the source of the visible backward teleport on the two vertical inside lines.
     if(!engineAuthority719) enforcePhysicalRoad636(p);
 
-    if(shortestCalm719 && /race720-normal/.test(racing529?.kind||"")){
+    if(st723.mode==="NORMAL" && shortestCalm719 && /race720-normal/.test(racing529?.kind||"")){
       p._actualShortestDeviation719=splineDeviation720(p);
     }
 
@@ -12090,8 +12214,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
       <td>${s.minObserverGap==null?"-":s.minObserverGap.toFixed(2)}</td></tr>`).join("");
     const recent=(career.recent||[]).slice().reverse().map(x=>
       `<span>${x.rank}위 · ${x.time==null?"사망":formatTime(x.time)} · ${Number(x.rating||0).toFixed(1)}</span>`).join("");
+    const p759=personalitySummary759(p);
     return `<div class="seasonBox analytics749">
-      <h3>v7.49 경기력 분석</h3>
+      <h3>v7.59 경기력 · 개성 분석</h3>
+      <div class="seasonGrid">
+        <div><span>시그니처</span><b>${p759.signature}</b></div>
+        <div><span>개성 영향도</span><b>${Math.round(p759.personalityAuthority*100)}%</b></div>
+        <div><span>공격 성향</span><b>${Math.round(p759.aggression*100)}</b></div>
+        <div><span>위험 관리</span><b>${Math.round(p759.caution*100)}</b></div>
+      </div>
       <div class="seasonGrid">
         <div><span>실전 스타일</span><b>${live.styles.length?live.styles.join(" · "):"데이터 수집 중"}</b></div>
         <div><span>회피 성공률</span><b>${(100*(a.avoidanceSuccessRate||0)).toFixed(1)}%</b></div>
@@ -12172,6 +12303,9 @@ function seasonCardHtml(p){
         <div><b>소속팀</b><span>${teamLabel(p.team)}</span></div>
         <div><b>주행 성향</b><span>${styleLabel(p.drivingStyle.style)}</span></div>
         <div><b>AI 개성</b><span>${identitySummary(p)}</span></div>
+        <div><b>시그니처</b><span>${personalitySummary759(p).signature}</span></div>
+        <div><b>클러치</b><span>${Math.round(personalitySummary759(p).clutch*100)}</span></div>
+        <div><b>현재 라이벌</b><span>${personalitySummary759(p).rival||"-"}</span></div>
         <div><b>당일 컨디션</b><span>${p.raceForm>=1.025?"좋음":p.raceForm<=.975?"흔들림":"보통"}</span></div>
         <div><b>팀전 누적점수</b><span>${playerTournament[p.index]?.total||0}점</span></div>
         <div><b>강점</b><span>${entries.slice(0,3).map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
@@ -13270,6 +13404,8 @@ function seasonCardHtml(p){
     getCareerAnalytics749:(name)=>careerAnalytics749(name),
     resetAnalytics749:()=>{try{localStorage.removeItem(ANALYTICS_KEY_749);}catch(e){} return true;},
     getDrivingPersonality754:()=>players.map(p=>({name:p.name,...driverPersonality754(p)})),
+    getPersonalityFinal759:()=>players.map(p=>({name:p.name,...personalitySummary759(p)})),
+    getRivalContexts759:()=>players.map(p=>({name:p.name,...rivalContext759(p),rival:rivalContext759(p).rival?.name||null})),
     getTeleportAudit754:()=>players.map(p=>({
       name:p.name,trips:p._teleportGuardTrips754||0,
       backtrackPrevented:p._backtrackPrevented754||0,
