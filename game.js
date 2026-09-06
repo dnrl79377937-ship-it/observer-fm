@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.33";
+  const BUILD_ID = "v7.34";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8570,6 +8570,36 @@ function farthestVisibleFastTarget91(p,si){
     return bestP;
   }
 
+  function splineSegIndexAtProgress734(progress){
+    const p=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,Number(progress)||0));
+    let lo=0,hi=RACING_SPLINE_SEGS_720.length-1;
+    while(lo<hi){
+      const mid=(lo+hi)>>1,s=RACING_SPLINE_SEGS_720[mid];
+      if(p<=s.start+s.L)hi=mid;else lo=mid+1;
+    }
+    return lo;
+  }
+
+  function nearestSplineProgressLocal734(x,y,hint,span=24){
+    if(!Number.isFinite(hint))return nearestSplineProgress720(x,y);
+    const center=splineSegIndexAtProgress734(hint);
+    let lo=Math.max(0,center-span),hi=Math.min(RACING_SPLINE_SEGS_720.length-1,center+span);
+    let bestD=Infinity,bestP=hint,bestI=center;
+    for(let i=lo;i<=hi;i++){
+      const s=RACING_SPLINE_SEGS_720[i];
+      const den=s.L*s.L||1;
+      const t=Math.max(0,Math.min(1,((x-s.a[0])*s.dx+(y-s.a[1])*s.dy)/den));
+      const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t;
+      const d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
+      if(d<bestD){bestD=d;bestP=s.start+s.L*t;bestI=i;}
+    }
+    // An evade is only a few units long. Boundary hit means the hint was stale;
+    // do one wider local pass, never 390 segments per dodge candidate.
+    if((bestI===lo||bestI===hi) && span<72)
+      return nearestSplineProgressLocal734(x,y,bestP,72);
+    return bestP;
+  }
+
   function splineRawPoint724(progress){
     const p=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,progress));
     let lo=0,hi=RACING_SPLINE_SEGS_720.length-1;
@@ -8655,7 +8685,7 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function splineDeviation720(p){
-    const prog=nearestSplineProgress720(p.x,p.y),q=splinePointAt720(prog);
+    const prog=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,28),q=splinePointAt720(prog);
     return Math.hypot(p.x-q.x,p.y-q.y);
   }
 
@@ -8749,7 +8779,7 @@ function farthestVisibleFastTarget91(p,si){
     // v7.24(130): normal prediction is capped at 11.1; emergency 4.0 stays immediate.
     if(now<(p._nextThreatScan724||0))
       return p._cachedThreat724||null;
-    p._nextThreatScan724=now+40;
+    p._nextThreatScan724=now+44;
 
     let best=null,bestScore=Infinity;
     const nearby=localObservers723(p,11.1);
@@ -8812,33 +8842,44 @@ function farthestVisibleFastTarget91(p,si){
 
     const ex=driverExecution720(p);
     const st=ensureRaceState720(p,now),id=raw.o?.id??-1;
+    const eta=Math.min(raw.t,raw.minH??raw.t);
 
     if(raw.emergency){
-      st.pendingThreatId=id;
-      st.reactionReadyAt=now;
+      // v7.34: stats matter even under emergency pressure. Only a literally
+      // unavoidable/contact-range threat bypasses hand/reaction delay.
+      if(raw.dist<1.28){
+        st.pendingThreatId=id;st.reactionReadyAt=now;return raw;
+      }
+      if(st.pendingThreatId!==id){
+        st.pendingThreatId=id;
+        const emergencyDelay=8+(1-ex.reaction)*95+(1-ex.control)*30;
+        st.reactionReadyAt=now+emergencyDelay;
+      }
+      if(now<st.reactionReadyAt)return null;
       return raw;
     }
 
-    // v7.24: normal reads happen much closer than v7.23.
-    const eta=Math.min(raw.t,raw.minH??raw.t);
-    const horizon=.46+ex.prediction*.26;
-    if(eta>horizon || raw.dist>9.8)return null;
+    // High prediction sees a credible collision earlier; low stats do not get
+    // the same perfect long-range information simply because the detector saw it.
+    const horizon=.28+ex.prediction*.62;
+    const maxReadDist=6.80+ex.prediction*3.20;
+    if(eta>horizon || raw.dist>maxReadDist)return null;
 
-    // Not every racer reads every non-emergency observer perfectly.
-    // Stable per racer/threat hash avoids frame-to-frame randomness.
+    // Stable per racer/threat hash: skill changes the probability of correctly
+    // recognizing a non-emergency crossing, without frame-to-frame randomness.
     const roundKey=(typeof currentRound==="number"?currentRound:0);
     const h=((p.index+1)*37+(id+3)*17+(roundKey+5)*13)%100/100;
-    const earlyReadChance=.42+ex.prediction*.20+ex.reaction*.10;
+    const earlyReadChance=.02+ex.prediction*.62+ex.reaction*.18+ex.consistency*.10;
     if(h>earlyReadChance)return null;
 
     if(st.pendingThreatId!==id){
       st.pendingThreatId=id;
-      const urgency=clamp01720((.50-eta)/.50);
-      const delay=(72-ex.reaction*46)*(1-urgency*.66);
+      const urgency=clamp01720((.48-eta)/.48);
+      const delay=(115-ex.reaction*90-ex.control*12)*(1-urgency*.58);
       st.reactionReadyAt=now+Math.max(12,delay);
     }
 
-    if(now<st.reactionReadyAt && eta>.22)return null;
+    if(now<st.reactionReadyAt && eta>.20)return null;
     return raw;
   }
 
@@ -8849,7 +8890,7 @@ function farthestVisibleFastTarget91(p,si){
     const obs=obs723||localObservers723(p,8.6);
     const ch=localCandidateRisk723(p,c,obs);
     const field=localFieldRisk723(c,obs);
-    const dev=Math.min(5,splineDeviationPoint720(c.x,c.y));
+    const dev=Math.min(5,splineDeviationPoint720(c.x,c.y,p._splineProg720));
     const dist=Math.hypot(c.x-p.x,c.y-p.y);
     const critical=!!threat?.emergency && !!threat?.frontBlock && (threat?.dist??9)<3.25;
 
@@ -8865,13 +8906,13 @@ function farthestVisibleFastTarget91(p,si){
       dev*.67+dist*.09+actionPenalty;
   }
 
-  function splineDeviationPoint720(x,y){
-    const prog=nearestSplineProgress720(x,y),q=splinePointAt720(prog);
+  function splineDeviationPoint720(x,y,hint=NaN){
+    const prog=nearestSplineProgressLocal734(x,y,hint,18),q=splinePointAt720(prog);
     return Math.hypot(x-q.x,y-q.y);
   }
 
   function chooseEvadeAction720(p,now,threat){
-    const prog=nearestSplineProgress720(p.x,p.y);
+    const prog=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,28);
     const frame=splinePointAt720(prog);
     const nx=-frame.uy,ny=frame.ux,ex=driverExecution720(p);
 
@@ -8896,15 +8937,39 @@ function farthestVisibleFastTarget91(p,si){
       );
     }
 
-    const obs723=localObservers723(p,8.6);
-    let best=null,bestScore=Infinity;
+    const perceptionRadius734=5.8+ex.prediction*3.4;
+    const obs723=localObservers723(p,perceptionRadius734);
+    const ranked=[];
 
     for(const [kind,f,l] of candidates){
       const c={x:p.x+frame.ux*f+nx*l,y:p.y+frame.uy*f+ny*l,kind:"race720-evade-"+kind};
       const score=scoreEvadeCandidate720(p,c,kind,threat,obs723);
-      if(score<bestScore){bestScore=score;best={kind,target:c,score};}
+      if(Number.isFinite(score))ranked.push({kind,target:c,score});
     }
+    ranked.sort((a,b)=>a.score-b.score);
+    if(!ranked.length)return null;
 
+    const judgment=(ex.prediction+ex.avoidance+ex.control+ex.riskControl)/4;
+    const threatId=threat?.o?.id??0;
+    const stable=((p.index+3)*29+(threatId+5)*11+(currentRound||0)*7)%100/100;
+    const mistakeChance=(1-judgment)*.62;
+    let pick=0;
+    if(stable<mistakeChance && ranked.length>1)pick=1;
+    if(stable<mistakeChance*.20 && ranked.length>2)pick=2;
+
+    const best=ranked[pick];
+    // Lower control/avoidance adds a small stable hand-execution miss after the
+    // decision. It changes the local dodge, never the macro route.
+    const hand=1-(ex.control*.58+ex.avoidance*.42);
+    if(hand>.03 && best && !/back|stop/.test(best.kind)){
+      const sign=(((p.index+1)*13+(threatId+1)*19)%2)?1:-1;
+      const mag=hand*.52;
+      const tx=best.target.x+nx*sign*mag;
+      const ty=best.target.y+ny*sign*mag;
+      if(courseContainsPoint(tx,ty,0) && actualRoadChord719(p.x,p.y,tx,ty)){
+        best.target={...best.target,x:tx,y:ty,kind:best.target.kind+"-exec734"};
+      }
+    }
     return best;
   }
 
@@ -8943,7 +9008,7 @@ function farthestVisibleFastTarget91(p,si){
 
   function rejoinTarget720(p,now){
     const ex=driverExecution720(p);
-    const base=nearestSplineProgress720(p.x,p.y);
+    const base=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,36);
     const look=4.6+ex.recovery*2.4;
     for(let d=look;d>=2.2;d-=.35){
       const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,base+d));
@@ -8999,7 +9064,7 @@ function farthestVisibleFastTarget91(p,si){
       if(dev<.32 || now>=st.rejoinUntil){
         st.mode="NORMAL";st.since=now;st.action="none";st.target=null;
         st._justRejoined=true;
-        p._splineProg720=nearestSplineProgress720(p.x,p.y);
+        p._splineProg720=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,48);
       }
     }
     if(st.mode==="NORMAL")st.pendingThreatId=-1;
@@ -9964,11 +10029,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.y += moveDirY*move;
     }
 
-    // v6.36 physical road authority: clamp immediately after the movement step,
-    // before OUTSIDE death, telemetry, segment advancement, or observer collision.
-    enforcePhysicalRoad636(p);
-    // v7.19 HOTFIX3: do NOT apply legacy x=39.4..48.6 climb clamp.
-    enforcePhysicalRoad636(p);
+    // v7.34: the final Racing Spline / EVADE engine already supplies legal targets.
+    // Never project or roll it back to a legacy segment/lastLegal position: that was
+    // the source of the visible backward teleport on the two vertical inside lines.
+    if(!engineAuthority719) enforcePhysicalRoad636(p);
 
     if(shortestCalm719 && /race720-normal/.test(racing529?.kind||"")){
       p._actualShortestDeviation719=splineDeviation720(p);
@@ -10070,7 +10134,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
       return;
     }
 
-    rescueIfStuck(p,now);
+    // v7.34: legacy rescue relocates by old route segment and can jump a spline racer.
+    if(!engineAuthority719) rescueIfStuck(p,now);
 
     // v2.50 danger + near miss telemetry.
     if(!safeAt(p.x,p.y)){let nearestObsSq=Infinity;for(const o of playerNearbyObservers(p,3)){const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;if(d2<nearestObsSq)nearestObsSq=d2;}if(nearestObsSq<10.24)p.match.dangerExposureMs+=dt;const hitSq=PLAYER_HIT_RADIUS*PLAYER_HIT_RADIUS;if(nearestObsSq>hitSq&&nearestObsSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){p.match.nearMisses++;if(nearestObsSq<.3844)p.match.extremeNearMisses++;p.match.lastNearMissAt=now;addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestObsSq<.3844?2:1);}}
@@ -12669,7 +12734,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==100)issues.push("옵저버100");
+    if(OBSERVER_COUNT!==130)issues.push("옵저버130");
     if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001)issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
