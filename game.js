@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.19-HOTFIX1";
+  const BUILD_ID = "v7.19-HOTFIX2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8338,14 +8338,14 @@ function farthestVisibleFastTarget91(p,si){
   // ============================================================
 
   const GLOBAL_OPTIMAL_LINE_710=[
-    // v7.19 HOTFIX1: exact visibility-graph shortest path through the
-    // ACTUAL visible/legal road polygon. Length = 322.333 logical units.
-    // Legacy route centerline length is ~389.302, so this is ~17.2% shorter.
+    // v7.19 HOTFIX2: fine-grid A* + visibility-string-pulled shortest path
+    // through the current actual visible road mask.
     [31.05,132.55],
-    [119.00,123.20],
+    [119.05,123.20],
     [119.00,83.20],
     [51.80,64.80],
-    [51.80,32.20],
+    [51.80,32.40],
+    [52.00,32.20],
     [143.00,23.50]
   ];
 
@@ -8627,7 +8627,7 @@ function farthestVisibleFastTarget91(p,si){
   // v7.19 HOTFIX1 — TRUE SHORTEST PATH AUTHORITY
   // ============================================================
 
-  const SHORTEST_PATH_LENGTH_719=322.3331564459016;
+  const SHORTEST_PATH_LENGTH_719=322.26665621567776;
 
   // Actual road legality only. IMPORTANT: ignores obsolete FORBIDDEN96 planning
   // rectangles. Those boxes are not physical road and were forcing visible detours.
@@ -9369,8 +9369,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     p.routeSource523=racing529?.kind || "legacy";
     const shortestCalm719=!!racing529 && !liveEvade &&
       /true-shortest719|global-optimal710|fastest-rejoin719/i.test(racing529.kind||"") &&
-      now>=(p.hardRouteLockUntil||0) && now>=(p.routeBreakCombatUntil||0) &&
-      p.controlMode==="normal";
+      now>=(p.hardRouteLockUntil||0) && now>=(p.routeBreakCombatUntil||0);
+    if(shortestCalm719){
+      p.controlMode="normal";
+      p.controlMistakeSide=0;
+    }
     let broad507=null;
     if(racing529 && !liveEvade){
       tx=racing529.x;
@@ -9424,6 +9427,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // the virtual mouse consumes the planner output. Diagnostic only; no steering changes.
     recordAiBlackboxSample(p,now,tx,ty);
 
+    // v7.19 HOTFIX2: the calm mathematical shortest line is a continuous
+    // racing command, not a human click simulation. Mouse cadence/error was the
+    // main remaining source of visible wide arcs.
+    if(shortestCalm719){
+      p.mouseTargetX=tx; p.mouseTargetY=ty;
+      p.mouseMode="race-shortest";
+      p.mouseReactionReadyAt=0;
+      p.mouseNextThink=now;
+      p.mouseCommandUntil=now+40;
+    }else{
     // v4.23 VIRTUAL MOUSE + HUMAN REACTION + PERSONAL VISION: the planner above is now the player's "eyes + brain" only.
     // It proposes a click, but steering consumes the last committed click target.
     // Safe running uses relaxed human click cadence; real danger shortens the cadence.
@@ -9528,11 +9541,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
       }
       tx=p.mouseTargetX; ty=p.mouseTargetY;
     }
+    }
 
     // v6.36 stale-click guard: a previously held mouse target may have become
     // illegal after a corner/segment transition. Revalidate it every frame.
     {
-      const road636=finalRoadTarget636(p,si,{x:tx,y:ty,kind:"held-mouse636"});
+      const road636=shortestCalm719
+        ? actualRoadTarget719(p,si,{x:tx,y:ty,kind:"held-shortest719"})
+        : finalRoadTarget636(p,si,{x:tx,y:ty,kind:"held-mouse636"});
       if(road636){
         tx=road636.x;ty=road636.y;
         p.mouseTargetX=tx;p.mouseTargetY=ty;
@@ -9542,10 +9558,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.07 direct broad-road movement:
     // do not allow stale mouse/edge commands to turn a valid broad-road straight chord
     // into a one-tile edge-following L path.
-    if((racing529 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
+    if(shortestCalm719 || ((racing529 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
        now>=(p.hardRouteLockUntil||0) &&
        now>=(p.routeBreakCombatUntil||0) &&
-       p.controlMode==="normal"){
+       p.controlMode==="normal")){
       // v5.13: keep the stabilized local target instead of restoring the far raw target.
       p.mouseTargetX=tx;
       p.mouseTargetY=ty;
@@ -9576,7 +9592,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.controlMode==="normal";
 
     let moveDirX,moveDirY;
-    if(legacyCalm502){
+    if(shortestCalm719){
+      // Exact target vector every simulation step: no steering inertia, no old
+      // horizontal-center lock, no final-straight Y lock.
+      moveDirX=dx/d;
+      moveDirY=dy/d;
+      p.steerX=moveDirX;p.steerY=moveDirY;
+      p.mouseTargetX=tx;p.mouseTargetY=ty;
+    }else if(legacyCalm502){
       moveDirX=dx/d;
       moveDirY=dy/d;
       if(!shortestCalm719 && finalStraight508(si) && Number.isFinite(p.finalStraightY508)){
