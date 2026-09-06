@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.20";
+  const BUILD_ID = "v7.21";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -724,7 +724,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -8737,58 +8737,202 @@ function farthestVisibleFastTarget91(p,si){
 
   const RACING_SPLINE_720=[
     [31.05000,132.55000],
-    [117.55840,123.35848],
-    [117.89916,123.43059],
-    [118.20141,123.46350],
-    [118.46487,123.45750],
-    [118.68928,123.41287],
-    [118.87440,123.32991],
-    [119.01997,123.20891],
-    [119.12571,123.05014],
-    [119.19138,122.85390],
-    [119.21671,122.62048],
-    [119.20145,122.35017],
-    [119.14534,122.04324],
-    [119.04813,121.70000],
-    [119.00187,84.70000],
-    [119.09802,84.35584],
-    [119.15391,84.04443],
-    [119.16977,83.76610],
-    [119.14587,83.52117],
-    [119.08245,83.30998],
-    [118.97977,83.13285],
-    [118.83808,82.99011],
-    [118.65763,82.88210],
-    [118.43867,82.80914],
-    [118.18145,82.77156],
-    [117.88623,82.76970],
-    [117.55325,82.80387],
-    [53.24675,65.19613],
-    [52.91379,65.23030],
-    [52.61860,65.22844],
-    [52.36145,65.19086],
-    [52.14259,65.11790],
-    [51.96226,65.00989],
-    [51.82071,64.86715],
-    [51.71820,64.69002],
-    [51.65498,64.47883],
-    [51.63130,64.23390],
-    [51.64741,63.95557],
-    [51.70356,63.64416],
-    [51.80000,63.30000],
-    [51.80000,33.70000],
-    [51.69417,33.34796],
-    [51.63107,33.03409],
-    [51.61045,32.75868],
-    [51.63203,32.52201],
-    [51.69557,32.32437],
-    [51.80080,32.16604],
-    [51.94746,32.04730],
-    [52.13530,31.96845],
-    [52.36406,31.92976],
-    [52.63347,31.93153],
-    [52.94328,31.97403],
-    [53.29322,32.05755],
+    [117.50868,123.36377],
+    [117.60039,123.38517],
+    [117.68959,123.40411],
+    [117.77628,123.42060],
+    [117.86045,123.43464],
+    [117.94210,123.44622],
+    [118.02124,123.45535],
+    [118.09785,123.46203],
+    [118.17194,123.46626],
+    [118.24351,123.46805],
+    [118.31255,123.46739],
+    [118.37906,123.46429],
+    [118.44305,123.45875],
+    [118.50450,123.45078],
+    [118.56343,123.44036],
+    [118.61981,123.42752],
+    [118.67367,123.41224],
+    [118.72498,123.39452],
+    [118.77376,123.37439],
+    [118.81999,123.35182],
+    [118.86368,123.32683],
+    [118.90483,123.29941],
+    [118.94343,123.26958],
+    [118.97949,123.23732],
+    [119.01300,123.20265],
+    [119.04395,123.16556],
+    [119.07235,123.12605],
+    [119.09820,123.08414],
+    [119.12150,123.03981],
+    [119.14223,122.99308],
+    [119.16041,122.94394],
+    [119.17602,122.89239],
+    [119.18908,122.83844],
+    [119.19956,122.78209],
+    [119.20749,122.72334],
+    [119.21284,122.66220],
+    [119.21563,122.59866],
+    [119.21584,122.53272],
+    [119.21349,122.46440],
+    [119.20856,122.39368],
+    [119.20105,122.32058],
+    [119.19096,122.24509],
+    [119.17830,122.16721],
+    [119.16306,122.08696],
+    [119.14523,122.00432],
+    [119.12482,121.91930],
+    [119.10182,121.83191],
+    [119.07624,121.74214],
+    [119.04806,121.65000],
+    [119.00194,84.75000],
+    [119.02976,84.65797],
+    [119.05504,84.56808],
+    [119.07779,84.48035],
+    [119.09800,84.39477],
+    [119.11569,84.31135],
+    [119.13084,84.23008],
+    [119.14347,84.15098],
+    [119.15357,84.07403],
+    [119.16114,83.99925],
+    [119.16619,83.92664],
+    [119.16872,83.85619],
+    [119.16873,83.78791],
+    [119.16622,83.72181],
+    [119.16119,83.65788],
+    [119.15365,83.59613],
+    [119.14359,83.53655],
+    [119.13103,83.47916],
+    [119.11595,83.42395],
+    [119.09836,83.37092],
+    [119.07827,83.32008],
+    [119.05567,83.27143],
+    [119.03056,83.22497],
+    [119.00296,83.18071],
+    [118.97285,83.13864],
+    [118.94025,83.09877],
+    [118.90514,83.06110],
+    [118.86755,83.02563],
+    [118.82745,82.99236],
+    [118.78487,82.96130],
+    [118.73979,82.93245],
+    [118.69223,82.90581],
+    [118.64217,82.88138],
+    [118.58964,82.85917],
+    [118.53461,82.83918],
+    [118.47711,82.82140],
+    [118.41712,82.80584],
+    [118.35465,82.79251],
+    [118.28971,82.78140],
+    [118.22229,82.77252],
+    [118.15239,82.76588],
+    [118.08002,82.76146],
+    [118.00518,82.75927],
+    [117.92787,82.75932],
+    [117.84810,82.76161],
+    [117.76585,82.76614],
+    [117.68114,82.77292],
+    [117.59397,82.78193],
+    [117.50434,82.79320],
+    [52.84566,65.20680],
+    [52.76295,65.21114],
+    [52.68241,65.21353],
+    [52.60404,65.21397],
+    [52.52785,65.21246],
+    [52.45382,65.20900],
+    [52.38197,65.20360],
+    [52.31230,65.19626],
+    [52.24480,65.18698],
+    [52.17949,65.17577],
+    [52.11636,65.16262],
+    [52.05541,65.14753],
+    [51.99664,65.13052],
+    [51.94007,65.11157],
+    [51.88568,65.09070],
+    [51.83348,65.06791],
+    [51.78347,65.04319],
+    [51.73565,65.01655],
+    [51.69003,64.98800],
+    [51.64661,64.95753],
+    [51.60538,64.92514],
+    [51.56636,64.89085],
+    [51.52953,64.85464],
+    [51.49491,64.81653],
+    [51.46249,64.77651],
+    [51.43228,64.73459],
+    [51.40427,64.69076],
+    [51.37848,64.64504],
+    [51.35489,64.59742],
+    [51.33352,64.54791],
+    [51.31436,64.49650],
+    [51.29742,64.44321],
+    [51.28270,64.38802],
+    [51.27019,64.33095],
+    [51.25991,64.27200],
+    [51.25185,64.21116],
+    [51.24601,64.14845],
+    [51.24239,64.08385],
+    [51.24101,64.01738],
+    [51.24185,63.94904],
+    [51.24492,63.87883],
+    [51.25023,63.80674],
+    [51.25777,63.73279],
+    [51.26754,63.65698],
+    [51.27955,63.57930],
+    [51.29380,63.49976],
+    [51.31029,63.41836],
+    [51.32903,63.33511],
+    [51.35000,63.25000],
+    [51.35000,33.75000],
+    [51.32905,33.66501],
+    [51.31038,33.58210],
+    [51.29399,33.50128],
+    [51.27989,33.42254],
+    [51.26807,33.34590],
+    [51.25852,33.27135],
+    [51.25126,33.19889],
+    [51.24626,33.12853],
+    [51.24354,33.06026],
+    [51.24310,32.99410],
+    [51.24492,32.93003],
+    [51.24901,32.86807],
+    [51.25537,32.80821],
+    [51.26400,32.75046],
+    [51.27489,32.69482],
+    [51.28804,32.64129],
+    [51.30345,32.58987],
+    [51.32111,32.54056],
+    [51.34104,32.49337],
+    [51.36322,32.44830],
+    [51.38765,32.40535],
+    [51.41434,32.36452],
+    [51.44327,32.32581],
+    [51.47446,32.28922],
+    [51.50789,32.25477],
+    [51.54357,32.22244],
+    [51.58149,32.19224],
+    [51.62165,32.16418],
+    [51.66405,32.13825],
+    [51.70869,32.11445],
+    [51.75556,32.09280],
+    [51.80468,32.07328],
+    [51.85602,32.05591],
+    [51.90960,32.04067],
+    [51.96540,32.02759],
+    [52.02344,32.01665],
+    [52.08370,32.00786],
+    [52.14619,32.00122],
+    [52.21090,31.99673],
+    [52.27783,31.99440],
+    [52.34698,31.99422],
+    [52.41835,31.99621],
+    [52.49194,32.00035],
+    [52.56774,32.00665],
+    [52.64576,32.01512],
+    [52.72598,32.02575],
+    [52.80842,32.03855],
+    [52.89306,32.05352],
     [143.00000,23.50000]
   ];
 
@@ -8804,7 +8948,7 @@ function farthestVisibleFastTarget91(p,si){
     return out;
   })();
 
-  const RACING_SPLINE_LENGTH_720=322.968847525496;
+  const RACING_SPLINE_LENGTH_720=323.429138109937;
 
   function clamp01720(v){ return Math.max(0,Math.min(1,v)); }
   function stat720(p,key,fallback=84){
@@ -8840,22 +8984,43 @@ function farthestVisibleFastTarget91(p,si){
 
   function splinePointAt720(progress){
     const p=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,progress));
+    let x=RACING_SPLINE_720[0][0],y=RACING_SPLINE_720[0][1],segIndex=0;
     for(let i=0;i<RACING_SPLINE_SEGS_720.length;i++){
       const s=RACING_SPLINE_SEGS_720[i];
       if(p<=s.start+s.L || i===RACING_SPLINE_SEGS_720.length-1){
         const t=Math.max(0,Math.min(1,(p-s.start)/s.L));
-        return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy,seg:i};
+        x=s.a[0]+s.dx*t;y=s.a[1]+s.dy*t;segIndex=i;break;
       }
     }
-    const f=RACING_SPLINE_720[RACING_SPLINE_720.length-1];
-    return {x:f[0],y:f[1],ux:1,uy:0,seg:RACING_SPLINE_SEGS_720.length-1};
+
+    // v7.21: central-difference tangent removes tiny heading steps at sampled
+    // spline vertices. This is what eliminates the "micro-stutter" feeling.
+    const e=.32;
+    const p0=Math.max(0,p-e),p1=Math.min(RACING_SPLINE_SEGS_720.total,p+e);
+    let ax=x,ay=y,bx=x,by=y;
+    for(let i=0;i<RACING_SPLINE_SEGS_720.length;i++){
+      const s=RACING_SPLINE_SEGS_720[i];
+      if(p0<=s.start+s.L || i===RACING_SPLINE_SEGS_720.length-1){
+        const t=Math.max(0,Math.min(1,(p0-s.start)/s.L));
+        ax=s.a[0]+s.dx*t;ay=s.a[1]+s.dy*t;break;
+      }
+    }
+    for(let i=0;i<RACING_SPLINE_SEGS_720.length;i++){
+      const s=RACING_SPLINE_SEGS_720[i];
+      if(p1<=s.start+s.L || i===RACING_SPLINE_SEGS_720.length-1){
+        const t=Math.max(0,Math.min(1,(p1-s.start)/s.L));
+        bx=s.a[0]+s.dx*t;by=s.a[1]+s.dy*t;break;
+      }
+    }
+    const dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1;
+    return {x,y,ux:dx/L,uy:dy/L,seg:segIndex};
   }
 
   function splineCurvature720(progress){
-    const a=splinePointAt720(Math.max(0,progress-.75));
-    const b=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,progress+.75));
+    const a=splinePointAt720(Math.max(0,progress-1.10));
+    const b=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,progress+1.10));
     const dot=Math.max(-1,Math.min(1,a.ux*b.ux+a.uy*b.uy));
-    return Math.acos(dot)/1.5;
+    return Math.acos(dot)/2.20;
   }
 
   function roadClearance720(q,nx,ny,side){
@@ -8878,7 +9043,18 @@ function farthestVisibleFastTarget91(p,si){
     // a small wider execution miss — never a different macro route.
     const miss=(1-ex.inside)*.52+(1-ex.control)*.16;
     const stable=.82+.18*Math.sin(progress*.035+(p.index||0)*.73);
-    const off=wideSide*Math.min(.72,Math.max(0,miss*stable));
+    let off=wideSide*Math.min(.72,Math.max(0,miss*stable));
+
+    // v7.21 west-climb clearance: the optimal line itself is x=51.35 instead of
+    // the visible x=51.8 edge, and execution error may never push it back into
+    // that right-hand rail between 9 and 11 o'clock.
+    if(q.y>=33.0&&q.y<=64.2&&q.x>50.7&&q.x<52.0){
+      const xTry=q.x+nx*off;
+      if(xTry>51.45){
+        const denom=Math.abs(nx)<1e-6?1:nx;
+        off=(51.45-q.x)/denom;
+      }
+    }
     const x=q.x+nx*off,y=q.y+ny*off;
     if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
       return {...q,x,y,executionOffset720:off};
@@ -9045,21 +9221,28 @@ function farthestVisibleFastTarget91(p,si){
     return t;
   }
 
-  function speedMultiplier720(p,now){
+  function speedMultiplier720(p,now,dt=16){
     const st=ensureRaceState720(p,now),ex=driverExecution720(p);
+    let target=1;
     if(st.mode==="EVADE"){
-      if(/back/.test(st.action))return .64+.10*ex.avoidance;
-      if(/stop/.test(st.action))return .18;
-      if(/brake/.test(st.action))return .48+.12*ex.control;
-      return .88+.08*ex.avoidance;
+      if(/back/.test(st.action))target=.64+.10*ex.avoidance;
+      else if(/stop/.test(st.action))target=.18;
+      else if(/brake/.test(st.action))target=.48+.12*ex.control;
+      else target=.88+.08*ex.avoidance;
+    }else if(st.mode==="REJOIN"){
+      target=.92+.07*ex.recovery;
+    }else{
+      const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+      const curve=Math.min(1,splineCurvature720(prog)*4.0);
+      target=1-curve*(.052-.040*ex.corner);
     }
-    if(st.mode==="REJOIN")return .92+.07*ex.recovery;
 
-    const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-    const curve=Math.min(1,splineCurvature720(prog)*4.2);
-    // p.speed already carries max-speed/pace. Cornering controls how much of it is
-    // retained through the smoothed apex.
-    return 1-curve*(.060-.045*ex.corner);
+    // v7.21: no per-frame speed snapping at corner sample boundaries.
+    if(!Number.isFinite(p._speedMul720))p._speedMul720=target;
+    const tau=st.mode==="NORMAL"?135:65;
+    const alpha=1-Math.exp(-Math.max(1,dt)/tau);
+    p._speedMul720 += (target-p._speedMul720)*alpha;
+    return p._speedMul720;
   }
 
   function raceEngine1019(p,si,now){
@@ -10030,7 +10213,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       if(!eastThreats.length) speedMul=Math.max(speedMul,1.0);
     }
 
-    if(engineAuthority719) speedMul=speedMultiplier720(p,now);
+    if(engineAuthority719) speedMul=speedMultiplier720(p,now,dt);
     const step=p.speed*speedMul*dt/1000;
     const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
 
