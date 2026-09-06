@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.31";
+  const BUILD_ID = "v7.32";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -740,7 +740,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -8877,8 +8877,14 @@ function farthestVisibleFastTarget91(p,si){
       ["hard-left",2.55,-hardLat],["hard-right",2.55,hardLat],
       ["brake",1.10,0],["stop",.30,0]
     ];
-    if(critical){
-      candidates.push(["back-left",-1.65,-1.20],["back-right",-1.65,1.20],["back",-1.90,0]);
+    const st732=ensureRaceState720(p,now);
+    if(critical && now>=(st732.backCooldownUntil732||0)){
+      // v7.32: backcon is only a tiny emergency retreat, never a long escape route.
+      candidates.push(
+        ["back-left",-0.72,-0.58],
+        ["back-right",-0.72,0.58],
+        ["back",-0.86,0]
+      );
     }
 
     const obs723=localObservers723(p,8.6);
@@ -8907,13 +8913,16 @@ function farthestVisibleFastTarget91(p,si){
     const stop=/stop|brake/.test(st.action);
     const thread=/thread|diag/.test(st.action);
 
-    st.actionUntil=now+(back?255:stop?205:thread?225:245);
-    st.planHoldUntil723=now+(back?205:thread?185:175);
+    st.actionUntil=now+(back?145:stop?205:thread?225:245);
+    st.planHoldUntil723=now+(back?115:thread?185:175);
     st.rejoinUntil=0;
 
     if(back){
       const dx=st.target.x-p.x,dy=st.target.y-p.y,L=Math.hypot(dx,dy)||1;
       st.backDirX723=dx/L;st.backDirY723=dy/L;
+      st.backOriginX732=p.x;st.backOriginY732=p.y;
+      st.backMaxTravel732=/back-left|back-right/.test(st.action)?0.92:0.82;
+      st.backCooldownUntil732=now+420;
       p.steerX=st.backDirX723;p.steerY=st.backDirY723;
       p.mouseTargetX=st.target.x;p.mouseTargetY=st.target.y;
       p.mouseMode="race720-backcon";
@@ -8940,6 +8949,25 @@ function farthestVisibleFastTarget91(p,si){
     const st=ensureRaceState720(p,now);
     const threat=readableThreat720(p,now);
 
+    // v7.32: one backcon can travel less than one logical road unit.
+    // At the cap, immediately choose a different control (back candidates are
+    // unavailable during cooldown), or rejoin if the danger has cleared.
+    if(st.mode==="EVADE" && /back/.test(st.action||"") &&
+       Number.isFinite(st.backOriginX732) && Number.isFinite(st.backOriginY732)){
+      const travelled=Math.hypot(p.x-st.backOriginX732,p.y-st.backOriginY732);
+      if(travelled>=(st.backMaxTravel732||.85) || now>=st.actionUntil){
+        st.actionUntil=now;
+        st.planHoldUntil723=now;
+        if(threat){
+          startEvade720(p,now,threat); // cooldown forces forward/diagonal/brake alternative
+          return {st,threat};
+        }
+        st.mode="REJOIN";st.since=now;st.target=null;
+        st.rejoinUntil=now+520+driverExecution720(p).recovery*180;
+        return {st,threat:null};
+      }
+    }
+
     if(threat){
       st.lastThreatAt=now;
       const changedThreat=(st.activeThreatId??-1)!==(threat.o?.id??-1);
@@ -8951,7 +8979,6 @@ function farthestVisibleFastTarget91(p,si){
       }else if(now>=st.actionUntil){
         startEvade720(p,now,threat);
       }
-      // Same observer + same action is intentionally held. This removes backcon jitter.
       return {st,threat};
     }
 
@@ -8995,11 +9022,10 @@ function farthestVisibleFastTarget91(p,si){
 
     if(st.mode==="EVADE"){
       if(/back/.test(st.action)){
-        target=.74+.08*ex.avoidance;
-        // v7.23: direction changes immediately, speed changes over ~45 ms.
-        // This avoids both delayed backcon and the harsh snap introduced in v7.22.
+        target=.58+.06*ex.avoidance;
+        // v7.32: short controlled retreat, not a full-speed reverse escape.
         if(!Number.isFinite(p._speedMul720))p._speedMul720=target;
-        const alphaBack=1-Math.exp(-Math.max(1,dt)/45);
+        const alphaBack=1-Math.exp(-Math.max(1,dt)/52);
         p._speedMul720+=(target-p._speedMul720)*alphaBack;
         return p._speedMul720;
       }
@@ -10728,11 +10754,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     playerNearbyFrameSerial++;
     simTickCounter++;
 
-    // v3.6: 330-observer optimization — lighter lookup/prediction work; collisions remain 50Hz.
-    // Explicit ticks avoid duplicate refreshes caused by timestamp rounding.
+    // v7.32: split periodic work across different simulation ticks.
+    // This removes the old ~280 ms "grid + prediction" same-frame spike.
+    if(simTickCounter===7) rebuildObserverGrid();
     if(simTickCounter>=14){
       simTickCounter=0;
-      rebuildObserverGrid();
       precomputeObserverPredictions(now);
     }
 
