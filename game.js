@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.19-HOTFIX2";
+  const BUILD_ID = "v7.19-HOTFIX4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -724,7 +724,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -8662,6 +8662,25 @@ function farthestVisibleFastTarget91(p,si){
     return optimalPointAt710(progress);
   }
 
+  function advanceExactlyOnShortest719(p,distance){
+    if(!p || !(distance>0)) return false;
+    const prog=nearestOptimalProgress710(p.x,p.y);
+    const next=Math.min(GLOBAL_OPTIMAL_SEGS_710.total,prog+distance);
+    const q=shortestPointAt719(next);
+    if(!q) return false;
+    p.x=q.x; p.y=q.y;
+    p._actualShortestProgress719=next;
+    p._actualShortestDeviation719=0;
+    return true;
+  }
+
+  function shortestDeviation719(p){
+    if(!p) return Infinity;
+    const prog=nearestOptimalProgress710(p.x,p.y);
+    const q=shortestPointAt719(prog);
+    return q?Math.hypot(p.x-q.x,p.y-q.y):Infinity;
+  }
+
   function fastestShortestTarget719(p,si,now){
     if(!p)return null;
     const prog=nearestOptimalProgress710(p.x,p.y);
@@ -8718,7 +8737,6 @@ function farthestVisibleFastTarget91(p,si){
 
     // Ability changes tiny execution precision only. After normal execution,
     // snap the intention back to the identical optimal line.
-    t=westToUpperClimbGuard635(p,si,t);
     t=executionDifference660(p,si,now,t,observerOverride);
     t=pressureConsistency694(p,now,t,observerOverride?"avoid":"race");
 
@@ -9269,7 +9287,16 @@ function updatePlayer(p, now, dt){
     // When a visible observer is genuinely dangerous,
     // the racer temporarily abandons the ideal racing line and behaves like a human
     // making rapid mouse inputs. Once clear, v4.16 optimized/inside-line driving returns.
-    const liveEvade=humanLiveEvadeController(p,s,now,targetOff);
+    // v7.19 HOTFIX3: legacy humanLiveEvadeController used a huge vision radius
+    // and produced broad arcs even when Observer System 5.0 saw no real collision.
+    // Observer System 5.0 inside raceEngine1019 is now the ONLY avoidance authority.
+    const liveEvade=null;
+    p.liveEvadeDanger=0;
+    p.liveEvadeThreat=null;
+    p.liveEvadeAction="none";
+    p.hardRouteLockUntil=0;
+    p.routeBreakCombatUntil=0;
+    p.lockedEscapeOffset=undefined;
     if(liveEvade){
       const emergency=Math.max(0,Math.min(1,(liveEvade.danger-.25)/1.55));
       const observerCombat=now<(p.routeBreakCombatUntil||0);
@@ -9367,15 +9394,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.20~v5.23 Racing Line 3.0 phase 1.
     const racing529=racingLine529(p,si,now);
     p.routeSource523=racing529?.kind || "legacy";
-    const shortestCalm719=!!racing529 && !liveEvade &&
-      /true-shortest719|global-optimal710|fastest-rejoin719/i.test(racing529.kind||"") &&
-      now>=(p.hardRouteLockUntil||0) && now>=(p.routeBreakCombatUntil||0);
+    const engineAuthority719=!!racing529 &&
+      /true-shortest719|global-optimal710|fastest-rejoin719|observer5/i.test(racing529.kind||"");
+    const shortestCalm719=engineAuthority719 &&
+      !/observer5/i.test(racing529.kind||"");
     if(shortestCalm719){
       p.controlMode="normal";
       p.controlMistakeSide=0;
     }
     let broad507=null;
-    if(racing529 && !liveEvade){
+    if(racing529){
       tx=racing529.x;
       ty=racing529.y;
     }else{
@@ -9392,7 +9420,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const routeTarget516={x:tx,y:ty};
     // v7.19 HOTFIX1: legacy corner stabilization was pulling the true shortest
     // line back toward centerline. Bypass it only for calm shortest-path running.
-    const steerTarget516=shortestCalm719
+    const steerTarget516=engineAuthority719
       ? routeTarget516
       : steeringTarget516(p,si,now,routeTarget516,liveEvade);
     tx=steerTarget516.x;
@@ -9401,8 +9429,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v6.36 final planner invariant: even legacy steering layers cannot hand
     // the virtual mouse a target whose chord leaves the legal road.
     {
-      const road636=shortestCalm719
-        ? actualRoadTarget719(p,si,{x:tx,y:ty,kind:"post-steer-shortest719"})
+      const road636=engineAuthority719
+        ? actualRoadTarget719(p,si,{x:tx,y:ty,kind:"post-steer-engine719"})
         : finalRoadTarget636(p,si,{x:tx,y:ty,kind:"post-steer636"});
       if(road636){tx=road636.x;ty=road636.y;}
     }
@@ -9430,7 +9458,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v7.19 HOTFIX2: the calm mathematical shortest line is a continuous
     // racing command, not a human click simulation. Mouse cadence/error was the
     // main remaining source of visible wide arcs.
-    if(shortestCalm719){
+    if(engineAuthority719){
       p.mouseTargetX=tx; p.mouseTargetY=ty;
       p.mouseMode="race-shortest";
       p.mouseReactionReadyAt=0;
@@ -9546,8 +9574,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v6.36 stale-click guard: a previously held mouse target may have become
     // illegal after a corner/segment transition. Revalidate it every frame.
     {
-      const road636=shortestCalm719
-        ? actualRoadTarget719(p,si,{x:tx,y:ty,kind:"held-shortest719"})
+      const road636=engineAuthority719
+        ? actualRoadTarget719(p,si,{x:tx,y:ty,kind:"held-engine719"})
         : finalRoadTarget636(p,si,{x:tx,y:ty,kind:"held-mouse636"});
       if(road636){
         tx=road636.x;ty=road636.y;
@@ -9558,7 +9586,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.07 direct broad-road movement:
     // do not allow stale mouse/edge commands to turn a valid broad-road straight chord
     // into a one-tile edge-following L path.
-    if(shortestCalm719 || ((racing529 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
+    if(engineAuthority719 || ((racing529 || (typeof broad507!=="undefined" && broad507)) && !liveEvade &&
        now>=(p.hardRouteLockUntil||0) &&
        now>=(p.routeBreakCombatUntil||0) &&
        p.controlMode==="normal")){
@@ -9572,7 +9600,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // This prevents a leader from sweeping across the whole road and losing many places instantly.
     let dx=tx-p.x, dy=ty-p.y;
     const localSeg=segs[Math.min(si,segs.length-1)];
-    if(localSeg && !shortestCalm719){
+    if(localSeg && !engineAuthority719){
       const forward=dx*localSeg.ux+dy*localSeg.uy;
       let lateral=dx*localSeg.nx+dy*localSeg.ny;
       const phase516=cornerPhase516(p,si);
@@ -9592,9 +9620,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.controlMode==="normal";
 
     let moveDirX,moveDirY;
-    if(shortestCalm719){
-      // Exact target vector every simulation step: no steering inertia, no old
-      // horizontal-center lock, no final-straight Y lock.
+    if(engineAuthority719){
+      // Exact final-engine vector every simulation step.
+      // true-shortest = direct fastest line; observer5 = direct minimal safe dodge.
       moveDirX=dx/d;
       moveDirY=dy/d;
       p.steerX=moveDirX;p.steerY=moveDirY;
@@ -9677,14 +9705,37 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.17 debug HUD data uses the actual final movement vector.
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
-    p.x += moveDirX*move;
-    p.y += moveDirY*move;
+    const preMoveX719=p.x, preMoveY719=p.y;
+    if(shortestCalm719 && move>0){
+      // v7.19 HOTFIX4 — ACTUAL POSITION LOCK:
+      // The rendered unit itself advances by distance along the exact shortest
+      // polyline. No legacy steering layer can alter the visible trajectory now.
+      if(!advanceExactlyOnShortest719(p,move)){
+        p.x=preMoveX719+moveDirX*move;
+        p.y=preMoveY719+moveDirY*move;
+      }
+    }else{
+      p.x += moveDirX*move;
+      p.y += moveDirY*move;
+    }
 
     // v6.36 physical road authority: clamp immediately after the movement step,
     // before OUTSIDE death, telemetry, segment advancement, or observer collision.
     enforcePhysicalRoad636(p);
-    enforceProtectedClimb635(p);
+    // v7.19 HOTFIX3: do NOT apply legacy x=39.4..48.6 climb clamp.
     enforcePhysicalRoad636(p);
+
+    if(shortestCalm719){
+      const dev719=shortestDeviation719(p);
+      if(dev719>.015){
+        const prog719=Number.isFinite(p._actualShortestProgress719)
+          ? p._actualShortestProgress719
+          : nearestOptimalProgress710(p.x,p.y);
+        const q719=shortestPointAt719(prog719);
+        if(q719){ p.x=q719.x; p.y=q719.y; }
+      }
+      p._actualShortestDeviation719=shortestDeviation719(p);
+    }
 
     // v5.00 restricted zones are PLANNING-ONLY.
     // If numerical error or emergency motion happens to enter one, do not teleport,
@@ -9823,8 +9874,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
         }
       }
     }
-    enforceRoadPosition619(p);
-    enforceProtectedClimb635(p);
+    if(shortestCalm719){
+      p._lastLegal619={x:p.x,y:p.y};
+      p._lastLegal636={x:p.x,y:p.y};
+    }else{
+      enforceRoadPosition619(p);
+    }
   }
 
   // v4.59.9 rolling AI death blackbox. Keeps only the last ~5.5 seconds.
