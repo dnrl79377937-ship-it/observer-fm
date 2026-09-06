@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.22";
+  const BUILD_ID = "v7.23";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -9094,6 +9094,56 @@ function farthestVisibleFastTarget91(p,si){
   // - Immediate backcon direction/speed response
   // ============================================================
 
+
+  // ============================================================
+  // v7.23 PERFORMANCE + BACKCON STABILITY
+  // ============================================================
+
+  function localObservers723(p,r=11.5){
+    // Uses the existing spatial grid/cache instead of scanning all 100 observers.
+    return playerNearbyObservers(p,r);
+  }
+
+  function localCandidateRisk723(p,target,obs){
+    if(!target)return {risk:Infinity,nearest:0,blocked:true};
+    let risk=0,nearest=999;
+    const horizons=[.18,.38,.64];
+    for(const h of horizons){
+      const frac=Math.max(0,Math.min(1,h/.64));
+      const px=p.x+(target.x-p.x)*frac;
+      const py=p.y+(target.y-p.y)*frac;
+      for(const o of obs){
+        const ovx=Number.isFinite(o.vx)?o.vx:0;
+        const ovy=Number.isFinite(o.vy)?o.vy:0;
+        const ox=o.x+ovx*h,oy=o.y+ovy*h;
+        const d=Math.hypot(px-ox,py-oy);
+        nearest=Math.min(nearest,d);
+        if(d<4.15){
+          const w=(4.15-d)/4.15;
+          risk+=w*w*(1.08-h*.18);
+        }
+      }
+    }
+    return {risk,nearest,blocked:nearest<1.62};
+  }
+
+  function localFieldRisk723(target,obs){
+    let risk=0,nearest=999;
+    for(const o of obs){
+      const ovx=Number.isFinite(o.vx)?o.vx:0;
+      const ovy=Number.isFinite(o.vy)?o.vy:0;
+      for(const h of [.22,.48]){
+        const d=Math.hypot(target.x-(o.x+ovx*h),target.y-(o.y+ovy*h));
+        nearest=Math.min(nearest,d);
+        if(d<5.3){
+          const w=(5.3-d)/5.3;
+          risk+=w*w;
+        }
+      }
+    }
+    return {risk,nearest};
+  }
+
   function predictiveThreat722(p,now){
     if(!p || safeAt(p.x,p.y)) return null;
 
@@ -9106,13 +9156,16 @@ function farthestVisibleFastTarget91(p,si){
 
     let best=null,bestScore=Infinity;
 
-    for(const o of observers){
+    // v7.23: only nearby observers matter. v7.22's 31-unit scan reacted too early
+    // and cost too much CPU. 17 units still gives roughly 1.5 s at race pace.
+    const nearby=localObservers723(p,17.0);
+
+    for(const o of nearby){
       const ox=o.x-p.x,oy=o.y-p.y;
       const dist=Math.hypot(ox,oy);
-      if(dist>31) continue;
-
       const forward=ox*frame.ux+oy*frame.uy;
       const lateral=ox*(-frame.uy)+oy*frame.ux;
+
       const ovx=Number.isFinite(o.vx)?o.vx:0;
       const ovy=Number.isFinite(o.vy)?o.vy:0;
       const rvx=ovx-pvx,rvy=ovy-pvy;
@@ -9120,67 +9173,50 @@ function farthestVisibleFastTarget91(p,si){
 
       let t=9,miss=dist;
       if(vv>1e-7){
-        t=Math.max(0,Math.min(1.55,-(ox*rvx+oy*rvy)/vv));
+        t=Math.max(0,Math.min(1.20,-(ox*rvx+oy*rvy)/vv));
         miss=Math.hypot(ox+rvx*t,oy+rvy*t);
       }
 
-      // Discrete forward corridor check catches cases where strict TTC misses a
-      // near-crossing observer because its current velocity is almost parallel.
-      let minSep=dist,minH=0;
-      for(const h of [.12,.22,.34,.50,.72,.96,1.22]){
+      let minSep=dist,minH=9;
+      // Four samples are enough at this short range and much cheaper than v7.22.
+      for(const h of [.16,.32,.54,.82]){
         const pp=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+pv*h));
-        const qx=o.x+ovx*h,qy=o.y+ovy*h;
-        const d=Math.hypot(pp.x-qx,pp.y-qy);
+        const d=Math.hypot(pp.x-(o.x+ovx*h),pp.y-(o.y+ovy*h));
         if(d<minSep){minSep=d;minH=h;}
       }
 
-      const immediate=dist<3.75;
-      const frontBlock=forward>-.55 && forward<7.2 && Math.abs(lateral)<2.65;
-      const emergency=immediate ||
-        (frontBlock && dist<6.1) ||
-        (minSep<1.90 && minH<.48) ||
-        (t<.26 && miss<2.55);
+      const frontBlock=forward>-.35 && forward<5.6 && Math.abs(lateral)<2.30;
+      const emergency=
+        dist<2.95 ||
+        (frontBlock && dist<4.65) ||
+        (minSep<1.72 && minH<.38) ||
+        (t<.21 && miss<2.20);
 
-      const credible=emergency ||
-        (minSep<3.65 && minH<1.18) ||
-        (t<1.30 && miss<3.65 && dist<25);
+      // Normal avoidance now begins closer than v7.22.
+      const credible=
+        emergency ||
+        (minSep<3.05 && minH<.82 && dist<14.5) ||
+        (t<.92 && miss<3.05 && dist<13.8);
 
-      if(!credible) continue;
+      if(!credible)continue;
 
       const closingSpeed=dist>1e-4
         ? Math.max(0,-(ox*rvx+oy*rvy)/dist)
         : 99;
 
-      const effectiveT=emergency?Math.min(t,minH||.10):Math.min(t,minH||t);
+      const effectiveT=Math.min(t,minH);
       const effectiveMiss=Math.min(miss,minSep);
-      const score=effectiveT*2.1+effectiveMiss*.68+dist*.018-(emergency?2.5:0);
+      const score=effectiveT*2.25+effectiveMiss*.72+dist*.026-(emergency?2.2:0);
 
       if(score<bestScore){
         bestScore=score;
         best={
           o,t:effectiveT,miss:effectiveMiss,dist,rx:ox,ry:oy,
           closingSpeed,forward,lateral,minSep,minH,
-          frontBlock,emergency,source722:"corridor"
+          frontBlock,emergency,source722:"local723"
         };
       }
     }
-
-    // Keep the old TTC result if it sees something even more urgent.
-    const legacy=collisionTTC479(p);
-    if(legacy){
-      const ls=(legacy.t||9)*2.1+(legacy.miss||9)*.68+(legacy.dist||20)*.018;
-      if(!best || ls<bestScore){
-        const forward=legacy.rx*frame.ux+legacy.ry*frame.uy;
-        const lateral=legacy.rx*(-frame.uy)+legacy.ry*frame.ux;
-        best={
-          ...legacy,forward,lateral,
-          frontBlock:forward>-.55&&forward<7.2&&Math.abs(lateral)<2.65,
-          emergency:(legacy.dist<3.75)||(legacy.t<.26&&legacy.miss<2.55),
-          source722:"legacy-ttc"
-        };
-      }
-    }
-
     return best;
   }
 
@@ -9191,8 +9227,6 @@ function farthestVisibleFastTarget91(p,si){
     const ex=driverExecution720(p);
     const st=ensureRaceState720(p,now),id=raw.o?.id??-1;
 
-    // Emergency Override: a close/front collision threat bypasses human reaction
-    // delay completely. This prevents "see observer, keep driving, die".
     if(raw.emergency){
       st.pendingThreatId=id;
       st.reactionReadyAt=now;
@@ -9200,51 +9234,49 @@ function farthestVisibleFastTarget91(p,si){
       return raw;
     }
 
-    const horizon=.92+ex.prediction*.72;
-    if(raw.t>horizon && (raw.minH??9)>horizon)return null;
+    // v7.23: react later/closer than v7.22, while still leaving enough room to dodge.
+    const horizon=.66+ex.prediction*.38;
+    const eta=Math.min(raw.t,raw.minH??raw.t);
+    if(eta>horizon)return null;
 
     if(st.pendingThreatId!==id){
       st.pendingThreatId=id;
-      const urgency=clamp01720((.82-Math.min(raw.t,raw.minH??raw.t))/.82);
-      const delay=(76-ex.reaction*56)*(1-urgency*.78);
-      st.reactionReadyAt=now+Math.max(8,delay);
+      const urgency=clamp01720((.62-eta)/.62);
+      const delay=(68-ex.reaction*48)*(1-urgency*.72);
+      st.reactionReadyAt=now+Math.max(10,delay);
     }
 
-    if(now<st.reactionReadyAt && Math.min(raw.t,raw.minH??raw.t)>.31)
-      return null;
-
+    if(now<st.reactionReadyAt && eta>.25)return null;
     st.emergency722=false;
     return raw;
   }
 
-  function scoreEvadeCandidate720(p,c,kind,threat){
+  function scoreEvadeCandidate720(p,c,kind,threat,obs723=null){
     if(!c || !courseContainsPoint(c.x,c.y,0) || !actualRoadChord719(p.x,p.y,c.x,c.y))
       return Infinity;
 
-    const ch=chainCollision714(p,p.seg||0,c);
-    const field=dangerField713(p,c.x,c.y);
+    const obs=obs723||localObservers723(p,11.5);
+    const ch=localCandidateRisk723(p,c,obs);
+    const field=localFieldRisk723(c,obs);
     const dev=Math.min(6,splineDeviationPoint720(c.x,c.y));
     const dist=Math.hypot(c.x-p.x,c.y-p.y);
-    const urgent=!!threat?.emergency || threat?.t<.48 || (threat?.minH??9)<.48;
+    const urgent=!!threat?.emergency || threat?.t<.42 || (threat?.minH??9)<.42;
     const front=!!threat?.frontBlock;
 
     let actionPenalty=0;
-    if(/back/.test(kind)){
-      actionPenalty=front&&urgent ? -1.25 : urgent ? -.10 : 3.15;
-    }else if(/stop/.test(kind)){
-      actionPenalty=urgent?.55:2.4;
-    }else if(/brake/.test(kind)){
-      actionPenalty=urgent?.35:1.0;
-    }
+    if(/back/.test(kind))
+      actionPenalty=front&&urgent ? -.85 : urgent ? .10 : 3.25;
+    else if(/stop/.test(kind))
+      actionPenalty=urgent?.60:2.5;
+    else if(/brake/.test(kind))
+      actionPenalty=urgent?.38:1.0;
 
-    // When an observer is physically blocking the forward corridor, continuing
-    // forward is extra expensive so side/backcon candidates win naturally.
     const forwardPenalty=(front&&urgent&&!/back/.test(kind))
-      ? Math.max(0,2.2-(ch.nearest||0))*2.4
+      ? Math.max(0,2.0-(ch.nearest||0))*2.1
       : 0;
 
-    return ch.risk*22+field.risk*12+Math.max(0,2.0-ch.nearest)*20+
-      dev*.72+dist*.10+actionPenalty+forwardPenalty;
+    return ch.risk*20+field.risk*9+Math.max(0,1.85-ch.nearest)*18+
+      dev*.74+dist*.10+actionPenalty+forwardPenalty;
   }
 
   function splineDeviationPoint720(x,y){
@@ -9265,9 +9297,10 @@ function farthestVisibleFastTarget91(p,si){
       ["back-left",-2.05,-1.55],["back-right",-2.05,1.55],["back",-2.30,0]
     ];
     let best=null,bestScore=Infinity;
+    const obs723=localObservers723(p,11.5);
     for(const [kind,f,l] of candidates){
       const c={x:p.x+frame.ux*f+nx*l,y:p.y+frame.uy*f+ny*l,kind:"race720-evade-"+kind};
-      const score=scoreEvadeCandidate720(p,c,kind,threat);
+      const score=scoreEvadeCandidate720(p,c,kind,threat,obs723);
       if(score<bestScore){bestScore=score;best={kind,target:c,score};}
     }
     if(!best){
@@ -9286,22 +9319,26 @@ function farthestVisibleFastTarget91(p,si){
     st.action=choice?.kind||"brake";
     st.target=choice?.target||{x:p.x,y:p.y,kind:"race720-evade-brake"};
     st.emergency722=!!threat?.emergency;
+    st.lastPlanAt723=now;
 
     const back=/back/.test(st.action),stop=/stop|brake/.test(st.action);
-    st.actionUntil=now+(back?245:stop?220:275);
+    st.actionUntil=now+(back?310:stop?235:285);
+    st.planHoldUntil723=now+(back?235:175);
     st.rejoinUntil=0;
 
     if(back){
-      // v7.22: immediate backcon. No "slowly brake first" phase.
-      const prog=nearestSplineProgress720(p.x,p.y);
-      const frame=splinePointAt720(prog);
-      p.steerX=-frame.ux;p.steerY=-frame.uy;
+      // Stable backcon vector. Lock it for a short action window instead of
+      // recalculating every frame against the same observer.
+      let dx=st.target.x-p.x,dy=st.target.y-p.y;
+      const L=Math.hypot(dx,dy)||1;
+      st.backDirX723=dx/L;st.backDirY723=dy/L;
+      p.steerX=st.backDirX723;p.steerY=st.backDirY723;
       p.mouseTargetX=st.target.x;p.mouseTargetY=st.target.y;
       p.mouseMode="race720-backcon";
-      p._speedMul720=.82+.10*driverExecution720(p).avoidance;
-      p._backconImpulseUntil722=now+105;
+      p._backconImpulseUntil722=0;
+    }else{
+      st.backDirX723=0;st.backDirY723=0;
     }
-
     return st;
   }
 
@@ -9324,10 +9361,16 @@ function farthestVisibleFastTarget91(p,si){
 
     if(threat){
       st.lastThreatAt=now;
-      const targetReached=Math.hypot((st.target?.x??p.x)-p.x,(st.target?.y??p.y)-p.y)<.55;
       const changedThreat=(st.activeThreatId??-1)!==(threat.o?.id??-1);
-      if(st.mode!=="EVADE" || threat.emergency || changedThreat || now>=st.actionUntil || targetReached)
+
+      if(st.mode!=="EVADE"){
         startEvade720(p,now,threat);
+      }else if(changedThreat && now>=(st.planHoldUntil723||0)){
+        startEvade720(p,now,threat);
+      }else if(now>=st.actionUntil){
+        startEvade720(p,now,threat);
+      }
+      // Same observer + same action is intentionally held. This removes backcon jitter.
       return {st,threat};
     }
 
@@ -9371,13 +9414,13 @@ function farthestVisibleFastTarget91(p,si){
 
     if(st.mode==="EVADE"){
       if(/back/.test(st.action)){
-        // Backcon is a deliberate instant reverse input. Do not low-pass the
-        // first reverse frames; that was the "느리게 끊기는" sensation.
-        target=now<(p._backconImpulseUntil722||0)
-          ? .88+.08*ex.avoidance
-          : .72+.08*ex.avoidance;
-        p._speedMul720=target;
-        return target;
+        target=.74+.08*ex.avoidance;
+        // v7.23: direction changes immediately, speed changes over ~45 ms.
+        // This avoids both delayed backcon and the harsh snap introduced in v7.22.
+        if(!Number.isFinite(p._speedMul720))p._speedMul720=target;
+        const alphaBack=1-Math.exp(-Math.max(1,dt)/45);
+        p._speedMul720+=(target-p._speedMul720)*alphaBack;
+        return p._speedMul720;
       }
       if(/stop/.test(st.action))target=.18;
       else if(/brake/.test(st.action))target=.48+.12*ex.control;
@@ -10289,9 +10332,17 @@ targetOff=clampRoadOffset(si,targetOff,p);
       p.controlMode==="normal";
 
     let moveDirX,moveDirY;
-    if(engineAuthority719){
-      // Exact final-engine vector every simulation step.
-      // true-shortest = direct fastest line; observer5 = direct minimal safe dodge.
+    const st723=ensureRaceState720(p,now);
+    const lockedBack723=engineAuthority719 && st723.mode==="EVADE" &&
+      /back/.test(st723.action||"") &&
+      Number.isFinite(st723.backDirX723) && Number.isFinite(st723.backDirY723);
+
+    if(lockedBack723){
+      moveDirX=st723.backDirX723;
+      moveDirY=st723.backDirY723;
+      p.steerX=moveDirX;p.steerY=moveDirY;
+      p.mouseTargetX=tx;p.mouseTargetY=ty;
+    }else if(engineAuthority719){
       moveDirX=dx/d;
       moveDirY=dy/d;
       p.steerX=moveDirX;p.steerY=moveDirY;
