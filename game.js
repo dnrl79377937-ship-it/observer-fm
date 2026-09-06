@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.30";
+  const BUILD_ID = "v7.30-HOTFIX";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -194,9 +194,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   let lastTs = 0;
   let raf = 0;
   let camX = 28, camY = 158;
-  let prevCamX = camX, prevCamY = camY;
+  let prevCamX730 = camX, prevCamY730 = camY;
   let renderAlpha730 = 1;
-  let uiPhase730 = 0;
 
   function lerp730(a,b,t){ return a+(b-a)*t; }
   function renderPlayerPos730(p){
@@ -712,8 +711,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         id:i,
         x:spawn.x,
         y:spawn.y,
-        simPrevX:spawn.x,
-        simPrevY:spawn.y,
         vx:0, vy:0,
         speed:baseSpeed*(0.98+Math.random()*0.04),
         phase:"move",
@@ -748,10 +745,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
     camX=31.05; camY=132.55;
-    prevCamX=camX; prevCamY=camY;
-    renderAlpha730=1; uiPhase730=0;
-    observers.forEach(o=>{o.simPrevX=o.x;o.simPrevY=o.y;});
+    prevCamX730=camX; prevCamY730=camY;
+    renderAlpha730=1;
     players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;});
+    observers.forEach(o=>{o.simPrevX=o.x;o.simPrevY=o.y;});
     roundTransitioning=false;
     startBtn.textContent=`${currentRound}R 시작`;
     render(0);
@@ -10534,11 +10531,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
     playerNearbyFrameSerial++;
     simTickCounter++;
 
-    // v7.30: distribute periodic observer work instead of doing grid +
-    // prediction in one large burst. 130 observers makes a 100 ms grid refresh cheap.
-    if(simTickCounter%5===0) rebuildObserverGrid();
-    if(simTickCounter%10===3) precomputeObserverPredictions(now);
-    if(simTickCounter>=100000) simTickCounter=0;
+    // v3.6: 330-observer optimization — lighter lookup/prediction work; collisions remain 50Hz.
+    // Explicit ticks avoid duplicate refreshes caused by timestamp rounding.
+    if(simTickCounter>=14){
+      simTickCounter=0;
+      rebuildObserverGrid();
+      precomputeObserverPredictions(now);
+    }
 
     for(let i=0;i<players.length;i++){
       sanitizeRaceState666(players[i]);
@@ -10548,7 +10547,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     }
     telemetryStep696(now,dt);
     rebuildRaceFrameCache668(now);
-    prevCamX=camX; prevCamY=camY;
+    prevCamX730=camX; prevCamY730=camY;
     updateCamera(dt);
     captureReplayFrame(now);
   }
@@ -10581,17 +10580,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // Never allow a backlog to grow for seconds after a browser/GC stall.
     if(simAccumulator>SIM_STEP_MS*6) simAccumulator=SIM_STEP_MS*6;
 
-    // v7.30 fixed-timestep interpolation. Simulation remains exactly 50 Hz;
-    // visuals interpolate every requestAnimationFrame (60/120/144 Hz etc.).
+    // v7.30 HOTFIX: simulation stays at 50 Hz; only visual coordinates interpolate.
     renderAlpha730=Math.max(0,Math.min(1,simAccumulator/SIM_STEP_MS));
     render(ts);
 
-    const rankingInterval=fpsProtectLevel===0?420:fpsProtectLevel===1?540:680;
+    const rankingInterval=fpsProtectLevel===0?320:fpsProtectLevel===1?430:560;
     if(ts-lastRankingRender>=rankingInterval){
       const rankingDt=ts-lastRankingRender;
       updateMatchRanks(rankingDt,simClock||ts);
-      uiPhase730=(uiPhase730+1)%3;
-      if(uiPhase730!==1) updateSectors(simClock||ts);
+      updateSectors(simClock||ts);
       renderRanking();
       const raceEvent=document.getElementById("raceEvent");
       if(raceEvent && ts>=raceEventUntil) raceEvent.classList.add("hidden");
@@ -10614,8 +10611,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
         }else leadBattle.classList.add("hidden");
       }
       cameraLabel.textContent=`${BUILD_ID} · ${ROUND_UNIT_NAMES[currentRound]} · 옵저버 ${observers.length} · 충돌범위 ${PLAYER_HIT_RADIUS.toFixed(2)}`;
-      if(uiPhase730===0) renderDiagnostics();
-      // v7.30 diagnostics are staggered away from every ranking paint.
+      renderDiagnostics();
+      // v3.2 upper broadcast/leader-change strip removed.
       lastRankingRender=ts;
     }
 
@@ -10647,15 +10644,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const fitScale=Math.min(W/MAP_W,H/MAP_H);
     const scale=fitScale*CAMERA_ZOOM;
     const viewW=W/scale, viewH=H/scale;
-
     const a=running?renderAlpha730:1;
-    const renderCamX=lerp730(prevCamX,camX,a);
-    const renderCamY=lerp730(prevCamY,camY,a);
-
-    let sx=renderCamX-viewW/2, sy=renderCamY-viewH/2;
+    const rcx=lerp730(prevCamX730,camX,a);
+    const rcy=lerp730(prevCamY730,camY,a);
+    let sx=rcx-viewW/2, sy=rcy-viewH/2;
     sx=Math.max(0,Math.min(MAP_W-viewW,sx));
     sy=Math.max(0,Math.min(MAP_H-viewH,sy));
-    return {sx,sy,viewW,viewH,scale,renderCamX,renderCamY};
+    return {sx,sy,viewW,viewH,scale};
   }
 
   const visibleObserverRender=[];
@@ -10664,26 +10659,38 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const minX=view.sx-pad, maxX=view.sx+view.viewW+pad;
     const minY=view.sy-pad, maxY=view.sy+view.viewH+pad;
     const r=Math.max(2.142,view.scale*0.72*OBS_VISUAL_SCALE);
-    const obsRx=r,obsRy=r;
+    // v4.31: observer visual is circular again. Visual aspect ratio and collision
+    // semantics are both symmetric; HIT remains controlled separately by PLAYER_HIT_RADIUS.
+    const obsRx=r, obsRy=r;
     const lineW=Math.max(0.714,view.scale*.11*OBS_VISUAL_SCALE);
 
-    // v7.30: with 130 observers, a direct interpolated render scan is cheaper
-    // than the visual instability of a 50 Hz/stale spatial bucket render path.
+    // v2.31: use the already-maintained observer spatial grid for render culling.
+    // We visit only buckets intersecting the camera instead of checking all 600.
     visibleObserverRender.length=0;
-    for(let i=0;i<observers.length;i++){
-      const o=observers[i];
-      const q=renderObserverPos730(o);
-      if(q.x<minX||q.x>maxX||q.y<minY||q.y>maxY)continue;
-      o._renderX730=q.x;o._renderY730=q.y;
-      visibleObserverRender.push(o);
+    // v2.40: one-cell render padding prevents edge flicker while still
+    // avoiding a full 650-observer scan every frame.
+    const gx0=Math.max(0,Math.floor(minX/OBS_GRID_SIZE)-1);
+    const gx1=Math.min(OBS_GRID_COLS-1,Math.floor(maxX/OBS_GRID_SIZE)+1);
+    const gy0=Math.max(0,Math.floor(minY/OBS_GRID_SIZE)-1);
+    const gy1=Math.min(OBS_GRID_ROWS-1,Math.floor(maxY/OBS_GRID_SIZE)+1);
+    for(let gy=gy0;gy<=gy1;gy++){
+      for(let gx=gx0;gx<=gx1;gx++){
+        const bucket=observerGrid[gy*OBS_GRID_COLS+gx];
+        for(let bi=0;bi<bucket.length;bi++){
+          const o=bucket[bi];
+          if(o.x<minX||o.x>maxX||o.y<minY||o.y>maxY) continue;
+          visibleObserverRender.push(o);
+        }
+      }
     }
 
     const obsRenderStep=fpsProtectLevel===0?1:fpsProtectLevel===1?2:3;
     ctx.beginPath();
     for(let vi=0;vi<visibleObserverRender.length;vi+=obsRenderStep){
       const o=visibleObserverRender[vi];
-      const x=(o._renderX730-view.sx)*view.scale;
-      const y=(o._renderY730-view.sy)*view.scale;
+      const q730=renderObserverPos730(o);
+      const x=(q730.x-view.sx)*view.scale;
+      const y=(q730.y-view.sy)*view.scale;
       ctx.moveTo(x+obsRx,y);
       ctx.ellipse(x,y,obsRx,obsRy,0,0,Math.PI*2);
     }
@@ -10696,8 +10703,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     ctx.beginPath();
     for(let vi=0;vi<visibleObserverRender.length;vi+=obsRenderStep){
       const o=visibleObserverRender[vi];
-      const x=(o._renderX730-view.sx)*view.scale;
-      const y=(o._renderY730-view.sy)*view.scale;
+      const q730=renderObserverPos730(o);
+      const x=(q730.x-view.sx)*view.scale;
+      const y=(q730.y-view.sy)*view.scale;
       ctx.moveTo(x+r*.62,y);
       ctx.arc(x+r*.18,y,r*.28,0,Math.PI*2);
     }
@@ -10708,23 +10716,22 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   function drawPlayer(p,view,rank){
-    const rp730=renderPlayerPos730(p);
-    const rx730=rp730.x,ry730=rp730.y;
-    const x=(rx730-view.sx)*view.scale, y=(ry730-view.sy)*view.scale;
+    const q730=renderPlayerPos730(p);
+    const x=(q730.x-view.sx)*view.scale, y=(q730.y-view.sy)*view.scale;
     if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
     const r=Math.max(8.6846,view.scale*1.48*PLAYER_VISUAL_SCALE);
 
     const now=gameNow();
-    if(!Number.isFinite(p._renderLastX730)){p._renderLastX730=rx730;p._renderLastY730=ry730;}
-    const mdx=rx730-p._renderLastX730,mdy=ry730-p._renderLastY730;
+    if(!Number.isFinite(p._renderLastX730)){p._renderLastX730=q730.x;p._renderLastY730=q730.y;}
+    const mdx=q730.x-p._renderLastX730,mdy=q730.y-p._renderLastY730;
     if(mdx*mdx+mdy*mdy>0.000002){
       const targetAngle=Math.atan2(mdy,mdx)+Math.PI/2;
       let da=targetAngle-p.visualAngle;
       while(da>Math.PI) da-=Math.PI*2;
       while(da<-Math.PI) da+=Math.PI*2;
-      const angleAlpha730=1-Math.exp(-Math.max(1,diagFrameMs||16)/58);
-      p.visualAngle+=da*angleAlpha730;
-      p._renderLastX730=rx730;p._renderLastY730=ry730;
+      const aa=1-Math.exp(-Math.max(1,diagFrameMs||16)/64);
+      p.visualAngle+=da*aa;
+      p._renderLastX730=q730.x;p._renderLastY730=q730.y;
     }
 
     ctx.save();
@@ -10803,47 +10810,25 @@ targetOff=clampRoadOffset(si,targetOff,p);
   const renderOrder=[];
 
   const MINI_CROP={x:24,y:8,w:127,h:150};
-  let let lastMiniMapRender=0;
-  let miniMapBg730=null,miniMapBgW730=0,miniMapBgH730=0;
-
-  function ensureMiniMapBackground730(mc){
-    if(!mc||!map.complete)return null;
-    if(miniMapBg730 && miniMapBgW730===mc.width && miniMapBgH730===mc.height)
-      return miniMapBg730;
-
-    const bg=document.createElement("canvas");
-    bg.width=mc.width;bg.height=mc.height;
-    const b=bg.getContext("2d");
-    b.globalAlpha=.78;
-    b.drawImage(map,
-      MINI_CROP.x*MAP_IMAGE_SCALE_X,MINI_CROP.y*MAP_IMAGE_SCALE_Y,
-      MINI_CROP.w*MAP_IMAGE_SCALE_X,MINI_CROP.h*MAP_IMAGE_SCALE_Y,
-      0,0,bg.width,bg.height);
-    b.globalAlpha=1;
-    miniMapBg730=bg;miniMapBgW730=mc.width;miniMapBgH730=mc.height;
-    return bg;
-  }
-
+  let lastMiniMapRender=0;
   function renderMiniMap(){
     const now=performance.now();
-    const miniInterval=fpsProtectLevel>=2?220:140;
+    const miniInterval=fpsProtectLevel>=2?200:125;
     if(now-lastMiniMapRender<miniInterval)return;
     lastMiniMapRender=now;
     const mc=document.getElementById("miniMap");
     if(!mc||!map.complete)return;
     const mx=mc.getContext("2d"),W=mc.width,H=mc.height;
     mx.clearRect(0,0,W,H);
-
-    const bg=ensureMiniMapBackground730(mc);
-    if(bg)mx.drawImage(bg,0,0);
-
+    mx.globalAlpha=.78;
+    mx.drawImage(map,MINI_CROP.x*MAP_IMAGE_SCALE_X,MINI_CROP.y*MAP_IMAGE_SCALE_Y,MINI_CROP.w*MAP_IMAGE_SCALE_X,MINI_CROP.h*MAP_IMAGE_SCALE_Y,0,0,W,H);
+    mx.globalAlpha=1;
     const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
     for(let i=0;i<players.length;i++){
       const p=players[i];
-      if(p.dead)continue;
-      const q=renderPlayerPos730(p);
-      const x=(q.x-MINI_CROP.x)*sx,y=(q.y-MINI_CROP.y)*sy;
-      if(x<0||y<0||x>W||y>H)continue;
+      if(p.dead) continue;
+      const x=(p.x-MINI_CROP.x)*sx,y=(p.y-MINI_CROP.y)*sy;
+      if(x<0||y<0||x>W||y>H) continue;
       mx.beginPath();mx.arc(x,y,2.45,0,Math.PI*2);
       mx.fillStyle=p.color;mx.fill();
       mx.lineWidth=.75;mx.strokeStyle="rgba(0,0,0,.92)";mx.stroke();
@@ -10858,9 +10843,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     ctx.save();
     // Genuine held virtual-mouse target.
     const tx=sx(p.mouseTargetX), ty=sy(p.mouseTargetY);
-    const rp730=renderPlayerPos730(p);
+    const q730=renderPlayerPos730(p);
     ctx.setLineDash([8,7]); ctx.lineWidth=2; ctx.strokeStyle='rgba(255,255,255,.88)';
-    ctx.beginPath(); ctx.moveTo(sx(rp730.x),sy(rp730.y)); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(sx(q730.x),sy(q730.y)); ctx.lineTo(tx,ty); ctx.stroke(); ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(tx,ty,8,0,Math.PI*2); ctx.strokeStyle='#fff'; ctx.lineWidth=3; ctx.stroke();
     ctx.beginPath(); ctx.moveTo(tx-12,ty);ctx.lineTo(tx+12,ty);ctx.moveTo(tx,ty-12);ctx.lineTo(tx,ty+12);ctx.stroke();
     // Actual click log: recent commands only, never reconstructed from movement.
