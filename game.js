@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.59";
+  const BUILD_ID = "v7.69";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -60,6 +60,73 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   const STUCK_RESCUE_MS = 2200;       // recover from pathological steering states
 
   const ROUND_UNIT_NAMES={1:"스커지",2:"스카웃",3:"레이스",4:"뮤탈리스크",5:"퀸"};
+
+  // ============================================================
+  // v7.60 ~ v7.64 UNIT CHASSIS ENGINE
+  // Raw speed spread is deliberately tiny: fastest -> slowest = ~1.3%.
+  // Player stats remain the primary source of performance difference.
+  // ============================================================
+  const UNIT_CHASSIS_764={
+    1:{key:"scourge",name:"스커지",role:"초소형 고속형",
+      topSpeed:1.010,accel:1.070,turn:1.100,brake:0.960,reaccel:1.070,
+      cornerGrip:0.985,cornerResponse:1.080,evadeWidth:0.940,evadeResponse:1.075,safetyGap:0.940,
+      hitRadius:0.480,visualScale:0.850},
+    2:{key:"scout",name:"스카웃",role:"고속 밸런스형",
+      topSpeed:1.005,accel:1.000,turn:0.985,brake:1.000,reaccel:1.000,
+      cornerGrip:1.010,cornerResponse:0.990,evadeWidth:1.000,evadeResponse:1.000,safetyGap:1.000,
+      hitRadius:0.560,visualScale:1.000},
+    3:{key:"wraith",name:"레이스",role:"정밀 반응형",
+      topSpeed:1.003,accel:1.025,turn:1.060,brake:1.035,reaccel:1.025,
+      cornerGrip:1.045,cornerResponse:1.055,evadeWidth:0.970,evadeResponse:1.060,safetyGap:0.970,
+      hitRadius:0.530,visualScale:0.940},
+    4:{key:"mutalisk",name:"뮤탈리스크",role:"회피 재가속형",
+      topSpeed:1.000,accel:1.045,turn:1.080,brake:0.985,reaccel:1.080,
+      cornerGrip:1.025,cornerResponse:1.070,evadeWidth:1.045,evadeResponse:1.085,safetyGap:1.015,
+      hitRadius:0.550,visualScale:0.980},
+    5:{key:"queen",name:"퀸",role:"대형 안정 제동형",
+      topSpeed:0.997,accel:0.955,turn:0.940,brake:1.100,reaccel:0.950,
+      cornerGrip:1.020,cornerResponse:0.945,evadeWidth:1.100,evadeResponse:0.940,safetyGap:1.115,
+      hitRadius:0.620,visualScale:1.090}
+  };
+
+  function unitChassis764(round=currentRound){
+    return UNIT_CHASSIS_764[round]||UNIT_CHASSIS_764[2];
+  }
+  function playerHitRadius764(p){ return unitChassis764().hitRadius; }
+  function playerVisualScale764(p){ return unitChassis764().visualScale; }
+
+  function unitCompatibility769(p,round=currentRound){
+    const u=unitChassis764(round),s=driverSkill739(p);
+    let fit;
+    if(u.key==="scourge")
+      fit=s.reaction*.24+s.control*.23+s.avoidance*.20+s.acceleration*.18+s.focus*.15;
+    else if(u.key==="scout")
+      fit=s.pace*.23+s.consistency*.22+s.cornering*.20+s.stability*.20+s.routeReading*.15;
+    else if(u.key==="wraith")
+      fit=s.control*.25+s.reaction*.22+s.braking*.19+s.prediction*.19+s.cornering*.15;
+    else if(u.key==="mutalisk")
+      fit=s.avoidance*.25+s.acceleration*.22+s.recovery*.20+s.control*.18+s.reaction*.15;
+    else
+      fit=s.braking*.25+s.stability*.23+s.riskControl*.21+s.prediction*.17+s.consistency*.14;
+
+    fit=Math.max(0,Math.min(1,fit));
+    // Handling only. Stats remain dominant and chassis topSpeed is never altered by fit.
+    return {
+      fit,
+      grade:fit>=.86?"S":fit>=.76?"A":fit>=.64?"B":fit>=.50?"C":"D",
+      cornerMul:.985+fit*.025,
+      evadeMul:.975+fit*.035,
+      turnMul:.985+fit*.030,
+      reaccelMul:.985+fit*.030
+    };
+  }
+
+  function unitSpeedSpread764(){
+    const xs=Object.values(UNIT_CHASSIS_764).map(x=>x.topSpeed);
+    return {min:Math.min(...xs),max:Math.max(...xs),
+      spreadPct:(Math.max(...xs)/Math.min(...xs)-1)*100};
+  }
+
   const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika","HongKey","TaeHyeon","DVA","LiveCam"];
   if(povSelect){
     povSelect.innerHTML=`<option value="-1">POV: OFF</option>`+names.map((n,i)=>`<option value="${i}">${n} POV</option>`).join("");
@@ -121,33 +188,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   // This is not a hidden unit rating. Compatibility is derived from the same visible
   // 20 FM attributes, so a racer can naturally be excellent on one unit and ordinary on another.
   function unitAdaptationOf(p){
-    const st=p.stats||{};
-    const n=k=>Math.max(0,Math.min(1,((st[k]??85)-72)/27));
-    const avg=(...ks)=>ks.reduce((a,k)=>a+n(k),0)/ks.length;
-    switch(currentRound){
-      case 1: { // Scourge: twitchy / reactive; rewards reaction + control + acceleration.
-        const fit=avg('reaction','control','acceleration');
-        return {name:'SCOUT? NO · SCOURGE',fit,safety:.98+(.5-fit)*.05,apex:1.00,click:.90+fit*.08,think:.91,steer:1.08,pace:.997+fit*.006};
-      }
-      case 2: { // Scout: fast flowing lines; rewards pace + route reading + inside line.
-        const fit=avg('pace','routeReading','insideLine');
-        return {name:'SCOUT',fit,safety:.97,apex:1.04+fit*.05,click:1.08+fit*.08,think:1.04,steer:.98,pace:.997+fit*.006};
-      }
-      case 3: { // Wraith: precision/prediction unit; commits early to a read.
-        const fit=avg('prediction','focus','routeReading');
-        return {name:'WRAITH',fit,safety:1.01+fit*.035,apex:1.02,click:1.00+fit*.06,think:.96,steer:1.01,pace:.997+fit*.006};
-      }
-      case 4: { // Mutalisk: evasive/aggressive arcs; rewards avoidance + recovery + aggression.
-        const fit=avg('avoidance','recovery','aggression');
-        return {name:'MUTALISK',fit,safety:1.00+fit*.045,apex:.99,click:.96+fit*.07,think:.93,steer:1.05,pace:.997+fit*.006};
-      }
-      case 5: { // Queen: deliberate/heavier control; rewards stability + risk control + braking.
-        const fit=avg('stability','riskControl','braking');
-        return {name:'QUEEN',fit,safety:1.05+fit*.055,apex:.97,click:.94+fit*.06,think:1.06,steer:.94+fit*.04,pace:.997+fit*.006};
-      }
-      default:return {name:'UNIT',fit:.5,safety:1,apex:1,click:1,think:1,steer:1,pace:1};
-    }
+    const u=unitChassis764(),fit=unitCompatibility769(p);
+    return {
+      name:u.name,fit:fit.fit,fitGrade:fit.grade,
+      safety:1,apex:u.cornerGrip*fit.cornerMul,click:u.evadeResponse*fit.evadeMul,think:1,
+      steer:u.turn*fit.turnMul,
+      pace:1, // compatibility never grants hidden raw-speed bonus
+      chassis764:u,compatibility769:fit
+    };
   }
+
   const signatureMoves={apexHunter:{label:"WALL APEX",inside:1.24,skim:1.18},safeReader:{label:"SAFE ARC",inside:.82,skim:1.04},attacker:{label:"THREAD ATTACK",inside:1.08,skim:1.30},lineMaster:{label:"PERFECT LINE",inside:1.30,skim:1.14},balanced:{label:"ADAPTIVE",inside:1,skim:1},controller:{label:"CONTROL CUT",inside:.90,skim:1.06},patient:{label:"WAIT & CUT",inside:.92,skim:1.08},opportunist:{label:"GAP HUNTER",inside:1.16,skim:1.26}};
   function signatureOf(p){return signatureMoves[p.drivingStyle?.style]||signatureMoves.balanced;}
 
@@ -232,13 +282,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function engineCoreRules(){
     return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:8,
-      playerHitRadius:PLAYER_HIT_RADIUS,stunMs:STUN_MS,invMs:INV_MS,
+      playerHitRadius:unitChassis764().hitRadius,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
       baseSpeedMultiplier:1.566903319,
       statExperiment733:{...STAT_EXPERIMENT_733},
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
-      personalityEngine:"Driver Personality Engine FINAL v7.59"};
+      personalityEngine:"Driver Personality Engine FINAL v7.59",
+      unitEngine:"Unit Engine FINAL v7.69",
+      currentUnit764:{...unitChassis764()},
+      unitSpeedSpreadPct764:+unitSpeedSpread764().spreadPct.toFixed(3)};
   }
 
   function buildMasterMatchResult(){
@@ -267,7 +320,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},winnerTeam,
         margin:teamRows.length>1?Math.max(0,teamRows[0].score-teamRows[1].score):0},
       players:playerResults,
-      rounds:roundHistory.map(r=>({round:r.round,team:{A:r.team.A,B:r.team.B,C:r.team.C,D:r.team.D},
+      unitStats769:unitStats769(),
+      rounds:roundHistory.map(r=>({round:r.round,unit769:clonePlain(r.unit769||null),
+        team:{A:r.team.A,B:r.team.B,C:r.team.C,D:r.team.D},
         leaderChanges:r.leaderChanges||0,totalOvertakes:r.totalOvertakes||0,
         photoFinish:photoFinishArchive[r.round]?clonePlain(photoFinishArchive[r.round]):null,
         players:(r.players||[]).map(x=>({index:x.index,name:x.name,team:x.team,rank:x.rank,
@@ -287,16 +342,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     window.__OBSERVER_FM_LAST_RESULT__=clonePlain(lastMasterResult);
     window.dispatchEvent(new CustomEvent("observerfm:matchcomplete",{detail:clonePlain(lastMasterResult)}));
     return lastMasterResult;
-  }
-
-
-  function shuffledIndexes(){
-    const arr=[0,1,2,3,4,5,6,7,8,9,10,11];
-    for(let i=arr.length-1;i>0;i--){
-      const j=Math.floor(Math.random()*(i+1));
-      [arr[i],arr[j]]=[arr[j],arr[i]];
-    }
-    return arr;
   }
 
   function createTeams(){
@@ -321,7 +366,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const TEAM_COLORS={A:"#ff4d4d",B:"#4d8dff",C:"#ffd84d",D:"#39d46a",E:"#66e3ff",F:"#b06cff",G:"#9aa0a6",H:"#ff9f43"};
   function teamColor(team){return TEAM_COLORS[team]||"#ffffff";}
-  function teamDotClass(team){return `racer-${String(team).toLowerCase()}`;}
   function teamStandings(){
     return ["A","B","C","D"].map(team=>({team,score:Number(teamTotals[team]||0)}))
       .sort((a,b)=>b.score-a.score||a.team.localeCompare(b.team));
@@ -788,14 +832,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return s.start + Math.max(0,Math.min(s.L,along));
   }
 
-  function shiftObjectTimers(obj,delta){
-    if(!obj||!delta)return;
-    for(const k of Object.keys(obj)){
-      const v=obj[k];
-      if(typeof v==="number" && v>0 && /(Until|At|Cooldown)$/.test(k)) obj[k]=v+delta;
-    }
-  }
-
   function togglePause(){
     if(!running || !raceStart) return;
     if(!paused){
@@ -886,38 +922,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
   }
 
-  function controlPreferenceWeights(p){
-    // v2.11: each driving identity favors different manual-control choices.
-    const name=p.drivingStyle.style;
-    let w={zigzag:1.12,backcon:1.12,stopcon:.035,wide:1};
-    if(name==="apexHunter")      w={zigzag:1.18,backcon:1.22,stopcon:.72,wide:.76};
-    else if(name==="safeReader")w={zigzag:.84,backcon:.62,stopcon:1.48,wide:1.20};
-    else if(name==="attacker")  w={zigzag:1.34,backcon:1.38,stopcon:.58,wide:.72};
-    else if(name==="lineMaster")w={zigzag:.92,backcon:.88,stopcon:.86,wide:1.30};
-    else if(name==="controller")w={zigzag:1.16,backcon:1.04,stopcon:1.22,wide:.82};
-    else if(name==="patient")   w={zigzag:.78,backcon:.66,stopcon:1.34,wide:1.26};
-    else if(name==="opportunist")w={zigzag:1.24,backcon:1.34,stopcon:.76,wide:.88};
-    const id=identityOf(p);
-    if(id.control && w[id.control]!=null && id.control!=="stopcon") w[id.control]*=1.16;
-    // v2.51: stopcon is an emergency last resort only.
-    w.stopcon*=.035; // v4.50: stop-control is now an exceptional emergency-only move
-    w.zigzag*=1.34;
-    w.backcon*=.34;
-    return w;
-  }
-
-  function weightedControlPick(p,allowed){
-    const w=controlPreferenceWeights(p);
-    let total=0;
-    for(let i=0;i<allowed.length;i++) total+=w[allowed[i]]||1;
-    let r=Math.random()*total;
-    for(let i=0;i<allowed.length;i++){
-      r-=w[allowed[i]]||1;
-      if(r<=0) return allowed[i];
-    }
-    return allowed[allowed.length-1];
-  }
-
   function beginControl(p,mode,now,duration,reactive,threatId=-1,backconStyleHint=null){
     p.controlMode=mode;
     p.reactiveControl=reactive;
@@ -976,162 +980,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
   }
 
-  function chooseControl(p, now, dt){
-    p.controlCooldown -= dt;
-    p.reactiveControlCooldown -= dt;
-
-    if(p.controlMode!=="normal" && now>=p.controlUntil){
-      p.controlMode="normal";p.reactiveControl=false;p.reactiveThreatId=-1;
-      p.controlQuality=1;p.controlMistakeSide=0;
-    }
-
-    const si=Math.min(p.seg,segs.length-1),s=segs[si];
-    let immediate=null,immediateAlong=999,nearAhead=null,nearAlong=999;
-    const earlySurvival=currentProgress(p)<routeLength*.56;
-    const closeObs=playerPerceivedObservers(p,earlySurvival?7.70:6.8);
-
-    // Absolutely no stop/back/zigzag/wide control or artificial slowing on clear road.
-    if(!closeObs.length){
-      // v2.54: on a clear road, never keep braking/reversing from an old threat.
-      // The racer immediately returns to the fastest straight/inside line.
-      // v4.191: absolutely no trick-control on empty road. Cancel every reactive
-      // control immediately, including zigzag / diagonal / 360 / Marseille.
-      p.controlMode="normal";p.controlUntil=0;p.reactiveControl=false;
-      p.reactiveThreatId=-1;p.controlQuality=1;p.controlMistakeSide=0;
-      p.backconStyle="none";p.marseilleUntil=0;
-      return;
-    }
-
-    for(let i=0;i<closeObs.length;i++){
-      const o=closeObs[i],dx=o.x-p.x,dy=o.y-p.y;
-      const along=dx*s.ux+dy*s.uy;if(along<=0)continue;
-      const lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<(earlySurvival?3.60:3.15)&&lat<(earlySurvival?2.58:2.25)&&along<immediateAlong){immediate=o;immediateAlong=along;}
-      if(along<(earlySurvival?5.55:4.8)&&lat<(earlySurvival?4.20:3.8)&&along<nearAlong){nearAhead=o;nearAlong=along;}
-    }
-
-    if(p.controlMode==="normal"&&p.reactiveControlCooldown<=0){
-      const reaction=(p.stats.reaction-72)/27,control=(p.stats.control-72)/27;
-      const prediction=(p.stats.prediction-72)/27,pressure=(p.stats.pressure-72)/27;
-
-      if(immediate){
-        // v2.62: choose control from geometry. If either side is visibly open,
-        // prefer a diagonal escape. Backcon is reserved for a genuinely blocked front.
-        let leftBlock=0,rightBlock=0;
-        for(let ci=0;ci<closeObs.length;ci++){
-          const o=closeObs[ci],dx=o.x-p.x,dy=o.y-p.y;
-          const along=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
-          if(along<=0||along>6.5) continue;
-          if(lat<0&&Math.abs(lat)<5.2) leftBlock++;
-          if(lat>=0&&Math.abs(lat)<5.2) rightBlock++;
-        }
-        const sideEscapeOpen=Math.min(leftBlock,rightBlock)===0;
-        const controlPack=packAwareness(p,s);
-        // v3.63: dense packs favor early corridor selection over abrupt last-second
-        // tricks. These controls remain available, just less likely while overlapping.
-        const packControlCalm=controlPack.mates>=3?.52:controlPack.mates>=2?.72:1;
-        // v4.03: all reactive trick-control tendencies +20% around observers,
-        // but the live leader protects position and uses them much less often.
-        const leaderControlCalm=liveRaceSituation(p).rank===1?.12:1; // v4.57 leader pace: suppress showy controls
-        // v3.51: only when an observer is immediately ahead, increase both
-        // zigzag and backcon selection weights by 20% relative to v3.50.
-        // v4.191: nearby danger uses a varied human control palette. Reverse is rare;
-        // forward/diagonal movement is the default escape. No control is selected merely
-        // because a far observer is visible.
-        // v4.194: Marseille is disabled because the full-turn animation can look
-        // like a collision pass-through. Natural diagonal escape is the main tool;
-        // stop-control is more common, while reverse is a very rare last resort.
-        const marseilleWeight=0;
-        // v4.50 CONTROL DIVERSITY: keep the racer moving. Seeing an immediate observer
-        // normally produces a forward diagonal escape; zigzag and 360 are visible alternatives.
-        // Stop is nearly eliminated because repeated braking reads as stutter. Reverse stays rare.
-        // v4.56 CONTROL DIVERSITY 2: pick the trick from the actual threat geometry.
-        // Diagonal = default early escape. Zigzag = crossing/uncertain lanes. 360 = close
-        // one-sided feint with room to curl. Back = almost impossible unless boxed point-blank.
-        const mem=p.perceivedObservers&&p.perceivedObservers.get(immediate.id);
-        const ovx=mem?.vx||0, ovy=mem?.vy||0;
-        const obsForward=ovx*s.ux+ovy*s.uy, obsLateral=Math.abs(ovx*s.nx+ovy*s.ny);
-        const crossing=obsLateral>Math.abs(obsForward)*.72 && obsLateral>.18;
-        const oneSidePressure=Math.abs(leftBlock-rightBlock)>=1;
-        const stopWeight=(!sideEscapeOpen && immediateAlong<.72 && leftBlock>0 && rightBlock>0 ? .000045 : 0)*leaderControlCalm; // v4.59.5 stop only when truly boxed point-blank
-        const spinWeight=(oneSidePressure && sideEscapeOpen ? .082 : .030)*packControlCalm*leaderControlCalm;
-        const diagonalWeight=(crossing?.98:1.30)*packControlCalm;
-        const backWeight=((!sideEscapeOpen && immediateAlong<.92 && leftBlock>0 && rightBlock>0) ? .0065 : .00008)*leaderControlCalm;
-        const zigWeight=(crossing?.245:.105)*leaderControlCalm;
-        const totalWeight=marseilleWeight+stopWeight+spinWeight+diagonalWeight+backWeight+zigWeight;
-        const r=Math.random()*totalWeight;
-        let cut=marseilleWeight;
-        if(r<cut){
-          p.controlMode="marseille";
-          p.reactiveControl=true;
-          p.reactiveThreatId=immediate.id;
-          p.modeStart=now;
-          p.controlUntil=now+360+Math.random()*120;
-          p.marseilleUntil=p.controlUntil;
-          p.marseilleSide=(leftBlock<=rightBlock?-1:1);
-          p.reactiveControlCooldown=850+Math.random()*760;
-          p.match.controlAttempts++;
-          p.match.controlSuccesses++;
-          const mc=p.match.controlByType&&p.match.controlByType.marseille;if(mc){mc.attempts++;mc.successes++;}
-          addAutoHighlight("MARSEILLE",`${p.name} · 마르세유턴 회피`,now,p.index,2);
-        }else if(r<(cut+=stopWeight)){
-          beginControl(p,"stopcon",now,55+Math.random()*55,true,immediate.id);
-          p.reactiveControlCooldown=900+Math.random()*900;
-        }else if(r<(cut+=spinWeight)){
-          beginControl(p,"spin360",now,300+Math.random()*110,true,immediate.id);
-          p.reactiveControlCooldown=800+Math.random()*750;
-        }else if(r<(cut+=diagonalWeight)){
-          beginControl(p,"diagonal",now,180+Math.random()*130,true,immediate.id);
-          p.reactiveControlCooldown=620+Math.random()*650;
-        }else if(r<(cut+=backWeight)){
-          // Only a tiny reverse tap. Long back-controls are disabled in v4.191.
-          beginControl(p,"backcon",now,95+Math.random()*50,true,immediate.id,"tap");
-          p.reactiveControlCooldown=1400+Math.random()*1000;
-        }else{
-          beginControl(p,"zigzag",now,240+Math.random()*210,true,immediate.id);
-          p.reactiveControlCooldown=620+Math.random()*700;
-        }
-        return;
-      }
-
-      if(nearAhead){
-        const nearLeaderCalm=liveRaceSituation(p).rank===1?.10:1; // v4.57 leader pace
-        const zigChance=Math.min(.62,(.38+reaction*.05+prediction*.05+pressure*.03)*nearLeaderCalm);
-        if(Math.random()<zigChance){
-          const rr=Math.random();
-          const nearMem=p.perceivedObservers&&p.perceivedObservers.get(nearAhead.id);
-          const nlat=Math.abs((nearMem?.vx||0)*s.nx+(nearMem?.vy||0)*s.ny);
-          const nfwd=Math.abs((nearMem?.vx||0)*s.ux+(nearMem?.vy||0)*s.uy);
-          const nearCross=nlat>nfwd*.72 && nlat>.18;
-          const nearMode=rr<(nearCross?.735:.875)?"diagonal":rr<(nearCross?.955:.955)?"zigzag":"spin360"; // v4.59.5 no stop in normal near-threat palette
-          const dur=nearMode==="diagonal"?170+Math.random()*120:nearMode==="zigzag"?230+Math.random()*180:nearMode==="spin360"?280+Math.random()*100:50+Math.random()*45;
-          beginControl(p,nearMode,now,dur,true,nearAhead.id);
-          p.reactiveControlCooldown=950+Math.random()*1200;return;
-        }
-      }
-    }
-
-    // Nearby observers exist but are not directly threatening: occasional moving
-    // controls only. Never stop on this branch.
-    if(nearAhead && p.controlMode==="normal"&&p.controlCooldown<=0){
-      // v4.57 LEADER PACE: no decorative controls while leading; actual danger
-      // is still handled by the immediate and predictive avoidance branches.
-      if(liveRaceSituation(p).rank===1) return;
-      const ag=(p.profile.aggression-60)/40,ct=(p.profile.control-85)/15;
-      // v4.191: nearby-but-not-urgent threats stay forward-moving. No backcon here.
-      const rr=Math.random();
-      const farMem=p.perceivedObservers&&p.perceivedObservers.get(nearAhead.id);
-      const flat=Math.abs((farMem?.vx||0)*s.nx+(farMem?.vy||0)*s.ny);
-      const ffwd=Math.abs((farMem?.vx||0)*s.ux+(farMem?.vy||0)*s.uy);
-      const farCross=flat>ffwd*.72 && flat>.18;
-      const mode=rr<(farCross?.755:.885)?"diagonal":rr<(farCross?.965:.96)?"zigzag":"spin360"; // v4.59.5 moving controls only
-      let duration=mode==="diagonal"?180+Math.random()*120:mode==="zigzag"?260+Math.random()*180:mode==="spin360"?290+Math.random()*100:55+Math.random()*45;
-      duration*=(1.04-ct*.10);
-      beginControl(p,mode,now,duration,true,nearAhead.id);
-      p.controlCooldown=(4300-ag*650)+Math.random()*(4200-ag*400);
-    }
-  }
-
   function optimalOffsetFor(p){
     const si=Math.min(p.seg,segs.length-1);
     const cur=segs[si];
@@ -1158,19 +1006,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       legalHalf += DEATH_EDGE_EXTRA + (p.extremeInsideFail?1.25:-0.42);
     }
     return Math.max(-legalHalf*.998,Math.min(legalHalf*.998,lateral));
-  }
-
-  function nearestRouteFrame(x,y,aroundSeg=0){
-    let best=null;
-    const lo=Math.max(0,aroundSeg-2), hi=Math.min(segs.length-1,aroundSeg+2);
-    for(let i=lo;i<=hi;i++){
-      const s=segs[i], rx=x-s.a[0], ry=y-s.a[1];
-      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-      const qx=s.a[0]+s.ux*along, qy=s.a[1]+s.uy*along;
-      const dx=x-qx,dy=y-qy,d2=dx*dx+dy*dy;
-      if(!best||d2<best.d2) best={si:i,d2,lateral:rx*s.nx+ry*s.ny,along};
-    }
-    return best;
   }
 
   // v4.09 COURSE MODEL:
@@ -1208,29 +1043,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(inForbidden96(x1+(x2-x1)*t,y1+(y2-y1)*t,pad)) return true;
     }
     return false;
-  }
-
-  function nearestForbiddenEscape96(x,y){
-    let best=null,bestD=1e30;
-    for(const z of FORBIDDEN96){
-      const left=Math.abs(x-(z.x1-FORBIDDEN96_PAD-.55));
-      const right=Math.abs(x-(z.x2+FORBIDDEN96_PAD+.55));
-      const top=Math.abs(y-(z.y1-FORBIDDEN96_PAD-.55));
-      const bottom=Math.abs(y-(z.y2+FORBIDDEN96_PAD+.55));
-      const candidates=[
-        {x:z.x1-FORBIDDEN96_PAD-.55,y},
-        {x:z.x2+FORBIDDEN96_PAD+.55,y},
-        {x,y:z.y1-FORBIDDEN96_PAD-.55},
-        {x,y:z.y2+FORBIDDEN96_PAD+.55}
-      ];
-      const ds=[left,right,top,bottom];
-      for(let i=0;i<4;i++){
-        const c=candidates[i];
-        if(c.x<1||c.x>MAP_W-1||c.y<1||c.y>MAP_H-1||inForbidden96(c.x,c.y)) continue;
-        if(ds[i]<bestD){bestD=ds[i];best=c;}
-      }
-    }
-    return best;
   }
 
 function courseContainsPoint(x,y,extra=0){
@@ -1319,13 +1131,6 @@ function courseContainsPoint(x,y,extra=0){
       p.outsideGrace69Since=0;
     }
     return true;
-  }
-
-
-  function clampToRoad(p){
-    // v4.03 AIR UNIT: intentionally no physical road boundary.
-    // Never push, snap, slow, or teleport a racer for leaving the painted road.
-    return;
   }
 
 
@@ -1984,30 +1789,6 @@ function courseContainsPoint(x,y,extra=0){
     return {mates,frontMates,density,lateralMean:mates?lateralSum/mates:0};
   }
 
-  function sharedPackDanger(p,s,baseNearby,pack){
-    if(pack.mates<2) return baseNearby;
-    const merged=baseNearby.slice();
-    const seen=new Set(merged.map(o=>o.id));
-    // Read the observer field around nearby racers too. This is perception sharing
-    // only: player bodies never become obstacles and never affect collision physics.
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p||q.done) continue;
-      const dx=q.x-p.x,dy=q.y-p.y;
-      const along=dx*s.ux+dy*s.uy,lat=Math.abs(dx*s.nx+dy*s.ny);
-      if(along<-2.5||along>8.5||lat>6.5) continue;
-      const seenByQ=playerNearbyObservers(q,Math.min(21,p.visionRadius||21));
-      for(let k=0;k<seenByQ.length;k++){
-        const o=seenByQ[k];
-        if(seen.has(o.id)) continue;
-        const ox=o.x-p.x,oy=o.y-p.y;
-        const oa=ox*s.ux+oy*s.uy,ol=Math.abs(ox*s.nx+oy*s.ny);
-        if(oa>-4&&oa<22&&ol<10.5){merged.push(o);seen.add(o.id);}
-      }
-    }
-    return merged;
-  }
-
   function rolloutActionRisk(p,s,targetOff,speedMul,nearby){
     // v4.11 MICRO-ROLLOUT AI: instead of rating only fixed future snapshots,
     // actually simulate a short candidate action sequence. Better prediction/control
@@ -2025,7 +1806,7 @@ function courseContainsPoint(x,y,extra=0){
     let lateral=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
     let vx=s.ux*p.speed*speedMul, vy=s.uy*p.speed*speedMul;
     let danger=0,minClear=99;
-    const hit=PLAYER_HIT_RADIUS;
+    const hit=playerHitRadius764(p);
     for(let k=1;k<=steps;k++){
       const t=k*dt;
       // steering cannot teleport laterally: approach the selected lane progressively.
@@ -2052,134 +1833,6 @@ function courseContainsPoint(x,y,extra=0){
     const paceReward=speedMul*(5.8+skill*2.7);
     const steerCost=Math.abs(targetOff-p.desiredOffset)*(.10+(1-controlN)*.08);
     return {score:danger+steerCost-paceReward,minClear};
-  }
-
-
-  // v4.53 ESCAPE DIRECTION JUDGMENT: score the whole future corridor on each side,
-  // not just the nearest observer. This makes left/right/diagonal choices prefer the
-  // lane with the widest sustained survival window and reduces wrong-way dodges.
-  function scoreEscapeCorridor(p,s,off,speedMul,nearby){
-    const predN=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
-    const avoidN=Math.max(0,Math.min(1,(p.stats.avoidance-72)/27));
-    const controlN=Math.max(0,Math.min(1,(p.stats.control-72)/27));
-    const horizon=3.10+predN*.88; // v4.59.4: look farther down-road before committing to the nominal fastest line
-    const steps=15+Math.round(predN*4);
-    const startOff=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
-    let minClear=99,risk=0,closingRisk=0,coursePenalty=0,pinchRisk=0;
-    for(let k=1;k<=steps;k++){
-      const t=horizon*k/steps;
-      const blend=1-Math.exp(-t*(2.0+controlN*.55));
-      const simOff=startOff+(off-startOff)*blend;
-      const forward=Math.max(.35,speedMul)*p.speed*t;
-      const x=p.x+s.ux*forward+s.nx*(simOff-startOff);
-      const y=p.y+s.uy*forward+s.ny*(simOff-startOff);
-      if(!courseContainsPoint(x,y,ROUTE_PLAN_EXTRA*.74)) coursePenalty+=5.2;
-      let nearCount=0, nearPressure=0;
-      for(const o of nearby){
-        const ox=predictedObserverX(o,t), oy=predictedObserverY(o,t);
-        const d=Math.hypot(x-ox,y-oy);
-        minClear=Math.min(minClear,d);
-        const safe=2.62+avoidN*.42+predN*.31;
-        if(d<5.2){ nearCount++; nearPressure+=Math.max(0,5.2-d); }
-        if(d<safe){
-          const q=(safe-d)/safe;
-          risk += q*q*(3.8+(1-t/horizon)*4.8);
-        }
-        // Penalize observers whose inferred motion is converging into this corridor.
-        const nowD=Math.hypot(p.x-o.x,p.y-o.y);
-        if(d+0.35<nowD && d<5.8) closingRisk += (5.8-d)*(.12+(1-t/horizon)*.10);
-      }
-      // v4.54: avoid future choke points where two or more observers arrive together.
-      if(nearCount>=2) pinchRisk += nearPressure*(nearCount-1)*(.20+(1-t/horizon)*.16);
-    }
-    // Prefer a sustained safety buffer. Small detours are cheap when they buy real space.
-    const targetClear=3.08+avoidN*.44+predN*.36; // v4.59.4 slightly wider sustained margin
-    const clearPenalty=minClear<targetClear?(targetClear-minClear)*(4.8+avoidN*2.2):0;
-    const detour=Math.abs(off-p.desiredOffset)*(.017+(1-controlN)*.014); // v4.59.4 survival buys a little more route distance
-    return {score:risk+closingRisk+pinchRisk+coursePenalty+clearPenalty+detour,minClear,coursePenalty,pinchRisk};
-  }
-
-  function scoreFutureEscapePath(p,s,off,speedMul,nearby){
-    // v4.32 ESCAPE DIRECTION AI: compare each lateral escape over the next ~1.9 s.
-    // The chosen side must stay on the legal course and remain clear of the whole
-    // perceived observer field, not merely look empty at the current frame.
-    const horizon=1.90;
-    const steps=10;
-    const baseOff=Number.isFinite(p.desiredOffset)?p.desiredOffset:0;
-    let risk=0,minClear=99,coursePenalty=0,progress=0;
-    let prevX=p.x,prevY=p.y;
-    for(let k=1;k<=steps;k++){
-      const t=horizon*k/steps;
-      const blend=1-Math.exp(-t*2.45);
-      const simOff=baseOff+(off-baseOff)*blend;
-      const forward=Math.max(.25,speedMul)*p.speed*t;
-      const x=p.x+s.ux*forward+s.nx*simOff;
-      const y=p.y+s.uy*forward+s.ny*simOff;
-      if(!courseContainsPoint(x,y,ROUTE_PLAN_EXTRA*.72)) coursePenalty+=4.8;
-      if(!lineStaysOnCourse(prevX,prevY,x,y,ROUTE_PLAN_EXTRA*.76)) coursePenalty+=3.4;
-      prevX=x;prevY=y;progress=forward;
-      for(const o of nearby){
-        const ox=predictedObserverX(o,t),oy=predictedObserverY(o,t);
-        const d=Math.hypot(x-ox,y-oy);
-        minClear=Math.min(minClear,d);
-        const safe=2.05+(o.confidence==null?0:(1-o.confidence)*.18);
-        if(d<safe){
-          const q=(safe-d)/safe;
-          // Later collisions still matter, but imminent collisions dominate.
-          risk += q*q*(2.2+(1-t/horizon)*2.8);
-        }
-      }
-    }
-    // Avoid needlessly huge detours when two candidates are similarly safe.
-    const detour=Math.abs(off-baseOff)*.055;
-    return {score:risk+coursePenalty+detour-progress*.012,minClear,coursePenalty};
-  }
-
-  function boxedEscapePlan(p,s,nearby,raceOff){
-    // v4.34 BLOCKED / SURROUND ESCAPE AI
-    // When front + both sides are occupied, search the whole legal road ribbon for
-    // a moving breakout corridor. Wide forward arcs are preferred; stop/back remain
-    // emergency-only fallbacks. The plan looks farther than the normal dodge so the
-    // racer escapes the cluster instead of bouncing inside it.
-    const si=Math.min(p.seg,widths.length-1);
-    const half=Math.max(3.3,widths[si]*.72);
-    // v4.55 ENCIRCLEMENT BREAKOUT: when boxed, search farther toward the legal
-    // road edges and prefer a corridor that stays open well beyond the first dodge.
-    const base=Number.isFinite(raceOff)?raceOff:(Number.isFinite(p.desiredOffset)?p.desiredOffset:0);
-    const candidates=[];
-    for(const f of [-1.04,-.92,-.78,-.62,-.44,-.24,-.10,.10,.24,.44,.62,.78,.92,1.04]){
-      candidates.push({off:clampRoadOffset(si,f*half,p),spd:f*f>.55?.97:1.01,kind:'breakout'});
-    }
-    // Keep a near-current option so a real center opening can win.
-    candidates.push({off:clampRoadOffset(si,base,p),spd:.99,kind:'thread'});
-    let best=null;
-    for(const c of candidates){
-      const r=scoreFutureEscapePath(p,s,c.off,c.spd,nearby);
-      const short=rolloutActionRisk(p,s,c.off,c.spd,nearby);
-      const ex=p.x+s.ux*9.8+s.nx*c.off, ey=p.y+s.uy*9.8+s.ny*c.off;
-      // Long gate: surviving the first observer is not enough. Check that the same
-      // corridor remains usable farther ahead so the racer actually exits the box.
-      const lx=p.x+s.ux*14.2+s.nx*c.off, ly=p.y+s.uy*14.2+s.ny*c.off;
-      let longClear=99, longPressure=0;
-      for(const o of nearby){
-        const ox=predictedObserverX(o,1.85), oy=predictedObserverY(o,1.85);
-        const d=Math.hypot(lx-ox,ly-oy);
-        longClear=Math.min(longClear,d);
-        if(d<7.2) longPressure+=Math.max(0,7.2-d);
-      }
-      let score=r.score*1.62+short.score*.64+longPressure*.82;
-      if(r.minClear<1.48) score+=(1.48-r.minClear)*12.5;
-      if(longClear<2.25) score+=(2.25-longClear)*8.5;
-      if(!courseContainsPoint(ex,ey,ROUTE_PLAN_EXTRA*.70) || !lineStaysOnCourse(p.x,p.y,ex,ey,ROUTE_PLAN_EXTRA*.76)) score+=28;
-      // In a box, paying some racing-line detour is fine, but prefer the smallest
-      // safe detour when survival scores are similar.
-      score += Math.abs(c.off-base)*.035;
-      if(c.kind==='breakout') score-=.38;
-      if(!best||score<best.score) best={...c,score,minClear:r.minClear};
-    }
-    if(!best) return null;
-    best.side=Math.sign(best.off-base)||Math.sign(best.off)||1;
-    return best;
   }
 
   
@@ -2981,48 +2634,6 @@ function chooseAvoidanceLegacy84(p,s,now){
     return (q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny;
   }
 
-  function passTraffic65(p,si,myProg){
-    const out=[];
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p || q.done || q.dead) continue;
-      const prog=currentProgress(q);
-      const gap=prog-myProg;
-      if(gap>-.8 && gap<13.5){
-        out.push({q,gap,off:racerLateralOffsetOnSeg(q,si),prog});
-      }
-    }
-    out.sort((a,b)=>a.gap-b.gap);
-    return out;
-  }
-
-  function passLaneScore65(p,si,off,traffic,baseLine){
-    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
-    let score=Math.abs(off-baseLine)*.060;
-    for(const t of traffic){
-      if(t.gap<0) continue;
-      const dg=Math.max(.18,t.gap);
-      const lat=Math.abs(off-t.off);
-      const longitudinal=Math.max(0,1-dg/10.5);
-      const block=Math.max(0,1-lat/1.70);
-      score+=block*longitudinal*4.8;
-      if(dg<3.1 && lat<1.05) score+=(3.1-dg)*1.35;
-    }
-    const inside=cornerInsideSide(si);
-    let future=0;
-    for(let k=0;k<=3;k++){
-      const sj=Math.min(segs.length-1,si+k);
-      const c=cornerIntensity(sj);
-      const side=cornerInsideSide(sj);
-      if(side && c>.025){ future=side*Math.max(c,.06)*(1-k*.16); break; }
-    }
-    if(future){
-      const cornerTarget=Math.sign(future)*half*.56;
-      score+=Math.abs(off-cornerTarget)*Math.min(.16,.055+Math.abs(future)*.42);
-    }
-    return score;
-  }
-
   // v4.65 OVERTAKE AI 1.0:
   // Read the actual racer ahead, compare open left/right lanes and the next 2-3
   // corners, then commit to a pass corridor. Racers remain non-solid; this is
@@ -3078,125 +2689,6 @@ function calibratedFastCorridor79(si){
     const urgency=Math.max(0,Math.min(1,(8.5-rs.nearestAheadGap)/8.5));
     const authority=.72+urgency*.20;
     return baseOff*(1-authority)+fast*authority;
-  }
-
-function overtakePlan(p,si,now){
-    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.57);
-
-    if(now<p.passPlanUntil && p.passPlanMode){
-      const target=players[p.passTargetId];
-      if(target && !target.done && !target.dead){
-        const rel=currentProgress(target)-currentProgress(p);
-        // Keep the move committed while side-by-side; once clearly ahead, release
-        // quickly back toward the optimal racing line.
-        if(rel>-.75) return {off:p.passPlanOffset,speedMul:p.passPlanSpeedMul,mode:p.passPlanMode};
-      }
-      p.passPlanUntil=Math.min(p.passPlanUntil,now+90);
-    }
-    if(p.passPlanMode && now>=p.passPlanUntil){
-      p.passPlanMode=0;
-      p.passTargetId=-1;
-      p.passPlanSpeedMul=1;
-    }
-    if(now<p.passPlanCooldown) return null;
-
-    const myProg=currentProgress(p);
-    const traffic=passTraffic65(p,si,myProg);
-    const ahead=traffic.filter(t=>t.gap>.12 && t.gap<9.6);
-    if(!ahead.length){
-      p.passPlanCooldown=now+260+Math.random()*240;
-      return null;
-    }
-
-    // Prefer the racer that is both close and actually occupying our intended line.
-    const baseLine=raceLine79(p,si,integratedFastLine74(p,si,cornerPhysics64Target(p,si,optimalRacingLine2Offset(p,si)).off),false);
-    let chosen=null,bestTarget=1e9;
-    for(const t of ahead){
-      const laneOverlap=Math.abs(t.off-baseLine);
-      const v=t.gap + Math.min(3.0,laneOverlap)*.72;
-      if(v<bestTarget){ bestTarget=v; chosen=t; }
-    }
-    const target=chosen.q, gap=chosen.gap;
-
-    const aggression=Math.max(0,Math.min(1,(p.stats.aggression-72)/27));
-    const prediction=Math.max(0,Math.min(1,(p.stats.prediction-72)/27));
-    const routeRead=Math.max(0,Math.min(1,(p.stats.routeReading-72)/27));
-    const pressure=Math.max(0,Math.min(1,(p.stats.pressure-72)/27));
-    const control=Math.max(0,Math.min(1,(p.stats.control-72)/27));
-    const riskControl=Math.max(0,Math.min(1,(p.stats.riskControl-72)/27));
-    const passSkill=Math.max(0,Math.min(1,
-      aggression*.25+prediction*.22+routeRead*.22+control*.17+pressure*.14));
-
-    // No artificial slow-path personality. Personality changes willingness and
-    // commitment only after a genuinely useful pass lane has been found.
-    const laneCandidates=[
-      Math.max(-half*.96,Math.min(half*.96,baseLine)),
-      -half*.56, half*.56, -half*.34, half*.34
-    ];
-    let bestOff=baseLine,bestScore=1e9;
-    for(const off of laneCandidates){
-      const score=passLaneScore65(p,si,off,traffic,baseLine);
-      if(score<bestScore){bestScore=score;bestOff=off;}
-    }
-    const baseScore=passLaneScore65(p,si,baseLine,traffic,baseLine);
-    const gain=baseScore-bestScore;
-    const blocked=Math.abs(chosen.off-baseLine)<1.55 && gap<6.8;
-    if(!blocked && gain<.32){
-      p.passPlanCooldown=now+300+Math.random()*360;
-      return null;
-    }
-
-    const corner=cornerIntensity(si);
-    let futureCorner=corner, futureSide=cornerInsideSide(si);
-    for(let k=1;k<=3;k++){
-      const sj=Math.min(segs.length-1,si+k);
-      const c=cornerIntensity(sj);
-      if(c>futureCorner*.82){ futureCorner=c; futureSide=cornerInsideSide(sj)||futureSide; }
-    }
-
-    // Avoid choosing the same corridor as another racer already making the move.
-    for(const t of traffic){
-      const q=t.q;
-      if(q.passPlanMode && q.passTargetId===target.index && Math.abs(q.passPlanOffset-bestOff)<1.15){
-        const alt=-Math.sign(bestOff||1)*Math.min(half*.62,Math.max(half*.34,Math.abs(bestOff)));
-        if(passLaneScore65(p,si,alt,traffic,baseLine)<=bestScore+.55) bestOff=alt;
-      }
-    }
-
-    let mode=4; // straight / generic open-lane pass
-    if(futureSide && Math.sign(bestOff)===futureSide && futureCorner>.045) mode=1; // inside attack
-    else if(futureSide && Math.sign(bestOff)===-futureSide && futureCorner>.055) mode=2; // outside setup
-    else if(gap<2.6 && Math.abs(chosen.off-bestOff)<1.25) mode=3; // patient cut
-
-    // Stronger racers decide earlier, but nobody gets free acceleration.
-    const need=Math.max(0,Math.min(1,(6.5-gap)/6.5));
-    const useful=Math.max(0,Math.min(1,gain/2.4));
-    const commitChance=Math.min(.96,.34+passSkill*.40+need*.14+useful*.16);
-    if(Math.random()>commitChance){
-      p.passPlanCooldown=now+300+(1-passSkill)*420+Math.random()*300;
-      return null;
-    }
-
-    const commit=.78+passSkill*.17;
-    bestOff=Math.max(-half*.97,Math.min(half*.97,bestOff*commit+baseLine*(1-commit)));
-    let speedMul=1;
-    if(mode===2) speedMul=.992;       // tiny setup cost, paid for better next-corner geometry
-    else if(mode===3) speedMul=.985;  // timing move, never a large artificial brake
-    else speedMul=.998;
-
-    p.passPlanMode=mode;
-    p.passPlanOffset=bestOff;
-    p.passPlanSpeedMul=speedMul;
-    p.passTargetId=target.index;
-    p.passPlanUntil=now+(mode===2?650:mode===3?360:520)+Math.random()*260;
-    p.passPlanCooldown=now+720+(1-passSkill)*620+Math.random()*600;
-    if(p.match && p.match.passPlans){
-      if(mode===1) p.match.passPlans.inside++;
-      else if(mode===2) p.match.passPlans.outside++;
-      else if(mode===3) p.match.passPlans.waitCut++;
-      else p.match.passPlans.straight=(p.match.passPlans.straight||0)+1;
-    }
-    return {off:bestOff,speedMul,mode};
   }
 
   
@@ -3332,61 +2824,6 @@ function overtakePlan(p,si,now){
     p.multiCarLineOffset=bestOff;
     p.multiCarLineUntil=now+(sideBySide.length?560:300)+Math.random()*150;
     return {off:bestOff,mode,authority};
-  }
-
-function packContextOffset(p,si,now){
-    const s=segs[Math.min(si,segs.length-1)];
-    const half=Math.max(1.8,widths[si]*0.56);
-
-    if(now<p.packPlanUntil) return p.packPlanOffset;
-
-    const myProg=currentProgress(p);
-    let nearestAhead=null, nearestGap=999;
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p || q.done) continue;
-      const gap=currentProgress(q)-myProg;
-      if(gap>0 && gap<12.5 && gap<nearestGap){
-        nearestAhead=q;
-        nearestGap=gap;
-      }
-    }
-
-    if(!nearestAhead){
-      p.packPlanOffset=0;
-      p.packPlanUntil=now+300;
-      return 0;
-    }
-
-    const q=nearestAhead;
-    const qOff=((q.x-s.a[0])*s.nx+(q.y-s.a[1])*s.ny);
-    const myOff=((p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny);
-    const aggression=(p.stats.aggression-72)/27;
-    const pressure=(p.stats.pressure-72)/27;
-    const control=(p.stats.control-72)/27;
-    const inside=cornerInsideSide(si);
-
-    // Players are non-solid. This is only a tactical passing-line choice:
-    // racers may still overlap completely with no push, collision, or slowdown.
-    let side=(qOff>=myOff)?-1:1;
-    if(inside!==0 && Math.abs(qOff-inside*half)>half*.34 &&
-       (p.drivingStyle.style==="opportunist" || p.drivingStyle.style==="attacker" || aggression>.62)){
-      side=inside;
-    }
-
-    let commitment=.40;
-    if(p.drivingStyle.style==="safeReader" || p.drivingStyle.style==="patient") commitment=.32;
-    else if(p.drivingStyle.style==="attacker" || p.drivingStyle.style==="opportunist") commitment=.69;
-    else if(p.drivingStyle.style==="controller") commitment=.46;
-
-    commitment*=identityOf(p).commit;
-    commitment+=aggression*.09+pressure*.06+control*.035;
-    if(nearestGap<3.2) commitment+=.12;
-    if(nearestGap<1.35) commitment+=.06;
-
-    p.packPlanOffset=side*half*Math.min(.90,commitment);
-    p.packPlanUntil=now+(nearestGap<2.25?250:340)+Math.random()*130;
-    return p.packPlanOffset;
   }
 
   // v2.27: read the current corner together with the next meaningful corner.
@@ -4105,60 +3542,6 @@ function packContextOffset(p,si,now){
     return {off:Math.max(-half*.995,Math.min(half*.995,off)),speedMul};
   }
 
-  function optimizedLookAheadTarget(p,si,now){
-    const routeRead=(p.stats.routeReading-72)/27;
-    const maxAhead=Math.min(segs.length-1,si+6+Math.round(routeRead*2));
-    const plannedOff=0;
-
-    // v4.07 ROUTE-FOLLOWING: lookahead may smooth a bend, but it must never
-    // turn the course into a straight chord across off-road space. Around the
-    // 5-o'clock rise especially, advance only to the next route joint first.
-    const routeLocked = si<=10;
-    const openingFast=openingFastLineTarget(p,si);
-    // v4.16: the opening straight is allowed a longer same-corridor lookahead so
-    // steering visibly forms a diagonal toward the inside wall. Course validation
-    // below still rejects any chord that would cross a non-drivable gap.
-    let ahead=Math.min(segs.length-1,si+(openingFast!=null?3:(routeLocked?1:3)));
-    let strongest=0;
-    const scanEnd=openingFast!=null?Math.min(maxAhead,si+5):(routeLocked?Math.min(maxAhead,si+2):maxAhead);
-    for(let j=si+1;j<=scanEnd;j++){
-      const a=segs[Math.max(0,j-1)];
-      const b=segs[j];
-      const turn=a.ux*b.uy-a.uy*b.ux;
-      if(Math.abs(turn)>Math.abs(strongest)){
-        strongest=turn;
-        if(!routeLocked) ahead=j;
-      }
-    }
-
-    const targetSeg=segs[ahead];
-    let targetOff=plannedOff*0.58;
-    if(Math.abs(strongest)>0.02){
-      const half=Math.max(1.7,widths[ahead]*0.64);
-      const skill=((p.stats.cornering+p.stats.insideLine+p.stats.routeReading)/3-72)/27;
-      targetOff=(strongest>0 ? 1 : -1)*half*Math.min(.997,.94+skill*.057);
-    }
-    if(openingFast!=null){
-      const targetHalf=Math.max(1.8,widths[ahead]*1.06);
-      const sign=Math.sign(openingFast)||Math.sign(targetOff)||1;
-      targetOff=sign*targetHalf*.965;
-    }
-
-    const phase=cornerPhaseTarget(p,si,Math.max(1.8,widths[si]*.56));
-    if(phase.weight>.20){
-      const blend=Math.min(.34,.12+phase.weight*.32);
-      targetOff=targetOff*(1-blend)+phase.target*blend;
-    }
-
-    let x=targetSeg.b[0]+targetSeg.nx*targetOff;
-    let y=targetSeg.b[1]+targetSeg.ny*targetOff;
-
-    // v4.07: no artificial 5-o'clock vertical shortcut. Racers must reach the
-    // actual bend through the painted route before beginning the upward section.
-
-    return {x,y,off:plannedOff};
-  }
-
 
   // v2.14: start / finish / clutch situation logic.
   // No trailing-speed bonus: late-race changes are route/risk/decision changes only.
@@ -4188,102 +3571,6 @@ function packContextOffset(p,si,now){
     p.finalCornerOffset=target;
     p.finalCornerUntil=now+420+attack*240;
     return baseOff*.28+target*.72;
-  }
-
-  function clutchRacePlan(p,si,now){
-    const prog=currentProgress(p);
-    const ratio=Math.max(0,Math.min(1,prog/routeLength));
-    if(ratio<.78) return null;
-
-    const rs=liveRaceSituation(p);
-    const half=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.575);
-    const pressure=(p.stats.pressure-72)/27;
-    const focus=(p.stats.focus-72)/27;
-    const control=(p.stats.control-72)/27;
-    const aggression=(p.stats.aggression-72)/27;
-    const riskControl=(p.stats.riskControl-72)/27;
-    const prediction=(p.stats.prediction-72)/27;
-    const consistency=(p.stats.consistency-72)/27;
-    const inside=cornerInsideSide(si);
-    const future=futureInsideBias(si);
-    const nearby=playerPerceivedObservers(p,12.0);
-
-    if(now<p.clutchDecisionUntil){
-      return {off:p.clutchLineOffset,speedMul:p.clutchSpeedMul};
-    }
-
-    // Detect a real finish fight using nearby progress, not physical contact.
-    let nearestGap=999, nearestBehind=999;
-    for(let i=0;i<players.length;i++){
-      const q=players[i];
-      if(q===p || q.done) continue;
-      const g=currentProgress(q)-prog;
-      if(g>0 && g<nearestGap) nearestGap=g;
-      if(g<0 && -g<nearestBehind) nearestBehind=-g;
-    }
-    const closeFight=Math.min(nearestGap,nearestBehind)<5.3;
-    const veryLate=ratio>.90;
-    const finalSprint=ratio>.955;
-    const leaderProtect=rs.rank===1;
-    const chasing=rs.rank>=2 && nearestGap<7.0;
-
-    let off=0, speedMul=1;
-    const cornerSide=inside!==0?inside:(Math.abs(future)>.12?Math.sign(future):0);
-
-    if(leaderProtect){
-      // v2.62: a leader with breathing room values survival; a pressured leader still races.
-      const safe=(focus*.38+riskControl*.34+consistency*.28);
-      const comfortableLead=nearestBehind>4.8;
-      if(cornerSide!==0 && nearby.length<=1){
-        const commit=Math.min(.92,.56+safe*.20+(comfortableLead?.06:0));
-        off=cornerSide*half*commit;
-      }
-      // Protecting the lead means line choice, never a hidden speed bonus.
-      if(finalSprint && nearby.length===0 && cornerSide!==0){
-        off=cornerSide*half*Math.min(.985,.74+safe*.18);
-      }
-      speedMul=1;
-    } else if(chasing && closeFight){
-      // Chasers may take a more decisive route in the final section.
-      const clutch=(pressure*.34+control*.24+prediction*.22+aggression*.20);
-      const gambleChance=Math.min(.76,.22+clutch*.30+(veryLate?.14:0)+(p.cleanConfidence||0)*.08);
-      if(Math.random()<gambleChance && nearby.length<=2){
-        let side=cornerSide;
-        if(side===0) side=(p.index%2?1:-1);
-        const commit=Math.min(.995,.72+clutch*.18+(veryLate?.05:0));
-        off=side*half*commit;
-      } else if(nearby.length>1){
-        // In danger, high-pressure racers pick the cleaner escape rather than blindly force a pass.
-        const s=segs[Math.min(si,segs.length-1)];
-        let left=0,right=0;
-        for(let i=0;i<nearby.length;i++){
-          const o=nearby[i],dx=o.x-p.x,dy=o.y-p.y;
-          const along=dx*s.ux+dy*s.uy;
-          if(along<0 || along>10) continue;
-          const lat=dx*s.nx+dy*s.ny;
-          if(lat<0) left++; else right++;
-        }
-        off=(left<=right?-1:1)*half*(.48+prediction*.18);
-      }
-      // In the final 4.5%, a close chaser commits harder to the shortest safe apex.
-      if(finalSprint && nearby.length===0){
-        let finishSide=cornerSide||((p.index%2)?1:-1);
-        off=finishSide*half*Math.min(.995,.82+clutch*.15);
-      }
-      speedMul=1;
-    } else if(veryLate && rs.rank>=4){
-      // Deep in the pack near the finish: more risk, but still no raw speed boost.
-      const clutch=(pressure+aggression+control)/3;
-      if(Math.random()<(.10+clutch*.16) && nearby.length===0){
-        let side=cornerSide||((p.index%2)?1:-1);
-        off=side*half*Math.min(.98,.72+clutch*.20);
-      }
-    }
-
-    p.clutchLineOffset=off;
-    p.clutchSpeedMul=speedMul;
-    p.clutchDecisionUntil=now+260+Math.random()*280;
-    return {off,speedMul};
   }
 
   function limitDecisionChanges(p,si,now,targetOff){
@@ -4326,7 +3613,7 @@ function packContextOffset(p,si,now){
     // In relative coordinates this is one segment from
     // (playerPrev-observerPrev) to (playerNow-observerNow) against the origin.
     // This prevents fast crossing contacts from being missed and avoids inflating HIT.
-    const r=PLAYER_HIT_RADIUS;
+    const r=playerHitRadius764(p);
     const opx=Number.isFinite(o.simPrevX)?o.simPrevX:o.x;
     const opy=Number.isFinite(o.simPrevY)?o.simPrevY:o.y;
     const r0x=p.simPrevX-opx, r0y=p.simPrevY-opy;
@@ -4544,332 +3831,6 @@ function packContextOffset(p,si,now){
     const precisionAuthority=avoid ? Math.max(.18,info.fastAuthority*.34) : info.fastAuthority;
     targetOff=targetOff*(1-precisionAuthority)+info.fast*precisionAuthority;
     return clampRoadOffset(idx,targetOff,p);
-  }
-
-
-  // v4.90 RACE AI 5.1 — CONTINUOUS STEERING
-  // Do not hard-code screenshot coordinates. Every route segment uses the same rule:
-  // preserve forward direction, blend into the next tangent gradually, and cap how
-  // sharply the virtual-mouse target can rotate during ordinary racing.
-  
-  // v4.91 RACE AI 5.2 — NO ORTHOGONAL DROP
-  // Generic route-geometry solution: choose the farthest future racing-line point
-  // that can be reached by ONE legal chord. This naturally creates long diagonals
-  // across wide corridors and removes the old "straight, then 90-degree drop" shape.
-  // No screenshot coordinates or hand-drawn line coordinates are encoded here.
-  
-  // v4.92 STRAIGHT-CORRIDOR PRIORITY
-  // If the racer is already travelling mainly horizontally and the same horizontal
-  // chord remains inside the survivable road corridor, keep going straight.
-  // This deliberately ignores an upcoming vertical route joint when that joint is
-  // slower than simply continuing across the legal horizontal road.
-  // No screenshot coordinates / hand-marked line coordinates are used.
-  
-  // v4.93 PERSISTENT MACRO-STRAIGHT
-  // Once a long legal horizontal chord is found, KEEP that target even if the logical
-  // route index temporarily advances into a vertical connector. The hold ends only
-  // when the racer physically reaches the far horizontal road or a true emergency occurs.
-  
-  // v4.94 GLOBAL ROUTE-SHORTCUT GRAPH
-  // The old AI assumed every route[] joint must be visited in sequence. That is wrong
-  // on wide corridors: some centerline joints form a needless dogleg even though a
-  // direct chord across the painted road is shorter and fully legal.
-  //
-  // This planner is generic: no screenshot coordinates and no special segment IDs.
-  // It compares route-arc distance vs direct legal chord and skips intermediate joints
-  // whenever the chord is materially shorter.
-  function routeArcDistance94(fromSeg,toSeg){
-    fromSeg=Math.max(0,Math.min(segs.length-1,fromSeg));
-    toSeg=Math.max(fromSeg,Math.min(segs.length-1,toSeg));
-    let d=0;
-    for(let i=fromSeg;i<=toSeg;i++) d+=segs[i].L;
-    return d;
-  }
-
-  
-  // v4.95 TRUE HORIZONTAL RUN LOCK
-  // Detect a run of several route segments that all travel mostly horizontally in
-  // the same direction. Once entered, preserve the racer's screen-Y and aim directly
-  // across the run. No lateral offset optimizer is allowed to drag the unit vertically.
-  function horizontalRun95(si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s0=segs[idx];
-    if(Math.abs(s0.ux)<.90) return null;
-    const dir=Math.sign(s0.ux)||1;
-    let end=idx,total=0;
-    for(let j=idx;j<segs.length;j++){
-      const s=segs[j];
-      if(Math.abs(s.ux)<.88 || Math.sign(s.ux)!==dir) break;
-      total+=s.L;
-      end=j;
-    }
-    if(end-idx<2 || total<28) return null;
-    return {start:idx,end,dir,total};
-  }
-
-  function horizontalTarget95(p,si,now,emergency=false){
-    if(emergency){
-      p.horizontal95Until=0;
-      return null;
-    }
-
-    // Continue a committed horizontal run even if the logical segment advances.
-    if((p.horizontal95Until||0)>now && Number.isFinite(p.horizontal95Y) && Number.isFinite(p.horizontal95X)){
-      const dx=p.horizontal95X-p.x;
-      if((p.horizontal95Dir||1)*dx>2.2){
-        return {x:p.horizontal95X,y:p.horizontal95Y,end:p.horizontal95End};
-      }
-      p.horizontal95Until=0;
-    }
-
-    const run=horizontalRun95(si);
-    if(!run) return null;
-
-    const endSeg=segs[run.end];
-    // Preserve current vertical position. Clamp only if that exact horizontal chord
-    // would leave the legal road; otherwise do not move vertically at all.
-    let y=p.y;
-    let x=endSeg.b[0]+run.dir*2.0;
-
-    if(!lineStaysOnCourse(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
-      // Fall back toward the current segment centerline in small steps, never to a
-      // preselected edge row.
-      const centerY=segs[si].b[1];
-      let found=false;
-      for(const k of [.18,.34,.50,.66,.82,1]){
-        const cy=p.y+(centerY-p.y)*k;
-        if(lineStaysOnCourse(p.x,p.y,x,cy,ROUTE_PLAN_EXTRA)){
-          y=cy; found=true; break;
-        }
-      }
-      if(!found) return null;
-    }
-
-    p.horizontal95Y=y;
-    p.horizontal95X=x;
-    p.horizontal95Dir=run.dir;
-    p.horizontal95End=run.end;
-    p.horizontal95Until=now+5200;
-    return {x,y,end:run.end};
-  }
-
-function bestRouteShortcut94(p,si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const maxJ=Math.min(segs.length-1,idx+10);
-    let best=null;
-
-    // Search all future route segments, not just the next joint.
-    for(let j=idx+2;j<=maxJ;j++){
-      const s=segs[j];
-      const half=Math.max(2.0,widths[j]*ROAD_MARGIN*.972);
-      // Evaluate several lateral points on the future road. This lets the shortcut
-      // land naturally on the fastest side of a wide corridor.
-      const fracs=[-.92,-.65,-.35,0,.35,.65,.92];
-      for(const f of fracs){
-        const x=s.b[0]+s.nx*f*half;
-        const y=s.b[1]+s.ny*f*half;
-        const direct=Math.hypot(x-p.x,y-p.y);
-        if(direct<8) continue;
-        if(!lineStaysOnCourse(p.x,p.y,x,y,ROUTE_PLAN_EXTRA*.92)) continue;
-
-        // Compare against the actual route arc remaining from the racer's current
-        // position through every intermediate joint.
-        const cur=segs[idx];
-        const rx=p.x-cur.a[0],ry=p.y-cur.a[1];
-        const along=Math.max(0,Math.min(cur.L,rx*cur.ux+ry*cur.uy));
-        let arc=Math.max(0,cur.L-along);
-        for(let k=idx+1;k<=j;k++) arc+=segs[k].L;
-
-        const gain=arc-direct;
-        const ratio=direct/Math.max(1,arc);
-        // Require a real distance saving. Tiny corner cuts stay with normal racing AI.
-        if(gain<5.0 || ratio>.90) continue;
-
-        // Prefer maximum real distance saving, with a small reward for skipping more
-        // unnecessary joints. This directly rejects doglegs.
-        const score=gain+(j-idx)*.45;
-        if(!best || score>best.score){
-          best={x,y,j,f,direct,arc,gain,ratio,score};
-        }
-      }
-    }
-    return best;
-  }
-
-  function routeShortcutTarget94(p,si,now,emergency=false){
-    if(emergency){
-      p.routeShortcut94Until=0;
-      return null;
-    }
-
-    // Persist the selected shortcut until the racer reaches its landing road.
-    if((p.routeShortcut94Until||0)>now && Number.isFinite(p.routeShortcut94X)){
-      const dx=p.routeShortcut94X-p.x,dy=p.routeShortcut94Y-p.y;
-      if(Math.hypot(dx,dy)>3.2){
-        return {x:p.routeShortcut94X,y:p.routeShortcut94Y,j:p.routeShortcut94Seg,held:true};
-      }
-      p.routeShortcut94Until=0;
-    }
-
-    const best=bestRouteShortcut94(p,si);
-    if(!best) return null;
-    p.routeShortcut94X=best.x;
-    p.routeShortcut94Y=best.y;
-    p.routeShortcut94Seg=best.j;
-    p.routeShortcut94Until=now+4600;
-    return {x:best.x,y:best.y,j:best.j,held:true};
-  }
-
-function discoverMacroStraight93(p,si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-
-    // Use route geometry, NOT current steer. This prevents an already-started bad turn
-    // from disabling the correction.
-    if(Math.abs(s.ux)<.78 || Math.abs(s.ux)<Math.abs(s.uy)*1.75) return null;
-    const dir=Math.sign(s.ux)||1;
-
-    // Scan much farther than v4.92. The user's long 3->9 / 11->1 corridors span
-    // many route segments, so a short 72-unit probe was insufficient.
-    const extra=DEATH_EDGE_EXTRA-.18;
-    let best=null;
-    for(let dist=138;dist>=18;dist-=2){
-      const x=p.x+dir*dist, y=p.y;
-      if(x<2.5 || x>MAP_W-2.5) continue;
-      if(lineStaysOnCourse(p.x,p.y,x,y,extra)){
-        best={x,y,dist,dir};
-        break;
-      }
-    }
-    return best && best.dist>=24 ? best : null;
-  }
-
-  function macroStraightTarget93(p,si,now,emergency=false){
-    // A real observer emergency may break the straight hold immediately.
-    if(emergency){
-      p.macroStraight93Until=0;
-      return null;
-    }
-
-    // Continue an already committed straight until physically near its endpoint.
-    if((p.macroStraight93Until||0)>now && Number.isFinite(p.macroStraight93X)){
-      const dx=p.macroStraight93X-p.x,dy=p.macroStraight93Y-p.y;
-      const ahead=(p.macroStraight93Dir||1)*dx;
-      if(Math.hypot(dx,dy)>3.0 && ahead>1.2){
-        return {x:p.macroStraight93X,y:p.macroStraight93Y,held:true};
-      }
-      p.macroStraight93Until=0;
-    }
-
-    const found=discoverMacroStraight93(p,si);
-    if(!found) return null;
-
-    // Persist across logical vertical connector segments. Timeout is only a fail-safe.
-    p.macroStraight93X=found.x;
-    p.macroStraight93Y=found.y;
-    p.macroStraight93Dir=found.dir;
-    p.macroStraight93Until=now+5200;
-    return {x:found.x,y:found.y,held:true};
-  }
-
-function farthestVisibleFastTarget91(p,si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    let best=null;
-    const maxLook=Math.min(segs.length-1,idx+8);
-
-    // Test future segment end points from far to near. Each candidate uses that
-    // segment's own optimized fast offset, so edge/inside-line legality is preserved.
-    for(let j=maxLook;j>=idx+1;j--){
-      const sj=segs[j];
-      const macro=optimalRacingLine2Offset(p,j);
-      const corner=cornerPhysics64Target(p,j,macro).off;
-      const linked=integratedFastLine74(p,j,corner);
-      const off=raceLine79(p,j,linked,false);
-      const x=sj.b[0]+sj.nx*off;
-      const y=sj.b[1]+sj.ny*off;
-      if(lineStaysOnCourse(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
-        best={x,y,j,off};
-        break;
-      }
-    }
-
-    if(best) return best;
-
-    // Fallback: current fast line endpoint.
-    const s=segs[idx];
-    const off=fastReference84(p,idx);
-    return {x:s.b[0]+s.nx*off,y:s.b[1]+s.ny*off,j:idx,off};
-  }
-
-  function noOrthogonalDrop91(p,si,tx,ty,emergency=false){
-    if(emergency){
-      p.horizontal95Until=0;
-      p.routeShortcut94Until=0;
-      p.macroStraight93Until=0;
-      return {x:tx,y:ty};
-    }
-
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-
-    // v4.95: on a true long horizontal run, preserve screen-Y and go straight.
-    const horizontal95=horizontalTarget95(p,idx,performance.now(),false);
-    if(horizontal95) return {x:horizontal95.x,y:horizontal95.y};
-
-    // v4.94: otherwise ask whether the route centerline itself contains a slower dogleg.
-    // If a much shorter legal chord exists, skip those intermediate route joints.
-    const shortcut94=routeShortcutTarget94(p,idx,performance.now(),false);
-    if(shortcut94) return {x:shortcut94.x,y:shortcut94.y};
-
-    // v4.93 fallback: persistent horizontal macro-line.
-    const straight93=macroStraightTarget93(p,idx,performance.now(),false);
-    if(straight93) return {x:straight93.x,y:straight93.y};
-
-    const vis=farthestVisibleFastTarget91(p,idx);
-
-    // Prefer the farthest legal chord over local segment-joint targets.
-    // This is the key difference from v4.90: the AI no longer waits for a joint
-    // and then turns downward/vertical. It aims through the corridor in one line.
-    let x=vis.x, y=vis.y;
-
-    // Never commit a calm-racing click that is close to perpendicular to the current
-    // motion. If necessary, rotate it toward current momentum while retaining a
-    // forward component. Real emergency avoidance bypasses this filter.
-    let hx=p.steerX||segs[idx].ux, hy=p.steerY||segs[idx].uy;
-    let hl=Math.hypot(hx,hy)||1; hx/=hl; hy/=hl;
-    let dx=x-p.x, dy=y-p.y;
-    let d=Math.hypot(dx,dy)||1; dx/=d; dy/=d;
-    let angle=Math.atan2(hx*dy-hy*dx,hx*dx+hy*dy);
-
-    const maxTurn=52*Math.PI/180; // calm-racing click can never be an L-turn
-    if(Math.abs(angle)>maxTurn){
-      angle=Math.sign(angle)*maxTurn;
-      const ca=Math.cos(angle),sa=Math.sin(angle);
-      const ndx=hx*ca-hy*sa, ndy=hx*sa+hy*ca;
-      const look=Math.max(10,Math.min(24,d));
-      x=p.x+ndx*look; y=p.y+ndy*look;
-      const legal=courseAwareTarget(p,idx,x,y);
-      x=legal.x; y=legal.y;
-    }
-
-    return {x,y};
-  }
-
-
-  
-  function forwardRouteResync93(p){
-    const cur=Math.max(0,Math.min(segs.length-1,p.seg));
-    let best=null;
-    // Search well ahead because a macro-straight may bypass several connector segments.
-    const hi=Math.min(segs.length-1,cur+12);
-    for(let i=cur;i<=hi;i++){
-      const s=segs[i],rx=p.x-s.a[0],ry=p.y-s.a[1];
-      const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-      const qx=s.a[0]+s.ux*along,qy=s.a[1]+s.uy*along;
-      const dx=p.x-qx,dy=p.y-qy,d2=dx*dx+dy*dy;
-      const legalR=Math.max(2.0,widths[i]*ROAD_MARGIN)+DEATH_EDGE_EXTRA-.25;
-      if(d2<=legalR*legalR && (!best || d2<best.d2)) best={i,d2};
-    }
-    if(best && best.i>cur+1) p.seg=best.i;
   }
 
 
@@ -5291,707 +4252,6 @@ function farthestVisibleFastTarget91(p,si){
     ctx.restore();
   }
 
-
-  // v5.23 RACING LINE 3.0 PHASE 1 (v5.20~v5.23)
-
-  // v5.20: treat the road as a drivable corridor, not as a single reference line.
-  function corridorBounds520(si){
-    const idx=Math.max(0,Math.min(widths.length-1,si));
-    const half=Math.max(1.6,widths[idx]*ROAD_MARGIN*.94);
-    return {min:-half,max:half,half};
-  }
-
-  function corridorPoint520(si,t,off){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-    const clampedT=Math.max(0,Math.min(1,t));
-    const b=corridorBounds520(idx);
-    const o=Math.max(b.min,Math.min(b.max,off));
-    return {
-      x:s.a[0]+s.dx*clampedT+s.nx*o,
-      y:s.a[1]+s.dy*clampedT+s.ny*o
-    };
-  }
-
-  // v5.21: shortest legal line across the full corridor on straight-ish sections.
-  function shortestStraightTarget521(p,si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-    const next=segs[Math.min(segs.length-1,idx+1)];
-    if(!s) return null;
-
-    const turn=next ? Math.abs(s.ux*next.uy-s.uy*next.ux) : 0;
-    if(turn>.060) return null;
-
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const currentOff=rx*s.nx+ry*s.ny;
-
-    // Preserve the current fast lane instead of forcing a centerline.
-    // Search several forward distances and only gently reduce offset.
-    const targetOff=currentOff*.86;
-    const distances=[9.0,7.5,6.0,4.5];
-    for(const d of distances){
-      const ahead=Math.min(s.L,along+d);
-      const t=s.L>0 ? ahead/s.L : 1;
-      const q=corridorPoint520(idx,t,targetOff);
-      if(roadChordLegal507(p.x,p.y,q.x,q.y,ROUTE_PLAN_EXTRA)){
-        return {...q,kind:"straight-shortest-521"};
-      }
-    }
-    return null;
-  }
-
-  function signedTurn522(si){
-    const idx=Math.max(0,Math.min(segs.length-2,si));
-    const a=segs[idx], b=segs[idx+1];
-    return a.ux*b.uy-a.uy*b.ux;
-  }
-
-  // v5.22: automatic apex point based on actual corner direction and corridor width.
-  function autoApex522(si){
-    const idx=Math.max(0,Math.min(segs.length-2,si));
-    const s=segs[idx], next=segs[idx+1];
-    const turn=signedTurn522(idx);
-    const mag=Math.abs(turn);
-    if(mag<.055) return null;
-
-    const b=corridorBounds520(idx);
-    // Apex is on the inside of the corner but slightly inset from the absolute edge.
-    const insideSign=turn>0 ? 1 : -1;
-    const strength=Math.max(.52,Math.min(.84,.54+mag*.52));
-    const apexOff=insideSign*b.half*strength;
-
-    // Apex slightly before the segment endpoint to avoid point-to-point L turns.
-    const q=corridorPoint520(idx,.86,apexOff);
-    return {
-      x:q.x,y:q.y,
-      off:apexOff,
-      turn,
-      strength,
-      kind:"auto-apex-522"
-    };
-  }
-
-  // v5.23: entry -> apex -> exit as one continuous target, not separate jumps.
-  function continuousCornerTarget523(p,si){
-    const idx=Math.max(0,Math.min(segs.length-2,si));
-    const s=segs[idx], next=segs[idx+1];
-    const apex=autoApex522(idx);
-    if(!apex) return null;
-
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const frac=s.L>0 ? along/s.L : 0;
-
-    const nextBounds=corridorBounds520(idx+1);
-    const exitOff=apex.turn>0
-      ? Math.max(nextBounds.min,Math.min(nextBounds.max,apex.off*.42))
-      : Math.max(nextBounds.min,Math.min(nextBounds.max,apex.off*.42));
-    const exitPoint=corridorPoint520(idx+1,.52,exitOff);
-
-    // Entry point: a mild setup, never a full-road outside swing.
-    const entryOff=apex.off*-.24;
-    const entryPoint=corridorPoint520(idx,Math.max(frac+.10,.58),entryOff);
-
-    let target;
-    if(frac<.62){
-      // Smoothly blend entry setup toward apex.
-      const u=Math.max(0,Math.min(1,(frac-.28)/.34));
-      target={
-        x:entryPoint.x*(1-u)+apex.x*u,
-        y:entryPoint.y*(1-u)+apex.y*u
-      };
-    }else{
-      // Smoothly blend apex into the next-segment exit.
-      const u=Math.max(0,Math.min(1,(frac-.62)/.38));
-      target={
-        x:apex.x*(1-u)+exitPoint.x*u,
-        y:apex.y*(1-u)+exitPoint.y*u
-      };
-    }
-
-    if(roadChordLegal507(p.x,p.y,target.x,target.y,ROUTE_PLAN_EXTRA)){
-      return {...target,kind:"entry-apex-exit-523"};
-    }
-
-    if(roadChordLegal507(p.x,p.y,apex.x,apex.y,ROUTE_PLAN_EXTRA)){
-      return apex;
-    }
-    return null;
-  }
-
-  function racingLine523(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const corner=continuousCornerTarget523(p,si);
-    if(corner) return corner;
-
-    const straight=shortestStraightTarget521(p,si);
-    if(straight) return straight;
-
-    return null;
-  }
-
-
-  // v5.26 RACING LINE 3.0 PHASE 2 (v5.24~v5.26)
-
-  function meaningfulCorner526(si){
-    const idx=Math.max(0,Math.min(segs.length-2,si));
-    const a=segs[idx], b=segs[idx+1];
-    if(!a || !b) return false;
-    return Math.abs(a.ux*b.uy-a.uy*b.ux)>.055;
-  }
-
-  // v5.24: connect two consecutive corners into one plan.
-  function linkedTwoCorner524(p,si){
-    const idx=Math.max(0,Math.min(segs.length-3,si));
-    if(!meaningfulCorner526(idx) || !meaningfulCorner526(idx+1)) return null;
-
-    const a1=autoApex522(idx);
-    const a2=autoApex522(idx+1);
-    if(!a1 || !a2) return null;
-
-    const s=segs[idx];
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const frac=s.L>0 ? along/s.L : 0;
-
-    // Blend first apex toward second apex early enough to avoid a post-corner lane jump.
-    const u=Math.max(0,Math.min(1,(frac-.38)/.62));
-    let x=a1.x*(1-u)+a2.x*u;
-    let y=a1.y*(1-u)+a2.y*u;
-
-    // Keep it local enough for the stabilized steering layer.
-    const dx=x-p.x, dy=y-p.y;
-    const d=Math.hypot(dx,dy);
-    if(d>10.5){
-      const k=10.5/d;
-      x=p.x+dx*k;
-      y=p.y+dy*k;
-    }
-
-    if(roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
-      return {x,y,kind:"linked-2corner-524"};
-    }
-    return null;
-  }
-
-  // v5.25: connect up to three meaningful corners.
-  function linkedThreeCorner525(p,si){
-    const idx=Math.max(0,Math.min(segs.length-4,si));
-    if(!meaningfulCorner526(idx) ||
-       !meaningfulCorner526(idx+1) ||
-       !meaningfulCorner526(idx+2)) return null;
-
-    const a1=autoApex522(idx);
-    const a2=autoApex522(idx+1);
-    const a3=autoApex522(idx+2);
-    if(!a1 || !a2 || !a3) return null;
-
-    const s=segs[idx];
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const frac=s.L>0 ? along/s.L : 0;
-
-    // Quadratic-like progression through three apexes.
-    const t=Math.max(0,Math.min(1,(frac-.28)/.72));
-    const u=1-t;
-    let x=u*u*a1.x + 2*u*t*a2.x + t*t*a3.x;
-    let y=u*u*a1.y + 2*u*t*a2.y + t*t*a3.y;
-
-    const dx=x-p.x, dy=y-p.y;
-    const d=Math.hypot(dx,dy);
-    if(d>10.0){
-      const k=10.0/d;
-      x=p.x+dx*k;
-      y=p.y+dy*k;
-    }
-
-    if(roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)){
-      return {x,y,kind:"linked-3corner-525"};
-    }
-    return null;
-  }
-
-  // v5.26: edge rows stay fully legal and selectable.
-  // They are neither forbidden nor the default; candidate scoring decides.
-  function edgeAwareCandidate526(si,t,baseOff){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const b=corridorBounds520(idx);
-    const candidates=[
-      baseOff,
-      baseOff*.72,
-      0,
-      b.min*.90,
-      b.max*.90
-    ];
-
-    const pts=[];
-    for(const off of candidates){
-      const q=corridorPoint520(idx,t,off);
-      pts.push({x:q.x,y:q.y,off});
-    }
-    return pts;
-  }
-
-  function edgeAwareStraight526(p,si){
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-    const next=segs[Math.min(segs.length-1,idx+1)];
-    if(!s) return null;
-    const turn=next ? Math.abs(s.ux*next.uy-s.uy*next.ux) : 0;
-    if(turn>.060) return null;
-
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const currentOff=rx*s.nx+ry*s.ny;
-    const ahead=Math.min(s.L,along+8.0);
-    const t=s.L>0 ? ahead/s.L : 1;
-
-    let best=null, bestScore=Infinity;
-    for(const q of edgeAwareCandidate526(idx,t,currentOff*.88)){
-      if(!roadChordLegal507(p.x,p.y,q.x,q.y,ROUTE_PLAN_EXTRA)) continue;
-      const d=Math.hypot(q.x-p.x,q.y-p.y);
-      const laneChange=Math.abs(q.off-currentOff);
-      const edgePenalty=(Math.abs(q.off)>corridorBounds520(idx).half*.82) ? .18 : 0;
-      const score=d + laneChange*.38 + edgePenalty;
-      if(score<bestScore){
-        bestScore=score;
-        best={...q,kind:"edge-aware-straight-526"};
-      }
-    }
-    return best;
-  }
-
-  function racingLine526(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const three=linkedThreeCorner525(p,si);
-    if(three) return three;
-
-    const two=linkedTwoCorner524(p,si);
-    if(two) return two;
-
-    const corner=continuousCornerTarget523(p,si);
-    if(corner) return corner;
-
-    const straight=edgeAwareStraight526(p,si);
-    if(straight) return straight;
-
-    return shortestStraightTarget521(p,si);
-  }
-
-
-  // v5.29 RACING LINE 3.0 FINAL (v5.27~v5.29)
-
-  // v5.27: search the fastest legal inside-line candidate around the next corner.
-  function fastInsideLine527(p,si){
-    const idx=Math.max(0,Math.min(segs.length-2,si));
-    const s=segs[idx], next=segs[idx+1];
-    if(!s || !next) return null;
-
-    const turn=signedTurn522(idx);
-    const mag=Math.abs(turn);
-    if(mag<.050) return null;
-
-    const b=corridorBounds520(idx);
-    const insideSign=turn>0 ? 1 : -1;
-    const rx=p.x-s.a[0], ry=p.y-s.a[1];
-    const along=Math.max(0,Math.min(s.L,rx*s.ux+ry*s.uy));
-    const frac=s.L>0 ? along/s.L : 0;
-
-    const offs=[
-      insideSign*b.half*.48,
-      insideSign*b.half*.62,
-      insideSign*b.half*.74,
-      insideSign*b.half*.86
-    ];
-    const ts=[
-      Math.max(frac+.14,.68),
-      Math.max(frac+.20,.76),
-      .84,
-      .90
-    ];
-
-    let best=null, bestScore=Infinity;
-    for(const off of offs){
-      for(const t of ts){
-        const q=corridorPoint520(idx,Math.min(.94,t),off);
-        if(!roadChordLegal507(p.x,p.y,q.x,q.y,ROUTE_PLAN_EXTRA)) continue;
-
-        const d=Math.hypot(q.x-p.x,q.y-p.y);
-        const edge=b.half>0 ? Math.abs(off)/b.half : 0;
-        // Slightly reward a tighter legal inside line, but never enough to justify
-        // a large extra travel distance.
-        const score=d - edge*.22;
-        if(score<bestScore){
-          bestScore=score;
-          best={x:q.x,y:q.y,off,kind:"fast-inside-527"};
-        }
-      }
-    }
-    return best;
-  }
-
-  // v5.28: estimate the actual short-horizon path length of a candidate.
-  function estimatedPathLength528(p,si,candidate){
-    if(!candidate) return Infinity;
-    const idx=Math.max(0,Math.min(segs.length-1,si));
-    const s=segs[idx];
-
-    let total=Math.hypot(candidate.x-p.x,candidate.y-p.y);
-
-    // Add a continuation term so a deceptively short first move does not win if it
-    // leaves the racer badly positioned for the next road section.
-    const nextIdx=Math.min(segs.length-1,idx+1);
-    const next=segs[nextIdx];
-    if(next && nextIdx!==idx){
-      const q2=corridorPoint520(nextIdx,.46,0);
-      total += Math.hypot(q2.x-candidate.x,q2.y-candidate.y)*.72;
-    }
-
-    // Penalize large lateral repositioning relative to current lane.
-    if(s){
-      const currentOff=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-      const candOff=(candidate.x-s.a[0])*s.nx+(candidate.y-s.a[1])*s.ny;
-      total += Math.abs(candOff-currentOff)*.16;
-    }
-
-    return total;
-  }
-
-  function chooseShortest529(p,si,candidates){
-    let best=null, bestScore=Infinity;
-    for(const c of candidates){
-      if(!c) continue;
-      if(!roadChordLegal507(p.x,p.y,c.x,c.y,ROUTE_PLAN_EXTRA)) continue;
-      const score=estimatedPathLength528(p,si,c);
-      if(score<bestScore){
-        bestScore=score;
-        best=c;
-      }
-    }
-    return best;
-  }
-
-  // v5.29: final integrated Racing Line 3.0 authority.
-
-  function insideLine604(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const next=segs[Math.min(segs.length-1,si+1)];
-    if(!s||!next) return null;
-    const turn=s.ux*next.uy-s.uy*next.ux;
-    if(Math.abs(turn)<.035) return null;
-    const half=(widths[Math.max(0,Math.min(widths.length-1,si))]||14)*.62;
-    const off=(turn>0?1:-1)*half*.92;
-    const forward=Math.max(4.0,Math.min(6.5,s.L*.34));
-    const x=p.x+s.ux*forward+s.nx*off;
-    const y=p.y+s.uy*forward+s.ny*off;
-    if(!courseContainsPoint(x,y,0.05)) return null;
-    if(!roadChordLegal507(p.x,p.y,x,y,ROUTE_PLAN_EXTRA)) return null;
-    return {x,y,kind:"inside-line-604"};
-  }
-
-
-  // ============================================================
-  // v6.10 integrated AI core (v6.07 ~ v6.10)
-  // ============================================================
-  function mapAwareGeometry610(si){
-    si=Math.max(0,Math.min(segs.length-1,si|0));
-    const s=segs[si];
-    const prev=segs[Math.max(0,si-1)]||s;
-    const next=segs[Math.min(segs.length-1,si+1)]||s;
-    const turnIn=prev.ux*s.uy-prev.uy*s.ux;
-    const turnOut=s.ux*next.uy-s.uy*next.ux;
-    const straight=Math.abs(turnOut)<0.035;
-    return {s,prev,next,turnIn,turnOut,straight};
-  }
-
-  function legalRoadTarget608(p,t){
-    if(!t || !Number.isFinite(t.x) || !Number.isFinite(t.y)) return null;
-    // Planning targets must remain on the actual S-road.
-    if(!courseContainsPoint(t.x,t.y,0.05)) return null;
-    if(!lineStaysOnCourse(p.x,p.y,t.x,t.y,0.08)) return null;
-    return t;
-  }
-
-  function straightStable609(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const g=mapAwareGeometry610(si);
-    if(!g.straight) return null;
-
-    const s=g.s;
-    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
-    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
-    if(remain<5.5) return null;
-
-    // Project current position to this straight and keep lateral motion small.
-    const lateral=(p.x-s.a[0])*s.nx+(p.y-s.a[1])*s.ny;
-    const desired=lateral*0.22;
-    const look=Math.min(9.0,Math.max(5.0,remain*0.42));
-    const x=p.x+s.ux*look+s.nx*(desired-lateral);
-    const y=p.y+s.uy*look+s.ny*(desired-lateral);
-    return legalRoadTarget608(p,{x,y,kind:"straight-stable-609"});
-  }
-
-  function cornerPhase610(p,si,now){
-    const g=mapAwareGeometry610(si);
-    const s=g.s, next=g.next;
-    if(!next || Math.abs(g.turnOut)<0.035) return {phase:"straight",turn:0,dist:Infinity};
-
-    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
-    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
-    let phase="approach";
-    if(remain<=7.0) phase="entry";
-    if(remain<=3.4) phase="apex";
-    return {phase,turn:g.turnOut,dist:remain};
-  }
-
-  function cornerAware610(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const c=cornerPhase610(p,si,now);
-    if(c.phase==="straight") return null;
-
-    const s=segs[si], next=segs[Math.min(segs.length-1,si+1)];
-    const half=(widths[si]||14)*0.62;
-    const inside=(c.turn>0?1:-1)*half;
-    let forward=5.5, off=inside*0.48;
-    if(c.phase==="entry"){ forward=Math.max(2.8,c.dist); off=inside*0.72; }
-    if(c.phase==="apex"){ forward=Math.max(1.8,c.dist); off=inside*0.90; }
-
-    let x=p.x+s.ux*forward+s.nx*off;
-    let y=p.y+s.uy*forward+s.ny*off;
-
-    // Near apex, blend toward the next straight so the target never jumps outside.
-    if(c.phase==="apex" && next){
-      const nx=s.b[0]+next.ux*3.8+next.nx*inside*0.34;
-      const ny=s.b[1]+next.uy*3.8+next.ny*inside*0.34;
-      x=x*0.38+nx*0.62; y=y*0.38+ny*0.62;
-    }
-    return legalRoadTarget608(p,{x,y,kind:"corner-aware-610-"+c.phase});
-  }
-
-  function integratedAI610(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const corner=cornerAware610(p,si,now);
-    if(corner) return corner;
-    const straight=straightStable609(p,si,now);
-    if(straight) return straight;
-    return null;
-  }
-
-
-  // ============================================================
-  // v6.15 Racing Line 4.0 integrated core (v6.11 ~ v6.15)
-  // 6.11 corner entry discipline
-  // 6.12 inside apex precision
-  // 6.13 corner exit alignment
-  // 6.14 two-corner lookahead
-  // 6.15 Racing Line 4.0 integration
-  // ============================================================
-
-  function cornerEntry611(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const c=cornerPhase610(p,si,now);
-    if(c.phase!=="approach" && c.phase!=="entry") return null;
-
-    const s=segs[si], next=segs[Math.min(segs.length-1,si+1)];
-    if(!s || !next || Math.abs(c.turn)<0.035) return null;
-
-    // Stay disciplined before turn: no unnecessary sweep to the opposite side.
-    const half=(widths[si]||14)*0.60;
-    const inside=(c.turn>0?1:-1)*half;
-    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
-    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
-
-    let off=inside*0.30;
-    if(remain<8.5) off=inside*0.48;
-    if(remain<5.8) off=inside*0.62;
-
-    const forward=Math.max(3.8,Math.min(7.5,remain*0.72));
-    const x=p.x+s.ux*forward+s.nx*off;
-    const y=p.y+s.uy*forward+s.ny*off;
-    return legalRoadTarget608(p,{x,y,kind:"corner-entry-611"});
-  }
-
-  function apex612(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const c=cornerPhase610(p,si,now);
-    if(c.phase!=="entry" && c.phase!=="apex") return null;
-
-    const s=segs[si], next=segs[Math.min(segs.length-1,si+1)];
-    if(!s || !next || Math.abs(c.turn)<0.035) return null;
-
-    const half=(widths[si]||14)*0.61;
-    const inside=(c.turn>0?1:-1)*half;
-
-    // Aim very close to the legal inside edge, but keep a safety buffer.
-    const apexOff=inside*0.95;
-    const bx=s.b[0], by=s.b[1];
-    let x=bx+s.nx*apexOff;
-    let y=by+s.ny*apexOff;
-
-    // Slightly pull toward the next straight to avoid stopping at the apex.
-    x+=next.ux*2.6;
-    y+=next.uy*2.6;
-
-    return legalRoadTarget608(p,{x,y,kind:"inside-apex-612"});
-  }
-
-  function cornerExit613(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const s=segs[si];
-    const next=segs[Math.min(segs.length-1,si+1)];
-    const next2=segs[Math.min(segs.length-1,si+2)];
-    if(!s || !next) return null;
-
-    const turn=s.ux*next.uy-s.uy*next.ux;
-    if(Math.abs(turn)<0.035) return null;
-
-    const distToCorner=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
-    if(distToCorner>5.2) return null;
-
-    const half=(widths[Math.min(widths.length-1,si+1)]||14)*0.60;
-    const inside=(turn>0?1:-1)*half;
-    let x=s.b[0]+next.ux*6.5+next.nx*inside*0.34;
-    let y=s.b[1]+next.uy*6.5+next.ny*inside*0.34;
-
-    // If the next segment is straight, progressively center onto it.
-    if(next2){
-      const t2=next.ux*next2.uy-next.uy*next2.ux;
-      if(Math.abs(t2)<0.035){
-        x=s.b[0]+next.ux*7.4+next.nx*inside*0.18;
-        y=s.b[1]+next.uy*7.4+next.ny*inside*0.18;
-      }
-    }
-    return legalRoadTarget608(p,{x,y,kind:"corner-exit-613"});
-  }
-
-  function futureCornerInfo614(si){
-    const out=[];
-    for(let k=0;k<3;k++){
-      const a=segs[Math.min(segs.length-1,si+k)];
-      const b=segs[Math.min(segs.length-1,si+k+1)];
-      if(!a || !b) continue;
-      const turn=a.ux*b.uy-a.uy*b.ux;
-      if(Math.abs(turn)>=0.035) out.push({index:si+k,turn});
-      if(out.length>=2) break;
-    }
-    return out;
-  }
-
-  function twoCornerLookahead614(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const info=futureCornerInfo614(si);
-    if(info.length<2) return null;
-
-    const first=info[0], second=info[1];
-    const s=segs[first.index];
-    const next=segs[Math.min(segs.length-1,first.index+1)];
-    if(!s || !next) return null;
-
-    const dist=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
-    if(dist>13.0) return null;
-
-    const half=(widths[first.index]||14)*0.58;
-    const sameDir=Math.sign(first.turn)===Math.sign(second.turn);
-
-    // Same-direction corners: stay committed to the inside.
-    // Opposite-direction corners: clip first apex but avoid overcommitting
-    // so the car is already positioned for the second turn.
-    let factor=sameDir?0.86:0.58;
-    const inside=(first.turn>0?1:-1)*half*factor;
-
-    const x=s.b[0]+next.ux*4.6+next.nx*inside;
-    const y=s.b[1]+next.uy*4.6+next.ny*inside;
-    return legalRoadTarget608(p,{x,y,kind:"two-corner-lookahead-614"});
-  }
-
-  function racingLine415(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const look=twoCornerLookahead614(p,si,now);
-    const apex=apex612(p,si,now);
-    const exit=cornerExit613(p,si,now);
-    const entry=cornerEntry611(p,si,now);
-    const base610=integratedAI610(p,si,now);
-
-    // Priority follows race phase: lookahead -> apex -> exit -> entry -> base.
-    return look || apex || exit || entry || base610 || null;
-  }
-
-
-  // ============================================================
-  // v6.19 Driving AI 4.0 (v6.16 ~ v6.19)
-  // movement radius / steering / forward motion / hard road lock
-  // ============================================================
-  function localMotionCap616(p,si,target){
-    if(!target) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-    const dx=target.x-p.x, dy=target.y-p.y;
-    const d=Math.hypot(dx,dy)||1;
-    const maxD=6.0;
-    let x=target.x,y=target.y;
-    if(d>maxD){ x=p.x+dx/d*maxD; y=p.y+dy/d*maxD; }
-    const lat=(x-p.x)*s.nx+(y-p.y)*s.ny;
-    const maxLat=(widths[si]||14)*0.38;
-    if(Math.abs(lat)>maxLat){
-      const over=lat-Math.sign(lat)*maxLat;
-      x-=s.nx*over; y-=s.ny*over;
-    }
-    return {x,y,kind:(target.kind||"target")+"-cap616"};
-  }
-
-  function steeringStable617(p,si,target,now){
-    if(!target) return null;
-    const danger=Math.max(0,Math.min(1,p.liveEvadeDanger||0));
-    if(!p._steer617) p._steer617={x:target.x,y:target.y};
-    const a=0.30+danger*0.48;
-    const x=p._steer617.x+(target.x-p._steer617.x)*a;
-    const y=p._steer617.y+(target.y-p._steer617.y)*a;
-    p._steer617={x,y};
-    return {x,y,kind:(target.kind||"target")+"-smooth617"};
-  }
-
-  function minimumForward618(p,si,target){
-    if(!target) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-    const dx=target.x-p.x, dy=target.y-p.y;
-    const f=dx*s.ux+dy*s.uy;
-    if((p.liveEvadeDanger||0)<0.72 && f<1.8){
-      return {...target,x:target.x+s.ux*(1.8-f),y:target.y+s.uy*(1.8-f),
-        kind:(target.kind||"target")+"-forward618"};
-    }
-    return target;
-  }
-
   function hardRoadClamp619(p,si,target){
     if(!target) return null;
     if(courseContainsPoint(target.x,target.y,0.00) &&
@@ -6010,41 +4270,6 @@ function farthestVisibleFastTarget91(p,si){
     return courseContainsPoint(x,y,0.00)?{x,y,kind:"road-fallback619"}:null;
   }
 
-  function insideShortest619(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const next=segs[Math.min(segs.length-1,si+1)];
-    if(!s||!next) return null;
-    const turn=s.ux*next.uy-s.uy*next.ux;
-    if(Math.abs(turn)<0.035) return null;
-    const half=(widths[si]||14)*0.60;
-    const inside=(turn>0?1:-1)*half*0.94;
-    const dist=Math.hypot(p.x-s.b[0],p.y-s.b[1]);
-    let x,y;
-    if(dist>4.2){
-      const f=Math.max(2.8,Math.min(6.0,dist*.75));
-      x=p.x+s.ux*f+s.nx*inside;
-      y=p.y+s.uy*f+s.ny*inside;
-    } else {
-      x=s.b[0]+next.ux*4.2+next.nx*inside*.34;
-      y=s.b[1]+next.uy*4.2+next.ny*inside*.34;
-    }
-    return hardRoadClamp619(p,si,{x,y,kind:"inside-shortest619"});
-  }
-
-  function drivingAI419(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    let t=insideShortest619(p,si,now) || racingLine415(p,si,now) || integratedAI610(p,si,now);
-    if(!t) return null;
-    t=localMotionCap616(p,si,t);
-    t=steeringStable617(p,si,t,now);
-    t=minimumForward618(p,si,t);
-    return hardRoadClamp619(p,si,t);
-  }
-
   function enforceRoadPosition619(p){
     if(courseContainsPoint(p.x,p.y,0.00)){
       p._lastLegal619={x:p.x,y:p.y};
@@ -6060,228 +4285,6 @@ function farthestVisibleFastTarget91(p,si){
     }
     const s=segs[Math.max(0,Math.min(segs.length-1,p.seg||0))];
     p.x=s.a[0]; p.y=s.a[1]; p._lastLegal619={x:p.x,y:p.y};
-  }
-
-
-  // ============================================================
-  // v6.20 strict shortest-inside + corrected S-road geometry
-  // ============================================================
-  function strictInside620(p,si,now){
-    if(p.controlMode!=="normal") return null;
-    if(now<(p.hardRouteLockUntil||0)) return null;
-    if(now<(p.routeBreakCombatUntil||0)) return null;
-    if((p.liveEvadeDanger||0)>.18 || p.liveEvadeThreat) return null;
-
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const next=segs[Math.min(segs.length-1,si+1)];
-    if(!s||!next) return null;
-
-    const turn=s.ux*next.uy-s.uy*next.ux;
-    const along=((p.x-s.a[0])*s.dx+(p.y-s.a[1])*s.dy)/(s.L*s.L);
-    const remain=Math.max(0,s.L*(1-Math.max(0,Math.min(1,along))));
-
-    // Straight: hold the shortest forward chord, no wandering to the far side.
-    if(Math.abs(turn)<0.035){
-      const f=Math.max(3.2,Math.min(6.0,remain));
-      return hardRoadClamp619(p,si,{
-        x:p.x+s.ux*f,
-        y:p.y+s.uy*f,
-        kind:"strict-straight620"
-      });
-    }
-
-    // Corner: hug the legal inside edge with a small safety buffer.
-    const legalHalf=Math.max(2.0,(widths[si]||14)*ROAD_MARGIN);
-    const insideSign=turn>0?1:-1;
-    const inside=insideSign*legalHalf*0.84;
-
-    let x,y;
-    if(remain>5.0){
-      const f=Math.max(3.0,Math.min(5.5,remain*.72));
-      x=p.x+s.ux*f+s.nx*inside;
-      y=p.y+s.uy*f+s.ny*inside;
-    }else{
-      // Cut across the inside of the 90-degree bend and immediately align with exit.
-      x=s.b[0]+s.nx*inside*.88+next.ux*4.4+next.nx*inside*.18;
-      y=s.b[1]+s.ny*inside*.88+next.uy*4.4+next.ny*inside*.18;
-    }
-    return hardRoadClamp619(p,si,{x,y,kind:"strict-inside620"});
-  }
-
-  
-  // v7.24 removed dead legacy AI: drivingAI420
-
-
-
-  // ============================================================
-  // v6.25 Observer Avoidance 3.0 phase 1 (v6.21 ~ v6.25)
-  // ============================================================
-  function observerThreat621(p,o){
-    const rx=o.x-p.x, ry=o.y-p.y;
-    const pvx=(p.x-(p.simPrevX??p.prevX??p.x))*60;
-    const pvy=(p.y-(p.simPrevY??p.prevY??p.y))*60;
-    const ovx=Number.isFinite(o.vx)?o.vx:0;
-    const ovy=Number.isFinite(o.vy)?o.vy:0;
-    const vx=ovx-pvx, vy=ovy-pvy;
-    const vv=vx*vx+vy*vy;
-    let t=vv>1e-6?-(rx*vx+ry*vy)/vv:999;
-    t=Math.max(0,Math.min(2.2,t));
-    const fx=rx+vx*t, fy=ry+vy*t;
-    const miss=Math.hypot(fx,fy);
-    return {o,t,miss,dist:Math.hypot(rx,ry),rx,ry};
-  }
-
-  function collisionTTC622(p){
-    let best=null;
-    for(const o of observers){
-      const q=observerThreat621(p,o);
-      if(q.t>1.65 || q.miss>3.2) continue;
-      if(!best || q.t<best.t || (Math.abs(q.t-best.t)<.08 && q.miss<best.miss)) best=q;
-    }
-    return best;
-  }
-
-  function minimumDodge623(p,si,threat,side){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s||!threat) return null;
-    const urgency=Math.max(0,Math.min(1,(1.35-threat.t)/1.35));
-    const missNeed=Math.max(0,2.35-threat.miss);
-    const lateral=Math.min((widths[si]||14)*0.42, 1.05+missNeed*.82+urgency*1.45);
-    const forward=3.2+Math.max(0,1-urgency)*1.8;
-    return {
-      x:p.x+s.ux*forward+s.nx*lateral*side,
-      y:p.y+s.uy*forward+s.ny*lateral*side,
-      kind:"minimum-dodge623"
-    };
-  }
-
-  function dodgeScore624(p,si,t,threat){
-    if(!t) return Infinity;
-    if(!courseContainsPoint(t.x,t.y,0.00)) return Infinity;
-    if(!lineStaysOnCourse(p.x,p.y,t.x,t.y,0.00)) return Infinity;
-    const d=Math.hypot(t.x-p.x,t.y-p.y);
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const forward=(t.x-p.x)*s.ux+(t.y-p.y)*s.uy;
-    let nearest=999;
-    for(const o of observers){
-      nearest=Math.min(nearest,Math.hypot(t.x-o.x,t.y-o.y));
-    }
-    return d*0.50 - forward*0.24 + Math.max(0,4.0-nearest)*2.8;
-  }
-
-  function roadSafeAvoidance625(p,si,now){
-    const threat=collisionTTC622(p);
-    if(!threat) return null;
-
-    let left=minimumDodge623(p,si,threat,-1);
-    let right=minimumDodge623(p,si,threat,1);
-    left=hardRoadClamp619(p,si,left);
-    right=hardRoadClamp619(p,si,right);
-
-    const sl=dodgeScore624(p,si,left,threat);
-    const sr=dodgeScore624(p,si,right,threat);
-    let best=sl<=sr?left:right;
-    if(!best || !Number.isFinite(Math.min(sl,sr))) return null;
-
-    best=localMotionCap616(p,si,best);
-    best=minimumForward618(p,si,best);
-    best=hardRoadClamp619(p,si,best);
-    if(best){
-      best.kind="avoidance3-phase1-625";
-      p.avoidance3Until625=now+260;
-    }
-    return best;
-  }
-
-
-
-  // ============================================================
-  // v6.30 Observer Avoidance 3.0 FINAL (v6.26 ~ v6.30)
-  // 6.26 multi-observer danger map
-  // 6.27 safe-gap search
-  // 6.28 secondary-collision prediction
-  // 6.29 forward-progress preservation
-  // 6.30 full Avoidance 3.0 integration
-  // ============================================================
-
-  function multiObserverRisk626(p,x,y,horizon=0.72){
-    let risk=0, nearest=999, count=0;
-    for(const o of observers){
-      const ox=o.x, oy=o.y;
-      const ovx=Number.isFinite(o.vx)?o.vx:0;
-      const ovy=Number.isFinite(o.vy)?o.vy:0;
-      const px=ox+ovx*horizon;
-      const py=oy+ovy*horizon;
-      const d=Math.hypot(x-px,y-py);
-      nearest=Math.min(nearest,d);
-      if(d<8.0){
-        count++;
-        const w=Math.max(0,(8.0-d)/8.0);
-        risk+=w*w*4.0;
-      }
-    }
-    return {risk,nearest,count};
-  }
-
-  function safeGap627(p,si,threat){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return null;
-    const half=Math.max(2.2,(widths[si]||14)*0.54);
-    let best=null, bestScore=Infinity;
-
-    // Sample legal lateral gaps from strong inside to outside, but penalize detours.
-    for(let j=-8;j<=8;j++){
-      const off=half*(j/8);
-      const forward=4.0;
-      const x=p.x+s.ux*forward+s.nx*off;
-      const y=p.y+s.uy*forward+s.ny*off;
-      if(!courseContainsPoint(x,y,0.00)) continue;
-      if(!lineStaysOnCourse(p.x,p.y,x,y,0.00)) continue;
-
-      const r=multiObserverRisk626(p,x,y,0.62);
-      const travel=Math.hypot(x-p.x,y-p.y);
-      const lateral=Math.abs(off);
-      // Prefer low risk, small lateral movement, and forward progress.
-      const score=r.risk*5.0 + lateral*.34 + travel*.08 - forward*.16;
-      if(score<bestScore){
-        bestScore=score;
-        best={x,y,kind:"safe-gap627",risk:r.risk,nearest:r.nearest};
-      }
-    }
-    return best;
-  }
-
-  function secondaryCollision628(p,si,target){
-    if(!target) return null;
-    const steps=5;
-    let worst=0;
-    for(let k=1;k<=steps;k++){
-      const t=k/steps;
-      const x=p.x+(target.x-p.x)*t;
-      const y=p.y+(target.y-p.y)*t;
-      const r=multiObserverRisk626(p,x,y,t*.72);
-      worst=Math.max(worst,r.risk);
-      if(r.nearest<1.55) return null;
-    }
-    return {...target,secondaryRisk628:worst};
-  }
-
-  function preserveForward629(p,si,target){
-    if(!target) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-    const dx=target.x-p.x, dy=target.y-p.y;
-    const forward=dx*s.ux+dy*s.uy;
-    if(forward>=2.4) return target;
-
-    const need=2.4-forward;
-    const t={
-      ...target,
-      x:target.x+s.ux*need,
-      y:target.y+s.uy*need,
-      kind:(target.kind||"avoid")+"-forward629"
-    };
-    return hardRoadClamp619(p,si,t);
   }
 
   
@@ -6304,129 +4307,6 @@ function farthestVisibleFastTarget91(p,si){
     p.routeBand=0;
     p.routeIdentityBias=0;
     p.laneSignatureWave=0;
-  }
-
-
-  // ============================================================
-  // v6.35 Survival Racing AI 4.0 (v6.31 ~ v6.35)
-  // 6.31 immediate inside-line rejoin
-  // 6.32 suppress over-avoidance
-  // 6.33 stabilize consecutive avoidance
-  // 6.34 survival/racing authority integration
-  // 6.35 final Survival Racing AI 4.0
-  // ============================================================
-
-  function rejoinInside631(p,si,now){
-    if(now<(p.avoidance330ActiveUntil||0)) return null;
-    const last=p.avoidance3Until625||0;
-    if(!last || now-last>1250) return null;
-    const t=strictInside620(p,si,now);
-    if(!t) return null;
-    return {...t,kind:"rejoin-inside631"};
-  }
-
-  function suppressOverAvoidance632(p,si,now,target){
-    if(!target) return null;
-    const threat=collisionTTC622(p);
-    if(threat) return target;
-
-    // No current threat: do not continue drifting away from racing line.
-    if(now>=(p.avoidance330ActiveUntil||0)){
-      const rejoin=rejoinInside631(p,si,now);
-      if(rejoin) return rejoin;
-      return null;
-    }
-    return target;
-  }
-
-  function stabilizeAvoidance633(p,si,now,target){
-    if(!target) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-
-    const lat=(target.x-p.x)*s.nx+(target.y-p.y)*s.ny;
-    const side=Math.sign(lat)||0;
-    if(!p._avoid633) p._avoid633={side:0,until:0};
-
-    // Prevent left-right-left oscillation unless the new side is materially safer.
-    if(now<p._avoid633.until && p._avoid633.side && side && side!==p._avoid633.side){
-      const hold=minimumDodge623(p,si,collisionTTC622(p),p._avoid633.side);
-      const h=hardRoadClamp619(p,si,hold);
-      if(h) return {...h,kind:"avoid-side-hold633"};
-    }
-    if(side){
-      p._avoid633.side=side;
-      p._avoid633.until=now+240;
-    }
-    return target;
-  }
-
-  
-  // v7.24 removed dead legacy AI: survivalRacing634
-
-
-  
-  // v7.24 removed dead legacy AI: survivalRacingAI435
-
-
-  // 9 o'clock -> 11 o'clock upward section protection.
-  // This is the first vertical climb after the middle westbound straight.
-  function westToUpperClimbGuard635(p,si,target){
-    if(!target) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-
-    // Route segment around x=44, y~74 -> y~23.5
-    const onProtectedClimb =
-      Math.abs(s.a[0]-44)<2.5 && Math.abs(s.b[0]-44)<2.5 &&
-      Math.min(s.a[1],s.b[1])<76 && Math.max(s.a[1],s.b[1])>28;
-
-    if(!onProtectedClimb) return target;
-
-    // Keep target inside a conservative visible-road corridor.
-    // Do not allow deep inside cutting toward scenery/non-road.
-    const centerX=44.0;
-    const maxInside=4.6;
-    const minX=centerX-maxInside;
-    const maxX=centerX+maxInside;
-
-    let x=Math.max(minX,Math.min(maxX,target.x));
-    let y=target.y;
-
-    let guarded={...target,x,y,kind:(target.kind||"target")+"-9to11guard635"};
-
-    // If the adjusted chord still leaves road, fall back to a short centerline climb.
-    guarded=hardRoadClamp619(p,si,guarded);
-    if(guarded) return guarded;
-
-    const forward=3.6;
-    const fallback={
-      x:centerX,
-      y:p.y+s.uy*forward,
-      kind:"9to11-center-fallback635"
-    };
-    return hardRoadClamp619(p,si,fallback);
-  }
-
-
-  function enforceProtectedClimb635(p){
-    const si=Math.max(0,Math.min(segs.length-1,p.seg||0));
-    const s=segs[si];
-    if(!s) return;
-    const onProtectedClimb =
-      Math.abs(s.a[0]-44)<2.5 && Math.abs(s.b[0]-44)<2.5 &&
-      Math.min(s.a[1],s.b[1])<76 && Math.max(s.a[1],s.b[1])>28;
-    if(!onProtectedClimb) return;
-
-    const minX=39.4, maxX=48.6;
-    if(p.x<minX) p.x=minX;
-    if(p.x>maxX) p.x=maxX;
-
-    // Keep only if still legal; otherwise fall back to last legal road point.
-    if(!courseContainsPoint(p.x,p.y,0.00) && p._lastLegal619){
-      p.x=p._lastLegal619.x;
-      p.y=p._lastLegal619.y;
-    }
   }
 
 
@@ -6496,422 +4376,6 @@ function farthestVisibleFastTarget91(p,si){
     p._lastLegal636={x:p.x,y:p.y};
     p._lastLegal619={x:p.x,y:p.y};
     return true;
-  }
-
-
-  // ============================================================
-  // v6.44 Racecraft 3.0 (v6.37 ~ v6.44)
-  // ============================================================
-  function frontRacer637(p,si){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return null;
-    let best=null;
-    const pp=currentProgress(p);
-    for(const q of players){
-      if(q===p||q.dead||q.done) continue;
-      const dx=q.x-p.x, dy=q.y-p.y;
-      const f=dx*s.ux+dy*s.uy;
-      const l=Math.abs(dx*s.nx+dy*s.ny);
-      if(f<=0.15||f>16||l>6) continue;
-      if(currentProgress(q)+0.10<pp) continue;
-      const cand={q,forward:f,lateral:l};
-      if(!best||f<best.forward) best=cand;
-    }
-    return best;
-  }
-
-  function trafficSideScore638(p,si,side,front){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return Infinity;
-    const half=Math.max(2.4,(widths[si]||14)*0.48);
-    const off=half*0.72*side;
-    const forward=Math.max(4.8,Math.min(9.0,(front?.forward||6.5)+2.6));
-    const t=finalRoadTarget636(p,si,{
-      x:p.x+s.ux*forward+s.nx*off,
-      y:p.y+s.uy*forward+s.ny*off,
-      kind:"overtake-space638"
-    });
-    if(!t) return Infinity;
-
-    let score=0;
-    for(const q of players){
-      if(q===p||q.dead||q.done) continue;
-      const d=Math.hypot(t.x-q.x,t.y-q.y);
-      if(d<2.4) score+=12;
-      else if(d<4.2) score+=4.5;
-    }
-    score+=multiObserverRisk626(p,t.x,t.y,0.55).risk*3.5;
-    score+=Math.abs(off)*0.30;
-    return score;
-  }
-
-  function overtakeSpace638(p,si,front){
-    if(!front) return null;
-    const l=trafficSideScore638(p,si,-1,front);
-    const r=trafficSideScore638(p,si,1,front);
-    if(!Number.isFinite(l)&&!Number.isFinite(r)) return null;
-    return l<=r?{side:-1,score:l}:{side:1,score:r};
-  }
-
-  function overtakeCost639(p,si,front,space){
-    if(!front||!space) return {worth:false,cost:Infinity,gain:0};
-    const my=p._frameSpeed||p.speed||0;
-    const his=front.q._frameSpeed||front.q.speed||0;
-    const closing=Math.max(0,my-his);
-    const gain=closing*1.9+Math.max(0,5.5-front.forward)*0.22;
-    const half=Math.max(2.4,(widths[si]||14)*0.48);
-    const extra=Math.abs(half*0.72)*0.78+0.55;
-    const cost=extra*0.42+space.score*0.18;
-    return {worth:gain>cost*0.92,cost,gain};
-  }
-
-  function insideOvertakeSide640(p,si,space){
-    if(!space) return null;
-    const a=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const b=segs[Math.max(0,Math.min(segs.length-1,si+1))];
-    if(!a||!b) return space.side;
-    const turn=a.ux*b.uy-a.uy*b.ux;
-    if(Math.abs(turn)<0.15) return space.side;
-    const inside=turn>0?1:-1;
-    const front=frontRacer637(p,si);
-    const siScore=trafficSideScore638(p,si,inside,front);
-    const soScore=trafficSideScore638(p,si,-inside,front);
-    return Number.isFinite(siScore)&&siScore<=soScore+2.4?inside:space.side;
-  }
-
-  function shouldAbortOvertake641(p,si,front,space,cost){
-    if(!front||!space||!cost||!cost.worth) return true;
-    if(front.forward<1.7) return true;
-    if(space.score>11.0) return true;
-    return false;
-  }
-
-  function overtakeTarget642(p,si,front,side){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s||!front||!side) return null;
-    const half=Math.max(2.4,(widths[si]||14)*0.48);
-    const off=half*0.66*side;
-    const forward=Math.max(5.5,Math.min(9.5,front.forward+3.0));
-    return finalRoadTarget636(p,si,{
-      x:p.x+s.ux*forward+s.nx*off,
-      y:p.y+s.uy*forward+s.ny*off,
-      kind:"overtake642"
-    });
-  }
-
-  function rejoinAfterPass642(p,si,now){
-    const until=p._overtake642Until||0;
-    if(!until||now<until||now-until>1200) return null;
-    const front=frontRacer637(p,si);
-    if(front&&front.forward<3.0) return null;
-    const t=strictInside620(p,si,now);
-    return t?{...t,kind:"overtake-rejoin642"}:null;
-  }
-
-  function multiRacerTraffic643(p,si,now){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return null;
-    const near=[];
-    for(const q of players){
-      if(q===p||q.dead||q.done) continue;
-      const dx=q.x-p.x,dy=q.y-p.y;
-      const f=dx*s.ux+dy*s.uy,l=dx*s.nx+dy*s.ny;
-      if(f>-1.5&&f<13.5&&Math.abs(l)<7.5) near.push({q,f,l});
-    }
-    if(near.length<2) return null;
-
-    const half=Math.max(2.4,(widths[si]||14)*0.48);
-    let best=null,bestScore=Infinity;
-    for(const k of [-0.78,-0.50,-0.24,0,0.24,0.50,0.78]){
-      const off=half*k,forward=6.2;
-      const t=finalRoadTarget636(p,si,{
-        x:p.x+s.ux*forward+s.nx*off,
-        y:p.y+s.uy*forward+s.ny*off,
-        kind:"multi-traffic643"
-      });
-      if(!t) continue;
-      let score=Math.abs(off)*0.24;
-      for(const n of near){
-        const d=Math.hypot(t.x-n.q.x,t.y-n.q.y);
-        if(d<2.2) score+=20;
-        else if(d<3.8) score+=7;
-        else if(d<5) score+=2;
-      }
-      score+=multiObserverRisk626(p,t.x,t.y,0.52).risk*3.2;
-      const inside=strictInside620(p,si,now);
-      if(inside) score+=Math.hypot(t.x-inside.x,t.y-inside.y)*0.07;
-      if(score<bestScore){bestScore=score;best=t;}
-    }
-    return bestScore<14?best:null;
-  }
-
-  function racecraft344(p,si,now){
-    if(collisionTTC622(p)) return null;
-
-    const rejoin=rejoinAfterPass642(p,si,now);
-    if(rejoin) return rejoin;
-
-    const multi=multiRacerTraffic643(p,si,now);
-    if(multi) return multi;
-
-    const front=frontRacer637(p,si);
-    if(!front) return null;
-    const space=overtakeSpace638(p,si,front);
-    if(!space) return null;
-    const cost=overtakeCost639(p,si,front,space);
-    if(shouldAbortOvertake641(p,si,front,space,cost)) return null;
-
-    const abilityPass655=overtakeSkill655(p,si,front,space,cost);
-    if(!abilityPass655.allow) return null;
-
-    const side=insideOvertakeSide640(p,si,space);
-    const target=overtakeTarget642(p,si,front,side);
-    if(!target) return null;
-
-    p._overtake642Until=now+420;
-    p._overtake642TargetId=front.q.index;
-    return {...target,kind:"racecraft3-644"};
-  }
-
-
-  // ============================================================
-  // v6.56 Driver Ability 3.0 (v6.45 ~ v6.56)
-  // ============================================================
-
-  function driverAbilityBase645(p){
-    // v6.91 Real Player Stats Integration:
-    // execution quality comes from the racer's actual stats, never slot/index seeds.
-    if(!p._ability645){
-      const st=p.stats||{};
-      const n=(k,f=60)=>Math.max(.05,Math.min(.98,(Number(st[k])||f)/100));
-      const avg=(...v)=>v.reduce((a,b)=>a+b,0)/v.length;
-      p._ability645={
-        line:avg(n("insideLine"),n("routeReading"),n("control")),
-        reaction:avg(n("reaction"),n("prediction"),n("focus")),
-        judgment:avg(n("routeReading"),n("prediction"),n("riskControl")),
-        stability:avg(n("stability"),n("control"),n("consistency")),
-        aggression:n("aggression"),
-        risk:1-n("riskControl"),
-        composure:avg(n("pressure"),n("focus"),n("consistency")),
-        corner:avg(n("cornering"),n("braking"),n("insideLine")),
-        straight:avg(n("pace"),n("acceleration"),n("control")),
-        avoidance:avg(n("avoidance"),n("reaction"),n("prediction")),
-        overtake:avg(n("aggression"),n("prediction"),n("routeReading"),n("control"))
-      };
-    }
-    return p._ability645;
-  }
-
-  function lineAccuracy645(p,si,target){
-    if(!target) return null;
-    const a=driverAbilityBase645(p);
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-
-    // Lower skill creates only tiny local execution error inside the same legal corridor.
-    const maxErr=(1-a.line)*0.70;
-    const phase=((p.index||0)*1.37+(p.lastProgress||0)*0.19);
-    const err=Math.sin(phase)*maxErr;
-    let t={...target,x:target.x+s.nx*err,y:target.y+s.ny*err,kind:(target.kind||"target")+"-line645"};
-    return finalRoadTarget636(p,si,t);
-  }
-
-  function reactionDelay646(p,now,kind){
-    const a=driverAbilityBase645(p);
-    if(!p._reaction646) p._reaction646={};
-    const key=kind||"general";
-    const minDelay=35, maxDelay=175;
-    const delay=minDelay+(1-a.reaction)*(maxDelay-minDelay);
-    const last=p._reaction646[key]||0;
-    if(now-last<delay) return false;
-    p._reaction646[key]=now;
-    return true;
-  }
-
-  function judgmentQuality647(p,choices){
-    const a=driverAbilityBase645(p);
-    if(!choices||!choices.length) return null;
-    const ranked=choices.filter(Boolean).sort((x,y)=>(x.score??Infinity)-(y.score??Infinity));
-    if(!ranked.length) return null;
-    if(ranked.length===1) return ranked[0];
-
-    // Weak drivers may choose the second-best legal option, never an illegal macro route.
-    const wobble=(1-a.judgment)*0.34;
-    const r=Math.abs(Math.sin((p.index||0)*2.17+(p.lastProgress||0)*0.11));
-    return r<wobble?ranked[Math.min(1,ranked.length-1)]:ranked[0];
-  }
-
-  function stability648(p,si,target,now){
-    if(!target) return null;
-    const a=driverAbilityBase645(p);
-    if(!p._stab648) p._stab648={x:target.x,y:target.y,t:now};
-
-    const blend=.58+a.stability*.34;
-    const x=p._stab648.x+(target.x-p._stab648.x)*blend;
-    const y=p._stab648.y+(target.y-p._stab648.y)*blend;
-    p._stab648={x,y,t:now};
-
-    return finalRoadTarget636(p,si,{...target,x,y,kind:(target.kind||"target")+"-stable648"});
-  }
-
-  function aggression649(p){
-    return driverAbilityBase645(p).aggression;
-  }
-
-  function riskTolerance650(p){
-    return driverAbilityBase645(p).risk;
-  }
-
-  function composure651(p){
-    return driverAbilityBase645(p).composure;
-  }
-
-  function cornerSkill652(p,si,target){
-    if(!target) return null;
-    const a=driverAbilityBase645(p);
-    const s0=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const s1=segs[Math.max(0,Math.min(segs.length-1,si+1))];
-    if(!s0||!s1) return target;
-    const turn=s0.ux*s1.uy-s0.uy*s1.ux;
-    if(Math.abs(turn)<0.12) return target;
-
-    // Better corner drivers commit more precisely to the legal inside target.
-    const ideal=strictInside620(p,si,gameNow());
-    if(!ideal) return target;
-    const w=.30+a.corner*.55;
-    return finalRoadTarget636(p,si,{
-      ...target,
-      x:target.x*(1-w)+ideal.x*w,
-      y:target.y*(1-w)+ideal.y*w,
-      kind:(target.kind||"target")+"-corner652"
-    });
-  }
-
-  function straightSkill653(p,si,target){
-    if(!target) return null;
-    const a=driverAbilityBase645(p);
-    const s0=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const s1=segs[Math.max(0,Math.min(segs.length-1,si+1))];
-    if(!s0) return target;
-    const turn=s1?(s0.ux*s1.uy-s0.uy*s1.ux):0;
-    if(Math.abs(turn)>=0.12) return target;
-
-    // Strong straight driver reduces pointless lateral motion.
-    const rx=target.x-p.x, ry=target.y-p.y;
-    const f=rx*s0.ux+ry*s0.uy;
-    const l=rx*s0.nx+ry*s0.ny;
-    const l2=l*(1-(a.straight*.72));
-    return finalRoadTarget636(p,si,{
-      ...target,
-      x:p.x+s0.ux*f+s0.nx*l2,
-      y:p.y+s0.uy*f+s0.ny*l2,
-      kind:(target.kind||"target")+"-straight653"
-    });
-  }
-
-  function avoidanceSkill654(p,si,now,target){
-    if(!target) return null;
-    const a=driverAbilityBase645(p);
-
-    // High avoidance skill = closer to minimum required dodge and faster rejoin.
-    const min=minimumForward618(p,si,target);
-    if(!min) return target;
-    const w=.42+a.avoidance*.50;
-    return finalRoadTarget636(p,si,{
-      ...target,
-      x:target.x*(1-w)+min.x*w,
-      y:target.y*(1-w)+min.y*w,
-      kind:(target.kind||"target")+"-avoid654"
-    });
-  }
-
-  function overtakeSkill655(p,si,front,space,costInfo){
-    const a=driverAbilityBase645(p);
-    if(!front||!space||!costInfo) return {allow:false};
-
-    const pd=personalityDecision658(p,"overtake");
-    const aggression=Math.max(0,Math.min(1,(aggression649(p)*.55)+(pd.aggression*.45)));
-    const risk=Math.max(0,Math.min(1,(riskTolerance650(p)*.55)+(pd.risk*.45)));
-    const quality=a.overtake;
-
-    // Better/aggressive drivers accept smaller positive margins; weak/stable drivers wait.
-    // Personality changes commitment only; target geometry is still handled by shortest-line guards.
-    const threshold=1.20-(quality*.22)-(aggression*.10)-(risk*.06)+(pd.patience*.035);
-    const allow=costInfo.gain>costInfo.cost*threshold && space.score<(9.2+risk*3.1);
-    return {allow,threshold};
-  }
-
-  function driverAbility356(p,si,now,target,mode){
-    if(!target) return null;
-    let t=target;
-
-    if(mode==="avoid"){
-      if(reactionDelay646(p,now,"avoid")) t=avoidanceSkill654(p,si,now,t);
-    }else{
-      t=cornerSkill652(p,si,t);
-      t=straightSkill653(p,si,t);
-    }
-
-    t=lineAccuracy645(p,si,t);
-    t=stability648(p,si,t,now);
-    return finalRoadTarget636(p,si,t);
-  }
-
-
-  // ============================================================
-  // v6.69 Race AI 7.0 FINAL (v6.57 ~ v6.69)
-  // ============================================================
-
-  function driverPersonality357(p){
-    if(!p._personality657){
-      const profiles=[
-        {name:"balanced", aggression:0.56, risk:0.48, patience:0.62, commitment:0.62},
-        {name:"attacker", aggression:0.80, risk:0.66, patience:0.40, commitment:0.78},
-        {name:"stable", aggression:0.40, risk:0.34, patience:0.80, commitment:0.54},
-        {name:"opportunist", aggression:0.68, risk:0.52, patience:0.58, commitment:0.70},
-        {name:"balanced", aggression:0.58, risk:0.46, patience:0.66, commitment:0.64},
-        {name:"attacker", aggression:0.76, risk:0.62, patience:0.44, commitment:0.75},
-        {name:"stable", aggression:0.38, risk:0.31, patience:0.84, commitment:0.52},
-        {name:"opportunist", aggression:0.64, risk:0.49, patience:0.61, commitment:0.68}
-      ];
-      p._personality657={...profiles[(p.index||0)%profiles.length]};
-    }
-    return p._personality657;
-  }
-
-  function personalityDecision658(p,kind){
-    const ps=driverPersonality357(p);
-    // Personality affects decision timing/commitment only. It never creates a route offset.
-    if(kind==="overtake") return {aggression:ps.aggression,risk:ps.risk,patience:ps.patience,commitment:ps.commitment};
-    if(kind==="avoid") return {risk:Math.min(.72,ps.risk),commitment:Math.max(.56,ps.commitment)};
-    return {commitment:ps.commitment,patience:ps.patience};
-  }
-
-  function preventSlowMacroRoute659(p,si,now,target,threat){
-    if(!target) return null;
-    let t=finalRoadTarget636(p,si,target);
-    if(!t) return null;
-    if(threat) return t; // survival is allowed to spend distance when required.
-
-    const ideal=strictInside620(p,si,now);
-    if(!ideal) return t;
-    const idealSafe=finalRoadTarget636(p,si,ideal);
-    if(!idealSafe) return t;
-
-    const lt=estimatedPathLength528(p,si,t);
-    const li=estimatedPathLength528(p,si,idealSafe);
-    // Personality/ability cannot knowingly choose a materially slower macro line.
-    if(Number.isFinite(lt)&&Number.isFinite(li)&&lt>li+0.82){
-      return {...idealSafe,kind:"macro-shortest659"};
-    }
-    return t;
-  }
-
-  function executionDifference660(p,si,now,target,threat){
-    if(!target) return null;
-    // Skill differences are expressed as precision/reaction/judgment, never raw catch-up speed.
-    let t=driverAbility356(p,si,now,target,threat?"avoid":"race");
-    return preventSlowMacroRoute659(p,si,now,t,threat);
   }
 
   let raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
@@ -6992,31 +4456,6 @@ function farthestVisibleFastTarget91(p,si){
     return true;
   }
 
-  function finalAISafety667(p,si,target){
-    if(!target) return null;
-    let t=finalRoadTarget636(p,si,target);
-    if(!t) return null;
-    if(!courseContainsPoint(t.x,t.y,0.00) || !lineStaysOnCourse(p.x,p.y,t.x,t.y,0.00)){
-      const ideal=strictInside620(p,si,gameNow());
-      t=ideal?finalRoadTarget636(p,si,ideal):null;
-    }
-    return t;
-  }
-
-
-  // v6.73~v6.77 Road Geometry / Visual Road / Racing Line 5.0
-  function roadGeometryAudit673(si){
-    const data=[
-      ["h",132.8,8.9],["h",132.8,8.9],["h",132.8,8.9],["h",132.8,8.9],
-      ["v",128,8.6],["v",128,8.6],["v",128,8.6],["v",128,8.6],
-      ["h",74,8.7],["h",74,8.7],["h",74,8.7],["h",74,8.7],["h",74,8.7],
-      ["v",44,7.7],["v",44,7.7],["v",44,7.7],["v",44,7.7],
-      ["h",23.5,8.3],["h",23.5,8.3],["h",23.5,8.3],["h",23.5,8.3]
-    ];
-    const d=data[Math.max(0,Math.min(data.length-1,si))];
-    return d?{axis:d[0],center:d[1],half:d[2]}:null;
-  }
-
   function visualRoadMask674(x,y,si){
     if(!courseContainsPoint(x,y,0)) return false;
     if(y>=123.2&&y<=142.2&&x>=20.5&&x<=130.5) return true;
@@ -7027,472 +4466,6 @@ function farthestVisibleFastTarget91(p,si){
     for(const c of [[128,132.8,12],[128,74,11.5],[44,74,10.5],[44,23.5,10.5]])
       if(Math.hypot(x-c[0],y-c[1])<=c[2]) return true;
     return false;
-  }
-
-  function lineStaysVisualRoad674(x0,y0,x1,y1,si){
-    const n=Math.max(4,Math.ceil(Math.hypot(x1-x0,y1-y0)/1.1));
-    for(let i=1;i<=n;i++){
-      const t=i/n,x=x0+(x1-x0)*t,y=y0+(y1-y0)*t;
-      if(!visualRoadMask674(x,y,si)) return false;
-    }
-    return true;
-  }
-
-  function clampVisualRoad674(p,si,t){
-    if(!t) return null;
-    // At segment joints the old/new legal capsules overlap differently. Let the
-    // authoritative logical-road guard handle the short handoff chord.
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const nearJoint=s && Math.hypot(p.x-s.b[0],p.y-s.b[1])<6.5;
-    if(nearJoint){
-      const logical=finalRoadTarget636(p,si,t);
-      if(logical) return logical;
-    }
-    if(visualRoadMask674(t.x,t.y,si)&&lineStaysVisualRoad674(p.x,p.y,t.x,t.y,si)) return t;
-    for(let k=19;k>=2;k--){
-      const q=k/20,x=p.x+(t.x-p.x)*q,y=p.y+(t.y-p.y)*q;
-      if(visualRoadMask674(x,y,si)&&lineStaysVisualRoad674(p.x,p.y,x,y,si))
-        return {...t,x,y,kind:(t.kind||"target")+"-visual674"};
-    }
-    if(!s) return null;
-    for(const f of [2.8,2,1.2,.7]){
-      const x=p.x+s.ux*f,y=p.y+s.uy*f;
-      if(visualRoadMask674(x,y,si)) return {x,y,kind:"visual-fallback674"};
-    }
-    return null;
-  }
-
-  function cornerInsideLimit675(p,si,t){
-    if(!t) return null;
-    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)];
-    if(!s||!n) return clampVisualRoad674(p,si,t);
-    const turn=s.ux*n.uy-s.uy*n.ux;
-    if(Math.abs(turn)<.1) return clampVisualRoad674(p,si,t);
-    const audit=roadGeometryAudit673(si);
-    const half=Math.max(3.2,Math.min((widths[si]||14)*.48,audit?.half||7.5));
-    const sign=turn>0?1:-1,rx=t.x-p.x,ry=t.y-p.y;
-    const f=rx*s.ux+ry*s.uy;
-    let lat=rx*s.nx+ry*s.ny;
-    if(lat*sign>half*.76) lat=sign*half*.76;
-    return clampVisualRoad674(p,si,{...t,x:p.x+s.ux*f+s.nx*lat,y:p.y+s.uy*f+s.ny*lat,kind:(t.kind||"target")+"-limit675"});
-  }
-
-  function racingLine576(p,si,now){
-    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)];
-    if(!s) return null;
-    const turn=n?s.ux*n.uy-s.uy*n.ux:0;
-    const de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
-    let f=Math.max(3.8,Math.min(8.2,de*.62+2.1)),lat=0;
-    if(Math.abs(turn)>=.1){
-      const sign=turn>0?1:-1,a=roadGeometryAudit673(si);
-      const half=Math.max(3.2,Math.min((widths[si]||14)*.48,a?.half||7.5));
-      const phase=Math.max(0,Math.min(1,1-de/13)),smooth=phase*phase*(3-2*phase);
-      lat=sign*half*(.18+.50*smooth); f=Math.max(3.4,Math.min(7,de*.58+1.8));
-    }else{
-      const rx=p.x-s.a[0],ry=p.y-s.a[1]; lat=(rx*s.nx+ry*s.ny)*.20;
-    }
-    return cornerInsideLimit675(p,si,{x:p.x+s.ux*f+s.nx*lat,y:p.y+s.uy*f+s.ny*lat,kind:"racingline5-676"});
-  }
-
-  function microLineOptimization677(p,si,t){
-    if(!t) return null;
-    const s=segs[si]; if(!s) return t;
-    let best=null,score=Infinity;
-    for(const d of [-.42,-.28,-.14,0,.14,.28,.42]){
-      const c=clampVisualRoad674(p,si,{...t,x:t.x+s.nx*d,y:t.y+s.ny*d,kind:"micro677"});
-      if(!c) continue;
-      const travel=Math.hypot(c.x-p.x,c.y-p.y),prog=(c.x-p.x)*s.ux+(c.y-p.y)*s.uy;
-      const sc=travel-prog*.93+Math.abs(d)*.025;
-      if(sc<score){score=sc;best=c;}
-    }
-    return best||t;
-  }
-
-
-  // v6.77 HOTFIX1: endpoint handoff.
-  // Visual Road Mask is planning-only. Near a segment end, deliberately point into
-  // the next segment so the sequential segment advancement can complete instead of
-  // oscillating at the boundary.
-  function endpointHandoff677(p,si,target){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-    const ex=p.x-s.b[0],ey=p.y-s.b[1];
-    const distEnd=Math.hypot(ex,ey);
-
-    // Final segment: aim directly at the actual finish endpoint. Never target beyond it.
-    if(si>=segs.length-1){
-      const last=route[route.length-1];
-      return {x:last[0],y:last[1],kind:"finish-handoff677"};
-    }
-
-    // Enter the next segment slightly past the joint. This guarantees the current
-    // segment can cross its end plane without a mask/clamp deadlock.
-    if(distEnd<6.2){
-      const n=segs[si+1];
-      const push=Math.min(3.0,Math.max(1.4,n.L*.12));
-      const q={x:s.b[0]+n.ux*push,y:s.b[1]+n.uy*push,kind:"endpoint-handoff677"};
-      const safe=finalRoadTarget636(p,si,q);
-      return safe||target;
-    }
-    return target;
-  }
-
-  
-  // v7.24 removed dead legacy AI: roadRacing577
-
-
-
-  // ============================================================
-  // v6.83 Observer Avoidance 4.0 FINAL (v6.78 ~ v6.83)
-  // ============================================================
-  function observerPrediction478(p,o){
-    const pvx=(p.x-(p.simPrevX??p.prevX??p.x))*60;
-    const pvy=(p.y-(p.simPrevY??p.prevY??p.y))*60;
-    const ovx=Number.isFinite(o.vx)?o.vx:0, ovy=Number.isFinite(o.vy)?o.vy:0;
-    const samples=[.20,.40,.70,1.00].map(t=>({
-      t,px:p.x+pvx*t,py:p.y+pvy*t,ox:o.x+ovx*t,oy:o.y+ovy*t
-    }));
-    return {o,pvx,pvy,ovx,ovy,samples};
-  }
-
-  function dynamicTTC479(p,o){
-    const pr=observerPrediction478(p,o);
-    const rx=o.x-p.x,ry=o.y-p.y,vx=pr.ovx-pr.pvx,vy=pr.ovy-pr.pvy;
-    const vv=vx*vx+vy*vy;
-    if(vv<1e-7) return null;
-    const closing=-(rx*vx+ry*vy);
-    if(closing<=0) return null;
-    const raw=closing/vv;
-    if(raw<0||raw>1.45) return null;
-    const fx=rx+vx*raw,fy=ry+vy*raw,miss=Math.hypot(fx,fy);
-    const dist=Math.hypot(rx,ry);
-    if(miss>3.05||dist>22) return null;
-    return {o,t:raw,miss,dist,rx,ry,closingSpeed:closing/Math.max(.001,dist)};
-  }
-
-  function collisionTTC479(p){
-    let best=null;
-    for(const o of observers){
-      const q=dynamicTTC479(p,o);
-      if(!q) continue;
-      if(!best||q.t<best.t||(Math.abs(q.t-best.t)<.06&&q.miss<best.miss)) best=q;
-    }
-    return best;
-  }
-
-  function futureObserverRisk480(p,x,y,horizon=.62){
-    let risk=0,nearest=999,count=0;
-    for(const o of observers){
-      const ovx=Number.isFinite(o.vx)?o.vx:0,ovy=Number.isFinite(o.vy)?o.vy:0;
-      const ox=o.x+ovx*horizon,oy=o.y+ovy*horizon,d=Math.hypot(x-ox,y-oy);
-      nearest=Math.min(nearest,d);
-      if(d<7.2){count++; const w=(7.2-d)/7.2; risk+=w*w;}
-    }
-    return {risk,nearest,count};
-  }
-
-  function safeGapSearch480(p,si,threat){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return null;
-    const half=Math.max(2.5,Math.min((widths[si]||14)*.46,(roadGeometryAudit673(si)?.half||7.5)*.88));
-    let best=null,bestScore=Infinity;
-    for(let j=-12;j<=12;j++){
-      const off=half*j/12,forward=3.2+Math.max(0,Math.min(1,(threat?.t||.7)))*1.8;
-      let t={x:p.x+s.ux*forward+s.nx*off,y:p.y+s.uy*forward+s.ny*off,kind:"safe-gap480"};
-      t=clampVisualRoad674(p,si,t); if(!t) continue;
-      const r1=futureObserverRisk480(p,t.x,t.y,.35),r2=futureObserverRisk480(p,t.x,t.y,.68);
-      if(r1.nearest<1.5||r2.nearest<1.5) continue;
-      const score=r1.risk*5.0+r2.risk*4.0+Math.abs(off)*.115-Math.max(0,forward)*.035;
-      if(score<bestScore){bestScore=score;best={...t,gapScore480:score};}
-    }
-    return best;
-  }
-
-  function minimumEscape481(p,si,threat,target){
-    if(!target||!threat) return target;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return target;
-    const dx=target.x-p.x,dy=target.y-p.y;
-    const lat=dx*s.nx+dy*s.ny,forward=dx*s.ux+dy*s.uy,side=Math.sign(lat)||1;
-    // Required displacement grows only with actual TTC urgency / predicted miss.
-    const urgency=Math.max(0,Math.min(1,(1.05-threat.t)/1.05));
-    const need=Math.min((widths[si]||14)*.38,.72+Math.max(0,2.35-threat.miss)*.72+urgency*1.25);
-    const use=Math.min(Math.abs(lat),need);
-    return clampVisualRoad674(p,si,{
-      ...target,x:p.x+s.ux*Math.max(2.5,forward)+s.nx*side*use,
-      y:p.y+s.uy*Math.max(2.5,forward)+s.ny*side*use,kind:"minimum-escape481"
-    });
-  }
-
-  function falseThreatFilter482(p,threat){
-    if(!threat) return null;
-    if(threat.t>1.35||threat.miss>3.05) return null;
-    if(threat.closingSpeed<=.02) return null;
-    // Very distant / late crossing threats are not worth abandoning the line for.
-    if(threat.dist>15&&threat.t>.82) return null;
-    return threat;
-  }
-
-  function avoidance483(p,si,now){
-    const threat=falseThreatFilter482(p,collisionTTC479(p));
-    if(!threat) return null;
-    let gap=safeGapSearch480(p,si,threat);
-    let left=clampVisualRoad674(p,si,minimumDodge623(p,si,threat,-1));
-    let right=clampVisualRoad674(p,si,minimumDodge623(p,si,threat,1));
-    const cand=[gap,left,right].filter(Boolean);
-    let best=null,bestScore=Infinity;
-    for(let t of cand){
-      t=minimumEscape481(p,si,threat,t); if(!t) continue;
-      const r=futureObserverRisk480(p,t.x,t.y,.55);
-      const d=Math.hypot(t.x-p.x,t.y-p.y);
-      const score=r.risk*5.2+Math.max(0,2-r.nearest)*3+d*.12;
-      if(score<bestScore){bestScore=score;best=t;}
-    }
-    if(best){
-      p.avoidance483Until=now+260;
-      p.lastAvoidance483=now;
-      return {...best,kind:"avoidance4-final483"};
-    }
-    return null;
-  }
-
-  function smoothRejoin483(p,si,now){
-    if(now<(p.avoidance483Until||0)) return null;
-    const last=p.lastAvoidance483||0;
-    if(!last||now-last>1150) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))],ideal=globalOptimalLine710(p,si,now,5.2);
-    if(!s||!ideal) return null;
-    const rx=ideal.x-p.x,ry=ideal.y-p.y;
-    const f=Math.max(2.8,Math.min(5.2,rx*s.ux+ry*s.uy));
-    const lat=rx*s.nx+ry*s.ny;
-    const capped=Math.max(-1.15,Math.min(1.15,lat));
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*f+s.nx*capped,y:p.y+s.uy*f+s.ny*capped,kind:"smooth-rejoin483"
-    });
-  }
-
-  
-  // v7.24 removed dead legacy AI: observerAvoidance483
-
-
-
-  // ============================================================
-  // v6.90 Racecraft 5.0 FINAL (v6.84 ~ v6.90)
-  // ============================================================
-
-  function opponentPrediction484(p,q,si,horizon=.55){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s||!q) return null;
-    const qvx=(q.x-(q.simPrevX??q.prevX??q.x))*60;
-    const qvy=(q.y-(q.simPrevY??q.prevY??q.y))*60;
-    const pvx=(p.x-(p.simPrevX??p.prevX??p.x))*60;
-    const pvy=(p.y-(p.simPrevY??p.prevY??p.y))*60;
-    return {
-      q,
-      x:q.x+qvx*horizon, y:q.y+qvy*horizon,
-      px:p.x+pvx*horizon, py:p.y+pvy*horizon,
-      qvx,qvy,pvx,pvy,
-      relForward:(q.x-p.x)*s.ux+(q.y-p.y)*s.uy,
-      relLat:(q.x-p.x)*s.nx+(q.y-p.y)*s.ny
-    };
-  }
-
-  function overtakeState485(p,si,now,front){
-    if(!p._pass485) p._pass485={state:"idle",targetId:null,side:0,since:0,commitUntil:0};
-    const st=p._pass485;
-    const prog=currentProgress(p);
-    let target=players.find(q=>q.index===st.targetId&&!q.dead&&!q.done)||null;
-
-    if(st.state==="idle"){
-      if(front&&front.forward<10.5){
-        st.state="prepare"; st.targetId=front.q.index; st.since=now;
-      }
-    } else if(!target){
-      st.state="idle"; st.targetId=null; st.side=0;
-    } else {
-      const dp=prog-currentProgress(target);
-      if(st.state==="prepare"&&now-st.since>100){
-        st.state="commit"; st.since=now; st.commitUntil=now+520;
-      }
-      if(st.state==="commit"&&Math.abs(dp)<1.2){
-        st.state="side-by-side"; st.since=now;
-      }
-      if((st.state==="commit"||st.state==="side-by-side")&&dp>1.35){
-        st.state="passed"; st.since=now; st.commitUntil=now+420;
-      }
-      if(st.state==="passed"&&now-st.since>420){
-        st.state="rejoin"; st.since=now;
-      }
-      if(st.state==="rejoin"&&now-st.since>520){
-        st.state="idle"; st.targetId=null; st.side=0;
-      }
-    }
-    return st;
-  }
-
-  function defensiveRacing486(p,si,now){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return null;
-    const pp=currentProgress(p);
-    let challenger=null,bestGap=999;
-    for(const q of players){
-      if(q===p||q.dead||q.done) continue;
-      const gap=pp-currentProgress(q);
-      if(gap<=0||gap>2.2) continue;
-      const dx=q.x-p.x,dy=q.y-p.y;
-      const f=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
-      if(f>-6&&f<1.5&&Math.abs(lat)<6&&gap<bestGap){bestGap=gap;challenger={q,lat};}
-    }
-    if(!challenger) return null;
-
-    const ideal=racingLine576(p,si,now); if(!ideal) return null;
-    const rx=ideal.x-p.x,ry=ideal.y-p.y;
-    const idealLat=rx*s.nx+ry*s.ny;
-    const desired=challenger.lat>=0?Math.min(idealLat,.65):Math.max(idealLat,-.65);
-    const t=clampVisualRoad674(p,si,{
-      x:p.x+s.ux*4.8+s.nx*desired,
-      y:p.y+s.uy*4.8+s.ny*desired,
-      kind:"defensive486"
-    });
-    if(!t) return null;
-
-    const extra=Math.hypot(t.x-p.x,t.y-p.y)-Math.hypot(ideal.x-p.x,ideal.y-p.y);
-    return extra<=.45?t:null;
-  }
-
-  function sideBySide487(p,si,now,st){
-    if(!st||st.state!=="side-by-side") return null;
-    const q=players.find(x=>x.index===st.targetId&&!x.dead&&!x.done);
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!q||!s) return null;
-    const pred=opponentPrediction484(p,q,si,.42); if(!pred) return null;
-    let side=st.side||Math.sign(-pred.relLat)||1;
-    st.side=side;
-    const half=Math.max(2.3,Math.min((widths[si]||14)*.44,(roadGeometryAudit673(si)?.half||7.5)*.84));
-    const off=Math.max(-half*.68,Math.min(half*.68,side*half*.52));
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*5.2+s.nx*off,
-      y:p.y+s.uy*5.2+s.ny*off,
-      kind:"side-by-side487"
-    });
-  }
-
-  function multiTraffic588(p,si,now){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))]; if(!s) return null;
-    const near=[];
-    for(const q of players){
-      if(q===p||q.dead||q.done) continue;
-      const pred=opponentPrediction484(p,q,si,.50); if(!pred) continue;
-      const dx=pred.x-p.x,dy=pred.y-p.y;
-      const f=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
-      if(f>-2.5&&f<14&&Math.abs(lat)<8) near.push({q,pred,f,lat});
-    }
-    if(near.length<2) return null;
-
-    const half=Math.max(2.4,Math.min((widths[si]||14)*.46,(roadGeometryAudit673(si)?.half||7.5)*.88));
-    let best=null,bestScore=Infinity;
-    for(const k of [-.72,-.48,-.24,0,.24,.48,.72]){
-      const off=half*k;
-      let t=clampVisualRoad674(p,si,{x:p.x+s.ux*5.8+s.nx*off,y:p.y+s.uy*5.8+s.ny*off,kind:"multi-traffic588"});
-      if(!t) continue;
-      let score=Math.abs(off)*.10;
-      for(const n of near){
-        const d=Math.hypot(t.x-n.pred.x,t.y-n.pred.y);
-        if(d<2.0) score+=30;
-        else if(d<3.0) score+=10;
-        else if(d<4.5) score+=3;
-      }
-      const obs=futureObserverRisk480(p,t.x,t.y,.45);
-      score+=obs.risk*4.5;
-      if(score<bestScore){bestScore=score;best=t;}
-    }
-    return best;
-  }
-
-  function cornerBattle489(p,si,now,front){
-    if(!front) return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const n=segs[Math.max(0,Math.min(segs.length-1,si+1))];
-    if(!s||!n) return null;
-    const turn=s.ux*n.uy-s.uy*n.ux;
-    if(Math.abs(turn)<.1) return null;
-
-    const de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
-    const pred=opponentPrediction484(p,front.q,si,.45);
-    if(!pred) return null;
-
-    // Prefer pre-entry only when there is a clearly open inside lane.
-    if(de>7.5&&de<13){
-      const inside=turn>0?1:-1;
-      const half=Math.max(2.3,Math.min((widths[si]||14)*.45,(roadGeometryAudit673(si)?.half||7.5)*.84));
-      const t=clampVisualRoad674(p,si,{
-        x:p.x+s.ux*5.4+s.nx*inside*half*.48,
-        y:p.y+s.uy*5.4+s.ny*inside*half*.48,
-        kind:"corner-battle-entry489"
-      });
-      if(t&&Math.hypot(t.x-pred.x,t.y-pred.y)>3.2) return t;
-    }
-    // At apex, avoid initiating a new pass; preserve current line.
-    if(de<=7.5&&de>2.6) return null;
-
-    // On exit, only attack if target will still be within reach.
-    if(de<=2.6&&front.forward<7){
-      const side=Math.sign(-pred.relLat)||1;
-      return overtakeTarget642(p,si,front,side);
-    }
-    return null;
-  }
-
-  
-  // v7.24 removed dead legacy AI: racecraft590
-
-
-
-  // ============================================================
-  // v6.99 Race Engine 9.0 FINAL (v6.91 ~ v6.99)
-  // ============================================================
-
-  function abilityPersonality693(p,kind){
-    const a=driverAbilityBase645(p);
-    const ps=driverPersonality357(p);
-    if(kind==="overtake"){
-      return {
-        skill:a.overtake,
-        aggression:Math.max(.25,Math.min(.95,(a.aggression*.58+ps.aggression*.42))),
-        risk:Math.max(.18,Math.min(.88,(a.risk*.55+ps.risk*.45))),
-        commitment:Math.max(.35,Math.min(.92,(a.judgment*.48+ps.commitment*.52)))
-      };
-    }
-    if(kind==="avoid"){
-      return {skill:a.avoidance,reaction:a.reaction,risk:a.risk,commitment:ps.commitment};
-    }
-    return {skill:a.line,judgment:a.judgment,stability:a.stability,commitment:ps.commitment};
-  }
-
-  function pressureConsistency694(p,now,target,kind="race"){
-    if(!target) return null;
-    const st=p.stats||{}, s=segs[Math.max(0,Math.min(segs.length-1,p.seg||0))];
-    if(!s) return target;
-    const pressure=Math.max(0,Math.min(1,(Number(st.pressure)||60)/100));
-    const consistency=Math.max(0,Math.min(1,(Number(st.consistency)||60)/100));
-    const focus=Math.max(0,Math.min(1,(Number(st.focus)||60)/100));
-
-    let nearest=99;
-    for(const q of players){
-      if(q===p||q.dead||q.done) continue;
-      const d=Math.abs(currentProgress(q)-currentProgress(p));
-      if(d<nearest) nearest=d;
-    }
-    const battle=Math.max(0,Math.min(1,(2.4-nearest)/2.4));
-    const stress=battle*(1-pressure*.55-focus*.25);
-    const err=(1-consistency)*stress*.28;
-    if(err<.006) return target;
-
-    // deterministic micro execution variation, not random route wandering.
-    const phase=(now*.0057+(p.index||0)*1.91);
-    const lat=Math.sin(phase)*err;
-    return finalRoadTarget636(p,p.seg||0,{
-      ...target,
-      x:target.x+s.nx*lat,
-      y:target.y+s.ny*lat,
-      kind:(target.kind||kind)+"-pressure694"
-    })||target;
   }
 
   function broadcastCamera695(now,dt,leader,cache){
@@ -7809,24 +4782,6 @@ function farthestVisibleFastTarget91(p,si){
     transition:"SegmentTransition3", boundary:"RoadBoundary3"
   };
 
-  // v7.01 Segment Transition 3.0
-  function segmentTransition701(p,si,target){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s) return target;
-    const along=(p.x-s.a[0])*s.ux+(p.y-s.a[1])*s.uy;
-    const remain=s.L-along;
-    if(si>=segs.length-1){
-      const f=route[route.length-1];
-      return {x:f[0],y:f[1],kind:"finish-transition701"};
-    }
-    if(remain<=5.4){
-      const n=segs[si+1],push=Math.max(1.25,Math.min(2.8,n.L*.14));
-      const q={x:s.b[0]+n.ux*push,y:s.b[1]+n.uy*push,kind:"segment-transition701"};
-      return finalRoadTarget636(p,si,q)||target;
-    }
-    return target;
-  }
-
   // v7.02: actual corrected S-map corner geometry.
   const CORNERS702=[
     {x:128,y:132.8,inSeg:3,outSeg:4,half:8.45},
@@ -7834,98 +4789,6 @@ function farthestVisibleFastTarget91(p,si){
     {x:44,y:74,inSeg:12,outSeg:13,half:7.55},
     {x:44,y:23.5,inSeg:16,outSeg:17,half:7.55}
   ];
-  function cornerGeometry702(si){
-    return CORNERS702.find(c=>si===c.inSeg||si===c.outSeg)||null;
-  }
-
-  // v7.03 ability-dependent apex precision. High skill hugs the legal apex;
-  // lower skill misses by a small amount, never by choosing a slower macro route.
-  function apexPrecision703(p,si,now){
-    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)],c=cornerGeometry702(si);
-    if(!s||!n||!c||si!==c.inSeg) return null;
-    const turn=s.ux*n.uy-s.uy*n.ux;if(Math.abs(turn)<.1)return null;
-    const a=driverAbilityBase645(p),de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
-    if(de>12.5)return null;
-    const sign=turn>0?1:-1;
-    const skill=Math.max(.45,Math.min(.98,a.corner*.58+a.line*.42));
-    const miss=(1-skill)*.62;
-    const phase=Math.max(0,Math.min(1,1-de/12.5)),sm=phase*phase*(3-2*phase);
-    const lat=sign*c.half*Math.max(.22,Math.min(.70,.26+.44*sm-miss*.12));
-    const f=Math.max(2.8,Math.min(6.0,de*.50+1.55));
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*f+s.nx*lat,y:p.y+s.uy*f+s.ny*lat,kind:"apex703"
-    });
-  }
-
-  // v7.04: after crossing an apex, converge to the shortest exit chord quickly.
-  function cornerExit704(p,si,now){
-    const c=cornerGeometry702(si),s=segs[si];
-    if(!c||!s||si!==c.outSeg)return null;
-    const from=Math.hypot(p.x-c.x,p.y-c.y);
-    if(from>9.5)return null;
-    const rx=p.x-s.a[0],ry=p.y-s.a[1],lat=rx*s.nx+ry*s.ny;
-    const decay=Math.max(.12,Math.min(.48,from/9.5*.42));
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*5.5-s.nx*lat*decay,
-      y:p.y+s.uy*5.5-s.ny*lat*decay,kind:"corner-exit704"
-    });
-  }
-
-  // v7.05: stable shortest straight, eliminating needless left/right correction.
-  function straightOptimization705(p,si){
-    const s=segs[si],n=segs[Math.min(segs.length-1,si+1)];
-    if(!s)return null;
-    const turn=n?s.ux*n.uy-s.uy*n.ux:0;
-    const de=Math.hypot(s.b[0]-p.x,s.b[1]-p.y);
-    if(Math.abs(turn)>=.1&&de<13)return null;
-    const rx=p.x-s.a[0],ry=p.y-s.a[1],lat=rx*s.nx+ry*s.ny;
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*Math.max(4.4,Math.min(7.2,de*.58+2.0))-s.nx*lat*.16,
-      y:p.y+s.uy*Math.max(4.4,Math.min(7.2,de*.58+2.0))-s.ny*lat*.16,
-      kind:"straight-opt705"
-    });
-  }
-
-  // v7.06: final corner -> finish uses one stable legal shortest approach.
-  function finishApproach706(p,si){
-    if(si<17)return null;
-    const s=segs[si];if(!s)return null;
-    const fin=route[route.length-1];
-    if(si===segs.length-1)
-      return finalRoadTarget636(p,si,{x:fin[0],y:fin[1],kind:"finish706"});
-    const rx=p.x-s.a[0],ry=p.y-s.a[1],lat=rx*s.nx+ry*s.ny;
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*6.2-s.nx*lat*.18,y:p.y+s.uy*6.2-s.ny*lat*.18,kind:"finish-approach706"
-    });
-  }
-
-  // v7.07: same physical spawn, but initial micro-line identity unfolds smoothly.
-  function startLaunch707(p,si,now){
-    if(si>1||currentProgress(p)>20)return null;
-    const s=segs[si];if(!s)return null;
-    const ability=driverAbilityBase645(p);
-    const sig=Math.max(-.62,Math.min(.62,(p.openingLineBias||0)*.48));
-    const settle=Math.max(0,Math.min(1,currentProgress(p)/18));
-    const lat=sig*(1-settle*.55)*(1.08-ability.line*.18);
-    return clampVisualRoad674(p,si,{
-      x:p.x+s.ux*5.4+s.nx*lat,y:p.y+s.uy*5.4+s.ny*lat,kind:"start-launch707"
-    });
-  }
-
-  // v7.08: strict road legality while preserving the legal in-course edge.
-  function roadBoundary708(p,si,t){
-    if(!t)return null;
-    let q=finalRoadTarget636(p,si,t);
-    if(!q)return strictInside620(p,si,gameNow());
-    if(!courseContainsPoint(q.x,q.y,0)||!lineStaysOnCourse(p.x,p.y,q.x,q.y,0)){
-      q=clampVisualRoad674(p,si,q)||strictInside620(p,si,gameNow());
-    }
-    return q?finalRoadTarget636(p,si,q):null;
-  }
-
-  function calmRacingLine709(p,si,now){
-    return normalRaceAuthority710(p,si,now);
-  }
 
 
   // ============================================================
@@ -7970,44 +4833,6 @@ function farthestVisibleFastTarget91(p,si){
     return bestP;
   }
 
-  function optimalPointAt710(progress){
-    const p=Math.max(0,Math.min(GLOBAL_OPTIMAL_SEGS_710.total,progress));
-    for(let i=0;i<GLOBAL_OPTIMAL_SEGS_710.length;i++){
-      const s=GLOBAL_OPTIMAL_SEGS_710[i];
-      if(p<=s.start+s.L||i===GLOBAL_OPTIMAL_SEGS_710.length-1){
-        const t=Math.max(0,Math.min(1,(p-s.start)/s.L));
-        return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,seg:i};
-      }
-    }
-    const f=GLOBAL_OPTIMAL_LINE_710[GLOBAL_OPTIMAL_LINE_710.length-1];
-    return {x:f[0],y:f[1],seg:GLOBAL_OPTIMAL_SEGS_710.length-1};
-  }
-
-  function globalOptimalLine710(p,si,now,lookahead=6.0){
-    return fastestShortestTarget719(p,si,now);
-  }
-
-  function globalOptimalRejoin710(p,si,now){
-    const ideal=globalOptimalLine710(p,si,now,5.2);
-    if(!ideal)return null;
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s)return ideal;
-    const dx=ideal.x-p.x,dy=ideal.y-p.y;
-    const f=dx*s.ux+dy*s.uy,lat=dx*s.nx+dy*s.ny;
-    // Rejoin rapidly but without a giant diagonal snap.
-    const cappedLat=Math.max(-1.35,Math.min(1.35,lat));
-    const forward=Math.max(3.6,Math.min(5.8,f));
-    return roadBoundary708(p,si,{
-      x:p.x+s.ux*forward+s.nx*cappedLat,
-      y:p.y+s.uy*forward+s.ny*cappedLat,
-      kind:"global-rejoin710"
-    })||ideal;
-  }
-
-  function normalRaceAuthority710(p,si,now){
-    return shortestNormalAuthority719(p,si,now);
-  }
-
 
   // ============================================================
   // v7.19 Observer System 5.0 FINAL (v7.11 ~ v7.19)
@@ -8046,143 +4871,6 @@ function farthestVisibleFastTarget91(p,si){
       }
     }
     pickObserverLeg(o);
-  }
-
-  // v7.13 Dynamic Danger Field: predicts the whole local observer field.
-  function dangerField713(p,x,y){
-    const horizons=[.18,.36,.58,.82,1.08];
-    let risk=0,nearest=999,critical=0;
-    for(const h of horizons){
-      const weight=1.22-h*.30;
-      for(const o0 of observers){
-        const o=observerMovementAudit711(o0);
-        const ox=o.x+o.vx*h,oy=o.y+o.vy*h,d=Math.hypot(x-ox,y-oy);
-        nearest=Math.min(nearest,d);
-        if(d<6.4){
-          const w=(6.4-d)/6.4;
-          risk+=w*w*weight;
-          if(d<2.55)critical++;
-        }
-      }
-    }
-    return {risk,nearest,critical};
-  }
-
-  // v7.14 Chain Collision Prediction: reject a dodge that immediately meets observer #2.
-  function chainCollision714(p,si,target){
-    if(!target)return {risk:Infinity,nearest:0,blocked:true};
-    let risk=0,nearest=999;
-    const horizons=[.22,.42,.66,.92];
-    for(const h of horizons){
-      const frac=Math.max(0,Math.min(1,h/.82));
-      const px=p.x+(target.x-p.x)*frac,py=p.y+(target.y-p.y)*frac;
-      for(const o0 of observers){
-        const o=observerMovementAudit711(o0);
-        const ox=o.x+o.vx*h,oy=o.y+o.vy*h,d=Math.hypot(px-ox,py-oy);
-        nearest=Math.min(nearest,d);
-        if(d<4.8){
-          const w=(4.8-d)/4.8;
-          risk+=w*w*(1.15-h*.22);
-        }
-      }
-    }
-    return {risk,nearest,blocked:nearest<1.75};
-  }
-
-  function optimalDeviation715(p,target){
-    if(!target)return 999;
-    const prog=nearestOptimalProgress710(target.x,target.y);
-    const q=optimalPointAt710(prog);
-    return Math.hypot(target.x-q.x,target.y-q.y);
-  }
-
-  // v7.15 Escape Corridor 5.0:
-  // search a narrow corridor around the fastest line first, not the whole road.
-  function escapeCorridor715(p,si,now,threat){
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!s||!threat)return null;
-    const ideal=globalOptimalLine710(p,si,now,5.4);
-    if(!ideal)return null;
-
-    const urgency=Math.max(0,Math.min(1,(1.10-threat.t)/1.10));
-    const span=1.35+urgency*1.65; // only 1.35 ~ 3.0 units away from fastest line
-    const offsets=[0,-.35,.35,-.70,.70,-1,1].map(v=>v*span);
-
-    let best=null,bestScore=Infinity;
-    for(const off of offsets){
-      let c={x:ideal.x+s.nx*off,y:ideal.y+s.ny*off,kind:"escape-corridor715"};
-      c=clampVisualRoad674(p,si,c);
-      if(!c)continue;
-
-      const chain=chainCollision714(p,si,c);
-      if(chain.blocked)continue;
-      const field=dangerField713(p,c.x,c.y);
-      if(field.nearest<1.8)continue;
-
-      const deviation=optimalDeviation715(p,c);
-      const extra=Math.max(0,Math.hypot(c.x-p.x,c.y-p.y)-Math.hypot(ideal.x-p.x,ideal.y-p.y));
-      // Safety first, then brutally penalize leaving the fastest line.
-      const score=chain.risk*8.0+field.risk*5.5+deviation*1.55+extra*2.30+Math.abs(off)*.62;
-      if(score<bestScore){bestScore=score;best={...c,escapeScore715:score};}
-    }
-    return best;
-  }
-
-  // v7.16 Corner Survival: preserve the inside apex unless the observer physically blocks it.
-  function cornerSurvival716(p,si,now,threat,target){
-    if(!target||!threat)return target;
-    const c=cornerGeometry702(si);
-    if(!c)return target;
-    const ideal=globalOptimalLine710(p,si,now,4.8);
-    if(!ideal)return target;
-    const direct=chainCollision714(p,si,ideal);
-    if(!direct.blocked&&direct.nearest>2.25&&direct.risk<.65)
-      return {...ideal,kind:"corner-inside-survival716"};
-
-    // If apex is blocked, use the smallest safe displacement and keep moving forward.
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    const dx=target.x-ideal.x,dy=target.y-ideal.y;
-    const lat=dx*s.nx+dy*s.ny;
-    const cap=Math.max(-2.5,Math.min(2.5,lat));
-    return clampVisualRoad674(p,si,{
-      x:ideal.x+s.nx*cap,y:ideal.y+s.ny*cap,kind:"corner-survival716"
-    })||target;
-  }
-
-  // v7.17 Pack Survival: racers are non-solid. Other racers never create steering detours.
-  // Each racer independently evaluates observer danger while sharing the same optimal line.
-  function packSurvival717(p,si,now,threat,target){
-    if(!target)return target;
-    // Deliberately no player-player avoidance / lane occupation logic here.
-    return cornerSurvival716(p,si,now,threat,target);
-  }
-
-  // v7.18 difficulty scale keeps 100 observers authoritative without hidden speed/rubber-band.
-  function observerDifficulty718(){
-    return {
-      count:OBSERVER_COUNT,
-      predictionHorizon:1.10,
-      safeClearance:1.80,
-      maxRoutineDeviation:3.00,
-      rubberBand:false
-    };
-  }
-
-  // v7.19 fastest possible rejoin after danger passes.
-  function fastestRejoin719(p,si,now){
-    const last=p.lastAvoidance519||0;
-    if(!last||now-last>900)return null;
-    const ideal=globalOptimalLine710(p,si,now,6.0);
-    const s=segs[Math.max(0,Math.min(segs.length-1,si))];
-    if(!ideal||!s)return ideal;
-    const dx=ideal.x-p.x,dy=ideal.y-p.y;
-    const f=Math.max(4.2,Math.min(6.4,dx*s.ux+dy*s.uy));
-    const lat=Math.max(-1.65,Math.min(1.65,dx*s.nx+dy*s.ny));
-    return roadBoundary708(p,si,{
-      x:p.x+s.ux*f+s.nx*lat,
-      y:p.y+s.uy*f+s.ny*lat,
-      kind:"fastest-rejoin719"
-    })||ideal;
   }
 
   
@@ -8228,51 +4916,6 @@ function farthestVisibleFastTarget91(p,si){
     return null;
   }
 
-  function shortestPointAt719(progress){
-    return optimalPointAt710(progress);
-  }
-
-  function advanceExactlyOnShortest719(p,distance){
-    if(!p || !(distance>0)) return false;
-    const prog=nearestOptimalProgress710(p.x,p.y);
-    const next=Math.min(GLOBAL_OPTIMAL_SEGS_710.total,prog+distance);
-    const q=shortestPointAt719(next);
-    if(!q) return false;
-    p.x=q.x; p.y=q.y;
-    p._actualShortestProgress719=next;
-    p._actualShortestDeviation719=0;
-    return true;
-  }
-
-  function shortestDeviation719(p){
-    if(!p) return Infinity;
-    const prog=nearestOptimalProgress710(p.x,p.y);
-    const q=shortestPointAt719(prog);
-    return q?Math.hypot(p.x-q.x,p.y-q.y):Infinity;
-  }
-
-  function fastestShortestTarget719(p,si,now){
-    if(!p)return null;
-    const prog=nearestOptimalProgress710(p.x,p.y);
-    const remain=GLOBAL_OPTIMAL_SEGS_710.total-prog;
-    if(remain<=8.0){
-      const f=GLOBAL_OPTIMAL_LINE_710[GLOBAL_OPTIMAL_LINE_710.length-1];
-      return actualRoadTarget719(p,si,{x:f[0],y:f[1],kind:"true-shortest719"});
-    }
-
-    // Long lookahead, then back off ONLY along the shortest polyline until
-    // current->target is a legal straight chord. No centerline handoff.
-    const maxLook=Math.min(13.5,remain);
-    for(let look=maxLook;look>=3.0;look-=.45){
-      const q=shortestPointAt719(prog+look);
-      const t={x:q.x,y:q.y,kind:"true-shortest719"};
-      if(actualRoadTarget719(p,si,t)) return t;
-    }
-
-    const q=shortestPointAt719(prog+Math.min(2.8,remain));
-    return actualRoadTarget719(p,si,{x:q.x,y:q.y,kind:"true-shortest719"});
-  }
-
   // The shortest path turns before legacy centerline endpoints. Keep the old
   // segment index synchronized to macro-corner crossings so old telemetry/finish
   // code never traps the racer on the previous straight.
@@ -8292,10 +4935,6 @@ function farthestVisibleFastTarget91(p,si){
     else if(prog>=t3 && p.seg<13) p.seg=13;
     else if(prog>=t2 && p.seg<8) p.seg=8;
     else if(prog>=t1 && p.seg<4) p.seg=4;
-  }
-
-  function shortestNormalAuthority719(p,si,now){
-    return fastestShortestTarget719(p,si,now);
   }
 
 
@@ -8794,20 +5433,6 @@ function farthestVisibleFastTarget91(p,si){
     };
     if(p)p._personality754=r;
     return r;
-  }
-
-  function racePressure754(p){
-    const prog=Number.isFinite(p?._splineProg720)?p._splineProg720:0;
-    const total=Math.max(1,RACING_SPLINE_SEGS_720?.total||1);
-    const late=Math.max(0,Math.min(1,(prog/total-.72)/.28));
-    let nearest=99;
-    const my=currentProgress(p);
-    for(const q of players){
-      if(q===p||q.dead||q.done)continue;
-      nearest=Math.min(nearest,Math.abs(currentProgress(q)-my));
-    }
-    const battle=Math.max(0,Math.min(1,(2.0-nearest)/2.0));
-    return Math.max(0,Math.min(1,battle*.68+late*.32));
   }
 
   function stableEvadeSide754(st,kind,now){
@@ -9353,7 +5978,9 @@ function farthestVisibleFastTarget91(p,si){
     const clutch759=clutchContext759(p),sig759=mix.signature;
     const st=ensureRaceState720(p,now);
 
-    const lateralScale=.94+mix.lateral*.13;
+    const unit769=unitChassis764(),fit769=unitCompatibility769(p);
+    const chassisEvade769=unit769.evadeWidth*fit769.evadeMul;
+    const lateralScale=(.94+mix.lateral*.13)*chassisEvade769;
     const threadLat=(1.00+(1-ex.avoidance)*.25)*lateralScale;
     const sideLat=(1.36+(1-ex.control)*.24)*lateralScale;
     const diagLat=(1.62+(1-ex.avoidance)*.30)*lateralScale;
@@ -9404,7 +6031,8 @@ function farthestVisibleFastTarget91(p,si){
 
     // Backcon is a last-resort emergency only when every meaningful lateral
     // corridor is boxed. If one natural side escape exists, reverse is unavailable.
-    const minGap=1.48+mix.caution*.24;
+    const bodyGap769=(unit769.hitRadius-.48)*.72;
+    const minGap=(1.45+mix.caution*.24+bodyGap769)*unit769.safetyGap;
     const maxRisk=1.85-mix.caution*.35;
     const safeLateral=ranked.some(r=>
       /side|thread|diag|hard/.test(r.kind)&&
@@ -9459,10 +6087,12 @@ function farthestVisibleFastTarget91(p,si){
     const stop=/stop|brake/.test(st.action);
     const thread=/thread|diag/.test(st.action);
 
-    const ex739=driverExecution720(p);
-    const execTime739=1.12-ex739.hand*.18;
+    const ex739=driverExecution720(p),unit769=unitChassis764(),fit769=unitCompatibility769(p);
+    const response769=unit769.evadeResponse*fit769.evadeMul;
+    const execTime739=(1.12-ex739.hand*.18)/Math.max(.90,response769);
     st.actionUntil=now+(back?145:stop?205:thread?225:245)*execTime739;
-    st.planHoldUntil723=now+(back?115:thread?185:175)*(1.08-ex739.stability*.12);
+    st.planHoldUntil723=now+(back?115:thread?185:175)*
+      (1.08-ex739.stability*.12)/Math.max(.92,response769);
     st.rejoinUntil=0;
     stableEvadeSide754(st,st.action,now);
 
@@ -9590,13 +6220,15 @@ function farthestVisibleFastTarget91(p,si){
 
   function speedMultiplier720(p,now,dt=16){
     const st=ensureRaceState720(p,now),ex=driverExecution720(p);
+    const unit764=unitChassis764();
     let target=1;
 
     if(st.mode==="EVADE"){
       if(/back/.test(st.action)){
         target=.54+.10*ex.hand;
         if(!Number.isFinite(p._speedMul720))p._speedMul720=target;
-        const alphaBack=1-Math.exp(-Math.max(1,dt)/(60-ex.control*18));
+        const alphaBack=1-Math.exp(-Math.max(1,dt)/
+          ((60-ex.control*18)/Math.max(.90,unit764.brake)));
         p._speedMul720+=(target-p._speedMul720)*alphaBack;
         return p._speedMul720;
       }
@@ -9608,7 +6240,9 @@ function farthestVisibleFastTarget91(p,si){
     }else{
       const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
       const curve=Math.min(1,splineCurvature720(prog)*4.0);
-      const cornerLoss=.068-.050*ex.cornerSkill;
+      const fit769=unitCompatibility769(p);
+      const cornerAuthority=unit764.cornerGrip*fit769.cornerMul;
+      const cornerLoss=(.068-.050*ex.cornerSkill)/Math.max(.94,cornerAuthority);
       target=1-curve*cornerLoss;
       const raceFrac=Math.max(0,Math.min(1,prog/Math.max(1,RACING_SPLINE_SEGS_720.total)));
       target*=1-raceFrac*Math.max(0,.018*(.70-ex.endurance));
@@ -9616,13 +6250,30 @@ function farthestVisibleFastTarget91(p,si){
       target*=1+(luckPhase-.5)*(ex.luck-.5)*.004;
     }
 
+    // v7.61: raw chassis speed gap is intentionally tiny.
+    // This multiplies the player's stat-derived pace; it never replaces it.
+    if(target>.20)target*=unit764.topSpeed;
+
     if(!Number.isFinite(p._speedMul720))p._speedMul720=target;
     const accelTau=78-ex.acceleration*31;
-    const tau=st.mode==="NORMAL"?Math.max(92,142-ex.consistency*22):
-      st.mode==="EVADE"?Math.max(24,38-ex.control*10):
-      Math.max(42,accelTau);
-    const alpha=1-Math.exp(-Math.max(1,dt)/tau);
+    const rising=target>p._speedMul720+.002;
+    let tau;
+    if(st.mode==="NORMAL"){
+      tau=Math.max(86,142-ex.consistency*22);
+      if(rising)tau/=unit764.accel;
+    }else if(st.mode==="EVADE"){
+      // v7.63: braking response and escape re-acceleration are separate.
+      tau=Math.max(22,38-ex.control*10);
+      const fit769=unitCompatibility769(p);
+      tau/=rising?(unit764.reaccel*fit769.reaccelMul):unit764.brake;
+    }else{
+      tau=Math.max(38,accelTau);
+      const fit769=unitCompatibility769(p);
+      tau/=rising?(unit764.reaccel*fit769.reaccelMul):unit764.brake;
+    }
+    const alpha=1-Math.exp(-Math.max(1,dt)/Math.max(18,tau));
     p._speedMul720 += (target-p._speedMul720)*alpha;
+    p._unitSpeedTarget764=target;
     return p._speedMul720;
   }
 
@@ -10432,7 +7083,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
         let sx=Number.isFinite(p.steerX)?p.steerX:wantX;
         let sy=Number.isFinite(p.steerY)?p.steerY:wantY;
         const hard=/hard/.test(st723.action||"");
-        const tau=st723.mode==="REJOIN"?72:(hard?34:52);
+        const unit764=unitChassis764(),fit769=unitCompatibility769(p);
+        const unitTurn764=unit764.turn*unit764.cornerResponse*fit769.turnMul;
+        const baseTau=st723.mode==="REJOIN"?72:(hard?34:52);
+        const tau=baseTau/Math.max(.88,unitTurn764);
         const a=1-Math.exp(-Math.max(1,dt)/tau);
         sx+=(wantX-sx)*a; sy+=(wantY-sy)*a;
         const sl=Math.hypot(sx,sy)||1;
@@ -10651,15 +7305,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(!engineAuthority719) rescueIfStuck(p,now);
 
     // v2.50 danger + near miss telemetry.
-    if(!safeAt(p.x,p.y)){let nearestObsSq=Infinity;for(const o of playerNearbyObservers(p,3)){const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;if(d2<nearestObsSq)nearestObsSq=d2;}if(nearestObsSq<10.24)p.match.dangerExposureMs+=dt;const hitSq=PLAYER_HIT_RADIUS*PLAYER_HIT_RADIUS;if(nearestObsSq>hitSq&&nearestObsSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){p.match.nearMisses++;if(nearestObsSq<.3844)p.match.extremeNearMisses++;p.match.lastNearMissAt=now;addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestObsSq<.3844?2:1);}}
+    if(!safeAt(p.x,p.y)){let nearestObsSq=Infinity;for(const o of playerNearbyObservers(p,3)){const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;if(d2<nearestObsSq)nearestObsSq=d2;}if(nearestObsSq<10.24)p.match.dangerExposureMs+=dt;const hitR764=playerHitRadius764(p),hitSq=hitR764*hitR764;if(nearestObsSq>hitSq&&nearestObsSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){p.match.nearMisses++;if(nearestObsSq<.3844)p.match.extremeNearMisses++;p.match.lastNearMissAt=now;addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestObsSq<.3844?2:1);}}
 
     // Players are non-solid and may overlap completely.
     // Collision here is observer-only: player-player contact never pushes, slows, or stops anyone.
     // Collision check: actual observer contact = guaranteed stop outside invincible safe zones.
     if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
-      for(const o of playerNearbyObservers(p,PLAYER_HIT_RADIUS+1.0)){
+      const hitR764=playerHitRadius764(p);
+      for(const o of playerNearbyObservers(p,hitR764+1.0)){
         const observerStep=Math.hypot(o.x-(o.simPrevX??o.x),o.y-(o.simPrevY??o.y));
-        const broad=PLAYER_HIT_RADIUS+Math.hypot(p.x-p.simPrevX,p.y-p.simPrevY)+observerStep+.18;
+        const broad=hitR764+Math.hypot(p.x-p.simPrevX,p.y-p.simPrevY)+observerStep+.18;
         const opx=o.simPrevX??o.x, opy=o.simPrevY??o.y;
         const xFar=Math.abs(o.x-p.x)>broad && Math.abs(o.x-p.simPrevX)>broad &&
           Math.abs(opx-p.x)>broad && Math.abs(opx-p.simPrevX)>broad;
@@ -10911,14 +7566,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
   let commentaryLastKey="";
   let commentaryLastAt=0;
   let commentaryLastGeneralAt=0;
-
-  function resetCommentary(){
-    commentaryItems=[];commentaryLastKey="";commentaryLastAt=0;commentaryLastGeneralAt=0;
-    const feed=document.getElementById("commentaryFeed"),lead=document.getElementById("commentaryLead"),round=document.getElementById("commentaryRound");
-    if(feed) feed.innerHTML="";
-    if(lead) lead.textContent="출발 준비! 선수들이 스타트 라인에 섰습니다.";
-    if(round) round.textContent=`${currentRound}R`;
-  }
   function commentaryLine(key,text,now=gameNow(),force=false){
     if(!force&&key===commentaryLastKey&&now-commentaryLastAt<2600)return;
     if(!force&&now-commentaryLastAt<900)return;
@@ -10929,24 +7576,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(lead)lead.textContent=text;
     if(feed)feed.innerHTML=commentaryItems.map((x,i)=>`<div class="commentary-line ${i===0?"latest":""}"><span>${(x.time/1000).toFixed(1)}초</span><b>${x.text}</b></div>`).join("");
   }
-  function updateLiveCommentary(now){
-    const ordered=liveOrderedPlayers();if(!ordered.length)return;
-    const p1=ordered[0],p2=ordered[1],p3=ordered[2],frac=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
-    const g12=broadcastGapSeconds(p1,p2),g23=broadcastGapSeconds(p2,p3);
-    const round=document.getElementById("commentaryRound");if(round)round.textContent=`${currentRound}R · ${(frac*100).toFixed(0)}%`;
-    if(frac>.94&&g12!=null&&g12<.20){commentaryLine(`finish-${p1.index}-${p2.index}`,`${p1.name} 선두! ${p2.name}이 바로 뒤에서 결승선을 노립니다. 마지막까지 모릅니다!`,now);return;}
-    if(g12!=null&&g12<.24){commentaryLine(`fight-${p1.index}-${p2.index}`,`${p1.name}과 ${p2.name}, 선두 싸움이 붙었습니다. 격차가 ${g12.toFixed(2)}초밖에 나지 않습니다!`,now);return;}
-    if(g12!=null&&g23!=null&&g12<.40&&g23<.40){commentaryLine(`three-${p1.index}-${p2.index}-${p3.index}`,`상위 3명이 한 덩어리입니다. ${p1.name}, ${p2.name}, ${p3.name}! 한 번의 회피가 순위를 바꿀 수 있습니다.`,now);return;}
-    let climber=null,bestGain=0;ordered.forEach((q,i)=>{const gain=(q.match?.startRank||i+1)-(i+1);if(gain>bestGain){bestGain=gain;climber=q;}});
-    if(climber&&bestGain>=3){commentaryLine(`climb-${climber.index}-${bestGain}`,`${climber.name}, 출발 순위보다 ${bestGain}계단 올라왔습니다. 추월 흐름이 좋습니다!`,now);return;}
-    if(now-commentaryLastGeneralAt>5200){
-      commentaryLastGeneralAt=now;
-      if(frac<.22)commentaryLine(`phase1-${p1.index}`,`${p1.name}이 초반 선두를 잡았습니다. 첫 코너와 옵저버 회피가 중요합니다.`,now);
-      else if(frac<.55)commentaryLine(`phase2-${p1.index}`,`${p1.name}이 선두, ${p2.name}이 추격합니다. 중반부터 라인 선택 하나가 추월 기회로 이어집니다.`,now);
-      else if(frac<.82)commentaryLine(`phase3-${p1.index}`,`후반으로 들어갑니다. ${p1.name}이 앞서지만 ${p2.name}도 아직 사정권입니다. 실수 한 번이면 뒤집힙니다.`,now);
-      else commentaryLine(`phase4-${p1.index}`,`마지막 구간! ${p1.name}이 선두를 지킵니다. 최단 라인과 마지막 회피가 승부를 결정합니다.`,now);
-    }
-  }
 
   function liveOrderedPlayers(){
     return [...players].sort((a,b)=>{
@@ -10955,21 +7584,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
       return currentProgress(b)-currentProgress(a);
     });
   }
-  function broadcastGapSeconds(a,b){
-    if(!a||!b) return null;
-    return Math.max(0,currentProgress(a)-currentProgress(b))/Math.max(1,(a.speed+b.speed)*.5);
-  }
   function setBroadcastStory(key,kicker,title,sub,now=gameNow(),hold=1800){
     const k={"NEW LEADER":"선두 교체","FINAL BATTLE":"결승선 승부","3-WAY BATTLE":"3인 접전","BIG COMEBACK":"대역전","LEADER WATCH":"선두 수성","PHOTO FINISH":"포토피니시"}[kicker]||kicker;
     commentaryLine(`story-${key}`,`${k}! ${title}${sub?` · ${sub}`:""}`,now);
-  }
-  function updateBroadcastFinal(now){
-    const ordered=liveOrderedPlayers();if(!ordered.length)return;
-    const p1=ordered[0],p2=ordered[1],p3=ordered[2],frac=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
-    const g12=broadcastGapSeconds(p1,p2),g23=broadcastGapSeconds(p2,p3);
-    const strip=document.getElementById("broadcastStrip");
-    if(strip)strip.innerHTML=`<div><span>${frac>=.82?"마지막 구간":"실시간 선두"}</span><b>${p1.name}</b></div><div><span>1위 ↔ 2위 격차</span><b>${g12==null?"--":g12.toFixed(2)+"초"}</b></div><div><span>2위 ↔ 3위 격차</span><b>${g23==null?"--":g23.toFixed(2)+"초"}</b></div><div><span>선두 교체</span><b>${raceLeaderChanges}회</b></div>`;
-    updateLiveCommentary(now);
   }
 
   function updateCamera(dt){
@@ -11024,7 +7641,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     roundTransitioning=true;
 
     const ordered=[...players].sort((a,b)=>a.finishTime-b.finishTime);
-    const result={round:currentRound,team:{A:0,B:0,C:0,D:0},
+    const result={round:currentRound,unit769:{...unitChassis764(currentRound)},
+      team:{A:0,B:0,C:0,D:0},
       leaderChanges:raceLeaderChanges,totalOvertakes:raceTotalOvertakes,players:[]};
 
     ordered.forEach((p,idx)=>{
@@ -11058,6 +7676,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         startReactionMs:p.startReactionMs,
         startExecution:p.startExecution,
         analytics749:playerAnalytics749(p),
+        unitCompatibility769:{...unitCompatibility769(p,currentRound)},
         rating:0
       });
     });
@@ -11113,6 +7732,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     }
 
     recordAnalyticsRound749(result);
+    recordUnitRound769(result);
     roundHistory.push(result);
     rebuildTournamentStandings();
     recordLiveBalanceRound(result);
@@ -11144,20 +7764,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
     el.innerHTML=`<div class="personal-score-title">개인 클리어 점수 · 5점 선승</div>`+
       rows.map((pt,i)=>`<div class="personal-score-row"><span class="personal-rank">${i+1}</span><span class="score-dot" style="background:${teamColor(pt.team)}"></span><span class="personal-name">${pt.name}</span><b>${pt.total}</b></div>`).join("");
-  }
-
-  function qaRuntimeStatus(){
-    const issues=[];
-    if(observers.length!==OBSERVER_COUNT) issues.push(`옵저버 ${observers.length}/${OBSERVER_COUNT}`);
-    if(players.length!==8) issues.push(`선수 ${players.length}/8`);
-    if(CAMERA_ZOOM!==3.0) issues.push(`카메라 ${CAMERA_ZOOM}`);
-    if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001) issues.push(`충돌범위 ${PLAYER_HIT_RADIUS}`);
-    if(Math.abs(SIM_STEP_MS-20)>.001) issues.push(`SIM ${SIM_STEP_MS.toFixed(1)}`);
-    if(STUN_MS!==0) issues.push(`STUN ${STUN_MS}`);
-    if(INV_MS!==0) issues.push(`INV ${INV_MS}`);
-    if(Math.abs(ROAD_MARGIN-1.10)>.0001) issues.push(`ROAD ${ROAD_MARGIN}`);
-    if(Math.abs(DEATH_EDGE_EXTRA-4.50)>.0001) issues.push(`EDGE ${DEATH_EDGE_EXTRA}`);
-    return issues.length?`QA CHECK ${issues.join("·")}`:"정상";
   }
 
   function renderDiagnostics(){
@@ -11423,7 +8029,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
           }
         }else leadBattle.classList.add("hidden");
       }
-      cameraLabel.textContent=`${BUILD_ID} · ${ROUND_UNIT_NAMES[currentRound]} · 옵저버 ${observers.length} · 충돌범위 ${PLAYER_HIT_RADIUS.toFixed(2)}`;
+      const unitHud764=unitChassis764();
+      cameraLabel.textContent=`${BUILD_ID} · ${unitHud764.name} · 속도 x${unitHud764.topSpeed.toFixed(3)} · 크기 ${unitHud764.hitRadius.toFixed(2)} · 옵저버 ${observers.length}`;
       renderDiagnostics();
       // v3.2 upper broadcast/leader-change strip removed.
       lastRankingRender=ts;
@@ -11532,7 +8139,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const q730=renderPlayerPos730(p);
     const x=(q730.x-view.sx)*view.scale, y=(q730.y-view.sy)*view.scale;
     if(x<-80||y<-80||x>canvas.width+80||y>canvas.height+80) return;
-    const r=Math.max(8.6846,view.scale*1.48*PLAYER_VISUAL_SCALE);
+    const unitVisual764=playerVisualScale764(p);
+    const r=Math.max(7.25,view.scale*1.48*PLAYER_VISUAL_SCALE*unitVisual764);
 
     const now=gameNow();
     if(!Number.isFinite(p._renderLastX730)){p._renderLastX730=q730.x;p._renderLastY730=q730.y;}
@@ -11909,7 +8517,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
 
   let lastLiveStatsRender=0;
-  function playerDangerStatus(p){const raw=playerNearbyObservers(p,13),s=segs[Math.min(p.seg,segs.length-1)];let front=0,close=0;for(const o of raw){const dx=o.x-p.x,dy=o.y-p.y;if(dx*dx+dy*dy<49)close++;if(dx*s.ux+dy*s.uy>0&&Math.abs(dx*s.nx+dy*s.ny)<4.2)front++;}const score=close+front*1.6;return score>=9?"극위험":score>=5?"위험":score>=2?"주의":"안전";}
 
   function livePerformanceRating(p,ordered,now=gameNow()){
     const rank=Math.max(1,ordered.indexOf(p)+1);
@@ -11963,53 +8570,6 @@ targetOff=clampRoadOffset(si,targetOff,p);
         </svg>
         <strong class="live-rating-value" style="color:${p.color}">${rating.toFixed(1)}</strong>
       </div>`;
-    }).join("");
-  }
-
-  function renderLiveStats(now=gameNow()){
-    if(now-lastLiveStatsRender<950)return;
-    lastLiveStatsRender=now;
-    renderLiveRatings(now);
-    const summary=document.getElementById("liveStatsSummary");
-    const leaders=document.getElementById("liveStatsLeaders");
-    const raceBox=document.getElementById("liveStatsRace");
-    const playerBox=document.getElementById("liveStatsPlayers");
-    const phase=document.getElementById("liveStatsPhase");
-    if(!summary||!leaders||!raceBox||!playerBox)return;
-    const ordered=liveOrderedPlayers();if(!ordered.length)return;
-    const collisions=players.reduce((s,p)=>s+(p.match?.collisions||0),0);
-    const overtakes=players.reduce((s,p)=>s+(p.match?.overtakes||0),0);
-    const avoids=players.reduce((s,p)=>s+(p.match?.avoids||0),0);
-    const controls=players.reduce((s,p)=>s+(p.match?.controlAttempts||0),0);
-    const stops=players.reduce((s,p)=>s+(p.match?.stops||0),0);const nearMisses=players.reduce((s,p)=>s+(p.match?.nearMisses||0),0);
-    const p1=ordered[0],p2=ordered[1];
-    const gap=broadcastGapSeconds(p1,p2);
-    const eta=estimatedFinishSeconds(p1,now);
-    const bestPass=[...players].sort((a,b)=>(b.match?.overtakes||0)-(a.match?.overtakes||0))[0];
-    const bestAvoid=[...players].sort((a,b)=>(b.match?.avoids||0)-(a.match?.avoids||0))[0];
-    const bestLead=[...players].sort((a,b)=>(b.match?.leadMs||0)-(a.match?.leadMs||0))[0];
-    const bestGain=[...players].sort((a,b)=>(b.match?.maxRankGain||0)-(a.match?.maxRankGain||0))[0];
-    const prog=Math.max(0,Math.min(1,currentProgress(p1)/routeLength));
-    if(phase)phase.textContent=`${currentRound}R · ${Math.round(prog*100)}%`;
-
-    summary.innerHTML=`<div><span>충돌</span><b>${collisions}</b></div><div><span>추월</span><b>${overtakes}</b></div><div><span>회피</span><b>${avoids}</b></div><div><span>컨트롤</span><b>${controls}</b></div><div><span>스탑</span><b>${stops}</b></div><div><span>선두교체</span><b>${raceLeaderChanges}</b></div><div><span>NEAR MISS</span><b>${nearMisses}</b></div>`;
-
-    const row=(label,p,val)=>`<div class="live-stat-leader"><span>${label}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><strong>${val}</strong></div>`;
-    leaders.innerHTML=row("추월",bestPass,bestPass.match?.overtakes||0)+
-      row("회피",bestAvoid,bestAvoid.match?.avoids||0)+
-      row("선두",bestLead,`${((bestLead.match?.leadMs||0)/1000).toFixed(1)}초`)+
-      row("상승",bestGain,`+${bestGain.match?.maxRankGain||0}`);
-
-    const dangerBox=document.getElementById("liveDanger");if(dangerBox)dangerBox.innerHTML=`<span>선두 주변 위험도</span><b>${playerDangerStatus(p1)}</b>`;
-    raceBox.innerHTML=`<div><span>현재 선두</span><b>${p1.name}</b></div>
-      <div><span>1↔2 격차</span><b>${gap==null?"--":gap.toFixed(2)+"초"}</b></div>
-      <div><span>선두 예상기록</span><b>${eta==null?"--":eta.toFixed(2)+"초"}</b></div>
-      <div><span>밀집구역</span><b>${observerDensityZones.length}곳</b></div>`;
-
-    playerBox.innerHTML=ordered.slice(0,5).map((p,i)=>{
-      const line=p.linePersonality>.45?"인코스":p.linePersonality<-.45?"안전/외곽":"균형";
-      const creative=Math.min(55,Math.round((p.creativeRouteUsed||0)*100));
-      return `<div class="live-player-stat"><span>${i+1}</span>${avatarHtml(p.index,"live-stat-avatar")}<b>${p.name}</b><small>${line}</small><em>스타트 ${(p.startReactionMs/1000).toFixed(3)}초 · 압박 ${Math.round((p.livePressure||0)*100)}% · 아슬회피 ${p.match?.nearMisses||0} · 충돌 ${p.match?.collisions||0}</em></div>`;
     }).join("");
   }
 
@@ -12155,6 +8715,48 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   
+  const UNIT_STATS_KEY_769="observerFM.unitStats.v769";
+  function blankUnitStats769(round){
+    const u=unitChassis764(round);
+    return {key:u.key,name:u.name,races:0,playerStarts:0,wins:0,top3:0,finishes:0,
+      rankSum:0,timeSum:0,timeN:0,collisions:0,evades:0,evadeSuccess:0,
+      lineEffSum:0,insideAccSum:0};
+  }
+  function loadUnitStats769(){
+    try{return JSON.parse(localStorage.getItem(UNIT_STATS_KEY_769)||"{}")||{};}catch(e){return {};}
+  }
+  function saveUnitStats769(v){
+    try{localStorage.setItem(UNIT_STATS_KEY_769,JSON.stringify(v));}catch(e){}
+  }
+  function recordUnitRound769(result){
+    if(!result?.players)return;
+    const round=result.round||currentRound,u=unitChassis764(round);
+    const db=loadUnitStats769(),r=db[u.key]||blankUnitStats769(round);
+    r.races++;
+    for(const x of result.players){
+      const a=x.analytics749?.advanced||{};
+      r.playerStarts++;r.wins+=x.rank===1?1:0;r.top3+=x.rank<=3?1:0;
+      const finished=Number.isFinite(x.time);
+      if(finished){r.finishes++;r.timeSum+=x.time;r.timeN++;}
+      r.rankSum+=x.rank;r.collisions+=x.collisions||0;
+      r.evades+=a.avoidanceCount||0;r.evadeSuccess+=a.avoidanceSuccess||0;
+      r.lineEffSum+=a.racingLineEfficiency||0;r.insideAccSum+=a.insideLineAccuracy||0;
+    }
+    db[u.key]=r;saveUnitStats769(db);
+  }
+  function unitStats769(){
+    const db=loadUnitStats769();
+    return Object.keys(UNIT_CHASSIS_764).map(k=>{
+      const u=UNIT_CHASSIS_764[k],r=db[u.key]||blankUnitStats769(+k),n=Math.max(1,r.playerStarts);
+      return {...r,
+        winRate:r.wins/n,top3Rate:r.top3/n,finishRate:r.finishes/n,avgRank:r.rankSum/n,
+        avgTime:r.timeN?r.timeSum/r.timeN:null,
+        evadeSuccessRate:r.evades?r.evadeSuccess/r.evades:0,
+        avgLineEfficiency:r.lineEffSum/n,avgInsideAccuracy:r.insideAccSum/n,
+        chassis:{...u}};
+    });
+  }
+
   const ANALYTICS_KEY_749="observerFM.analytics.v749";
   function blankAnalytics749(){
     return {races:0,wins:0,top3:0,finishes:0,rankSum:0,ratingSum:0,
@@ -12306,6 +8908,9 @@ function seasonCardHtml(p){
         <div><b>시그니처</b><span>${personalitySummary759(p).signature}</span></div>
         <div><b>클러치</b><span>${Math.round(personalitySummary759(p).clutch*100)}</span></div>
         <div><b>현재 라이벌</b><span>${personalitySummary759(p).rival||"-"}</span></div>
+        <div><b>현재 유닛</b><span>${unitChassis764().name} · ${unitChassis764().role}</span></div>
+        <div><b>유닛 특성</b><span>속도 x${unitChassis764().topSpeed.toFixed(3)} · 충돌 ${unitChassis764().hitRadius.toFixed(2)}</span></div>
+        <div><b>유닛 궁합</b><span>${unitCompatibility769(p).grade} · ${Math.round(unitCompatibility769(p).fit*100)}</span></div>
         <div><b>당일 컨디션</b><span>${p.raceForm>=1.025?"좋음":p.raceForm<=.975?"흔들림":"보통"}</span></div>
         <div><b>팀전 누적점수</b><span>${playerTournament[p.index]?.total||0}점</span></div>
         <div><b>강점</b><span>${entries.slice(0,3).map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
@@ -13378,10 +9983,16 @@ function seasonCardHtml(p){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버130");
-    if(Math.abs(PLAYER_HIT_RADIUS-.56)>.0001)issues.push("HIT");
+    const u764=unitChassis764();
+    if(Object.keys(UNIT_CHASSIS_764).length!==5)issues.push("유닛5");
+    if(UNIT_CHASSIS_764[1].hitRadius>=Math.min(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.hitRadius)))issues.push("스커지크기");
+    if(UNIT_CHASSIS_764[1].topSpeed<=Math.max(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.topSpeed)))issues.push("스커지속도");
+    if(unitSpeedSpread764().spreadPct>1.5)issues.push("속도격차");
+    if(!(u764.hitRadius>=.47&&u764.hitRadius<=.63))issues.push("HIT");
     // v4.08: generous outer survival buffer; no physical wall exists.
     if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
-    if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("크기");
+    if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("기본크기");
+    if(!(UNIT_CHASSIS_764[1].visualScale<UNIT_CHASSIS_764[3].visualScale&&UNIT_CHASSIS_764[5].visualScale>1))issues.push("유닛표현");
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
@@ -13406,6 +10017,11 @@ function seasonCardHtml(p){
     getDrivingPersonality754:()=>players.map(p=>({name:p.name,...driverPersonality754(p)})),
     getPersonalityFinal759:()=>players.map(p=>({name:p.name,...personalitySummary759(p)})),
     getRivalContexts759:()=>players.map(p=>({name:p.name,...rivalContext759(p),rival:rivalContext759(p).rival?.name||null})),
+    getUnitSpecs764:()=>clonePlain(UNIT_CHASSIS_764),
+    getCurrentUnit764:()=>clonePlain(unitChassis764()),
+    getUnitCompatibility769:(name)=>{const p=players.find(x=>x.name===name)||players[0];return p?clonePlain(unitCompatibility769(p)):null;},
+    getUnitStats769:()=>clonePlain(unitStats769()),
+    resetUnitStats769:()=>{try{localStorage.removeItem(UNIT_STATS_KEY_769);}catch(e){}return true;},
     getTeleportAudit754:()=>players.map(p=>({
       name:p.name,trips:p._teleportGuardTrips754||0,
       backtrackPrevented:p._backtrackPrevented754||0,
