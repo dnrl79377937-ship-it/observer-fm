@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.32";
+  const BUILD_ID = "v7.33";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -69,19 +69,20 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   // v29: 20 FM-style attributes + individual driving personality.
   // Values are fixed for this build so a player's identity does not reroll on refresh.
+  // v7.33 FIXED ALL-STAT EXPERIMENT
   const playerStats = [
-    {pace:75,acceleration:95,cornering:82,insideLine:78,routeReading:74,avoidance:83,reaction:91,prediction:96,control:79,stability:98,braking:98,recovery:99,consistency:98,focus:90,aggression:95,riskControl:87,pressure:81,start:97,endurance:79,luck:96}, // Angel
-    {pace:78,acceleration:92,cornering:97,insideLine:82,routeReading:94,avoidance:98,reaction:88,prediction:73,control:73,stability:74,braking:85,recovery:77,consistency:81,focus:86,aggression:98,riskControl:94,pressure:75,start:92,endurance:80,luck:96}, // Egle
-    {pace:86,acceleration:97,cornering:75,insideLine:79,routeReading:72,avoidance:95,reaction:81,prediction:80,control:73,stability:82,braking:92,recovery:97,consistency:81,focus:95,aggression:75,riskControl:96,pressure:77,start:87,endurance:97,luck:97}, // GhostRider
-    {pace:82,acceleration:95,cornering:94,insideLine:97,routeReading:93,avoidance:84,reaction:90,prediction:88,control:93,stability:77,braking:83,recovery:84,consistency:92,focus:72,aggression:85,riskControl:84,pressure:94,start:93,endurance:76,luck:74}, // Bacilius
-    {pace:88,acceleration:90,cornering:97,insideLine:74,routeReading:84,avoidance:88,reaction:76,prediction:99,control:93,stability:96,braking:83,recovery:97,consistency:76,focus:84,aggression:97,riskControl:84,pressure:98,start:93,endurance:94,luck:93}, // Zino
-    {pace:74,acceleration:97,cornering:91,insideLine:75,routeReading:84,avoidance:84,reaction:76,prediction:88,control:86,stability:98,braking:86,recovery:88,consistency:77,focus:93,aggression:94,riskControl:83,pressure:89,start:94,endurance:77,luck:76}, // Chotbul
-    {pace:88,acceleration:94,cornering:74,insideLine:94,routeReading:88,avoidance:91,reaction:78,prediction:99,control:97,stability:95,braking:96,recovery:96,consistency:82,focus:84,aggression:99,riskControl:84,pressure:83,start:96,endurance:86,luck:88}, // Kaka
-    {pace:83,acceleration:98,cornering:96,insideLine:98,routeReading:90,avoidance:94,reaction:86,prediction:95,control:80,stability:96,braking:72,recovery:83,consistency:79,focus:88,aggression:90,riskControl:96,pressure:89,start:85,endurance:81,luck:99}, // Pika
-    {pace:85,acceleration:91,cornering:89,insideLine:91,routeReading:92,avoidance:90,reaction:88,prediction:93,control:90,stability:89,braking:86,recovery:90,consistency:88,focus:91,aggression:87,riskControl:90,pressure:91,start:89,endurance:88,luck:86}, // HongKey
-    {pace:92,acceleration:86,cornering:95,insideLine:88,routeReading:83,avoidance:91,reaction:94,prediction:84,control:87,stability:90,braking:89,recovery:85,consistency:93,focus:88,aggression:82,riskControl:92,pressure:86,start:90,endurance:91,luck:79}, // TaeHyeon
-    {pace:80,acceleration:96,cornering:86,insideLine:93,routeReading:90,avoidance:97,reaction:92,prediction:89,control:95,stability:84,braking:94,recovery:92,consistency:80,focus:96,aggression:91,riskControl:88,pressure:93,start:84,endurance:87,luck:90}, // DVA
-    {pace:90,acceleration:88,cornering:92,insideLine:85,routeReading:97,avoidance:86,reaction:85,prediction:98,control:88,stability:94,braking:82,recovery:94,consistency:91,focus:95,aggression:84,riskControl:97,pressure:88,start:92,endurance:83,luck:87}, // LiveCam
+    {pace:30,acceleration:30,cornering:30,insideLine:30,routeReading:30,avoidance:30,reaction:30,prediction:30,control:30,stability:30,braking:30,recovery:30,consistency:30,focus:30,aggression:30,riskControl:30,pressure:30,start:30,endurance:30,luck:30}, // Angel · ALL 30
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Egle · ALL 60
+    {pace:90,acceleration:90,cornering:90,insideLine:90,routeReading:90,avoidance:90,reaction:90,prediction:90,control:90,stability:90,braking:90,recovery:90,consistency:90,focus:90,aggression:90,riskControl:90,pressure:90,start:90,endurance:90,luck:90}, // GhostRider · ALL 90
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Bacilius · ALL 60
+    {pace:90,acceleration:90,cornering:90,insideLine:90,routeReading:90,avoidance:90,reaction:90,prediction:90,control:90,stability:90,braking:90,recovery:90,consistency:90,focus:90,aggression:90,riskControl:90,pressure:90,start:90,endurance:90,luck:90}, // Zino · ALL 90
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Chotbul · ALL 60
+    {pace:80,acceleration:80,cornering:80,insideLine:80,routeReading:80,avoidance:80,reaction:80,prediction:80,control:80,stability:80,braking:80,recovery:80,consistency:80,focus:80,aggression:80,riskControl:80,pressure:80,start:80,endurance:80,luck:80}, // Kaka · ALL 80
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Pika · ALL 60
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // HongKey · ALL 60
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // TaeHyeon · ALL 60
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // DVA · ALL 60
+    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // LiveCam · ALL 60
   ];
 
   const drivingStyles = [
@@ -225,12 +226,17 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function clonePlain(v){ return JSON.parse(JSON.stringify(v)); }
 
+  const STAT_EXPERIMENT_733={
+    Angel:30,GhostRider:90,Zino:90,Kaka:80,default:60
+  };
+
   function engineCoreRules(){
     return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:8,
       playerHitRadius:PLAYER_HIT_RADIUS,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
-      baseSpeedMultiplier:1.566903319};
+      baseSpeedMultiplier:1.566903319,
+      statExperiment733:{...STAT_EXPERIMENT_733}};
   }
 
   function buildMasterMatchResult(){
@@ -375,7 +381,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       {arch:"wideCut",open:-.50,band:-.52,wave:.14},
       {arch:"variant",open:-.72,band:-.72,wave:-.12}
     ];
-    for(let j=laneSignatures.length-1;j>0;j--){const k=Math.floor(Math.random()*(j+1));[laneSignatures[j],laneSignatures[k]]=[laneSignatures[k],laneSignatures[j]];}
+    // v7.33 controlled stat experiment: fixed lane signatures per slot.
+    // Do not reshuffle a hidden route advantage between test runs.
     return activeSourceIndexes.map((src,i)=>{
       const laneSig=laneSignatures[i];
       const name=names[src];
@@ -385,7 +392,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const paceNorm=(pf.pace-90)/10;
       const consistency=(stats.consistency-72)/27;
       const luck=(stats.luck-72)/27;
-      const formSpread=.008-consistency*.0035;
+      const formSpread=.0035-consistency*.0015; // v7.33: less random form noise for stat test
       const formRoll=(Math.random()+Math.random()+Math.random()-1.5)/1.5;
       const raceForm=Math.max(.995,Math.min(1.005,1+formRoll*formSpread+(luck-.5)*.001));
       // v2.55: survival-minded racers trade distance for safety.
@@ -6672,7 +6679,7 @@ function farthestVisibleFastTarget91(p,si){
     // execution quality comes from the racer's actual stats, never slot/index seeds.
     if(!p._ability645){
       const st=p.stats||{};
-      const n=(k,f=84)=>Math.max(.42,Math.min(.98,((Number(st[k])||f)-58)/44));
+      const n=(k,f=60)=>Math.max(.05,Math.min(.98,(Number(st[k])||f)/100));
       const avg=(...v)=>v.reduce((a,b)=>a+b,0)/v.length;
       p._ability645={
         line:avg(n("insideLine"),n("routeReading"),n("control")),
@@ -8530,9 +8537,11 @@ function farthestVisibleFastTarget91(p,si){
   const RACING_SPLINE_LENGTH_720=323.247224786148;
 
   function clamp01720(v){ return Math.max(0,Math.min(1,v)); }
-  function stat720(p,key,fallback=84){
+  function stat720(p,key,fallback=60){
     const v=Number(p?.stats?.[key]);
-    return clamp01720(((Number.isFinite(v)?v:fallback)-72)/27);
+    // v7.33 experiment: literal FM-style 0~100 stat scale.
+    // 30 -> .30, 60 -> .60, 80 -> .80, 90 -> .90.
+    return clamp01720((Number.isFinite(v)?v:fallback)/100);
   }
 
   function driverExecution720(p){
