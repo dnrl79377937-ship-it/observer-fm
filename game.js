@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.69";
+  const BUILD_ID = "v7.70";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -202,6 +202,75 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function signatureOf(p){return signatureMoves[p.drivingStyle?.style]||signatureMoves.balanced;}
 
 
+
+  // ============================================================
+  // v7.70 MULTI MAP CORE
+  // Every map uses the same normalized 172 x 178 logical space.
+  // v7.70 binds the existing approved S-map as Map 01.
+  // The other ten maps are catalogued now and receive real geometry in v7.71+.
+  // ============================================================
+  const MAP_POOL_770=[
+    {
+      id:"s_map",slot:1,name:"S맵",en:"S Map",theme:"Blue Neon City",
+      tags:["기준맵","밸런스","테크니컬"],geometryReady:true,
+      image:"map_v672_equal_medium_start_goal.png?v=770-map-core",
+      imageSize:{w:696,h:720},logicalSize:{w:172,h:178},
+      start:{x:31.05,y:132.55},goal:{x:141.50,y:22.50},
+      safeZones:{
+        start:{x0:22.80,y0:124.30,x1:39.30,y1:140.80},
+        goal:{x0:133.25,y0:14.25,x1:149.75,y1:30.75}
+      },
+      miniCrop:{x:24,y:8,w:127,h:150},
+      sectorCuts:[.29,.42,.66,.77,.84],
+      sectorNames:["스타트→첫 코너","5→3시 세로","3→9시 중단","9→11시 세로","11→12시 상단","마지막 직선"],
+      special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false},
+      observerProfile:"baseline"
+    },
+    {id:"rubber_duck",slot:2,name:"러버덕",en:"Rubber Duck",theme:"Character Theme Park",
+      tags:["캐릭터","장애물","넓은구간"],geometryReady:false,
+      special:{shortcuts:true,obstacles:true,wideRoad:true,multiRoute:true,verticality:false},observerProfile:"theme-park"},
+    {id:"ice_ring",slot:3,name:"아이스 링",en:"Ice Ring",theme:"Frozen Ring",
+      tags:["원형","연속코너","테크니컬"],geometryReady:false,
+      special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false},observerProfile:"ring"},
+    {id:"desert_oasis",slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert & Oasis",
+      tags:["넓은길","지름길","테마"],geometryReady:false,
+      special:{shortcuts:true,obstacles:false,wideRoad:true,multiRoute:true,verticality:false},observerProfile:"open-wide"},
+    {id:"neon_city",slot:5,name:"네오 시티",en:"Neon City",theme:"Neon Metropolis",
+      tags:["고속","넓은길","다층"],geometryReady:false,
+      special:{shortcuts:true,obstacles:false,wideRoad:true,multiRoute:true,verticality:true},observerProfile:"high-speed"},
+    {id:"double_hairpin",slot:6,name:"더블 헤어핀",en:"Double Hairpin",theme:"Forest Hairpins",
+      tags:["헤어핀","인코스","코너"],geometryReady:false,
+      special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false},observerProfile:"technical"},
+    {id:"skyway",slot:7,name:"스카이웨이",en:"Skyway",theme:"Floating Sky City",
+      tags:["하늘","다층","분기"],geometryReady:false,
+      special:{shortcuts:true,obstacles:false,wideRoad:true,multiRoute:true,verticality:true},observerProfile:"sky"},
+    {id:"star_fish",slot:8,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",
+      tags:["갈림길","넓은길","테마"],geometryReady:false,
+      special:{shortcuts:true,obstacles:false,wideRoad:true,multiRoute:true,verticality:false},observerProfile:"branching"},
+    {id:"cliff_hanger",slot:9,name:"클리프 행거",en:"Cliff Hanger",theme:"High Cliff",
+      tags:["절벽","초협로","고난도지름길"],geometryReady:false,
+      special:{shortcuts:true,obstacles:false,wideRoad:false,multiRoute:true,verticality:true},observerProfile:"precision"},
+    {id:"river_cross",slot:10,name:"리버 크로스",en:"River Cross",theme:"River & Bridges",
+      tags:["분기","다리","전략"],geometryReady:false,
+      special:{shortcuts:true,obstacles:true,wideRoad:true,multiRoute:true,verticality:false},observerProfile:"crossing"},
+    {id:"industrial_zone",slot:11,name:"산업지대",en:"Industrial Zone",theme:"Heavy Industry",
+      tags:["장애물","기믹","테크니컬"],geometryReady:false,
+      special:{shortcuts:true,obstacles:true,wideRoad:false,multiRoute:true,verticality:false},observerProfile:"industrial"}
+  ];
+  const MAP_DEFINITIONS_770=Object.fromEntries(MAP_POOL_770.map(m=>[m.id,m]));
+  let activeMapId770="s_map";
+  let activeMap770=MAP_DEFINITIONS_770[activeMapId770];
+
+  function currentMap770(){ return activeMap770||MAP_DEFINITIONS_770.s_map; }
+  function mapStart770(){ const m=currentMap770(); return {x:m.start?.x??31.05,y:m.start?.y??132.55}; }
+  function mapGoal770(){ const m=currentMap770(); return {x:m.goal?.x??141.5,y:m.goal?.y??22.5}; }
+  function mapPoolPublic770(){
+    return MAP_POOL_770.map(m=>({
+      id:m.id,slot:m.slot,name:m.name,en:m.en,theme:m.theme,tags:[...(m.tags||[])],
+      geometryReady:!!m.geometryReady,special:{...(m.special||{})},observerProfile:m.observerProfile
+    }));
+  }
+
   const profiles = playerStats.map(s => ({
     pace:s.pace,
     line:Math.round((s.cornering+s.insideLine+s.routeReading)/3),
@@ -209,32 +278,42 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     aggression:s.aggression
   }));
 
-  // v6.04: exact Neon City road-center route; start/goal aligned to original small boxes.
-  const route = [
+  // Existing approved S-map geometry. v7.70 promotes it to Map 01 data.
+  const S_MAP_ROUTE_770 = [
     [31.00,132.50],[55,132.8],[82,132.8],[108,132.8],[128,132.8],
     [128,118],[128,100],[128,84],[128,74],
     [110,74],[92,74],[74,74],[58,74],[44,74],
     [44,60],[44,46],[44,32],[44,23.5],
     [70,23.5],[96,23.5],[122,23.5],[143.0,23.5]
   ];
+  const S_MAP_WIDTHS_770=[14.0,14.0,14.0,14.6,14.6,14.6,14.0,14.6,14.6,14.6,14.0,14.0,14.6,14.6,14.6,14.0,14.6,14.6,14.6,14.0,14.0,14.0];
 
-  // v6.04: road width matches the approved visual; planning is kept inside the road.
-  const widths = [14.0,14.0,14.0,14.6,14.6,14.6,14.0,14.6,14.6,14.6,14.0,14.0,14.6,14.6,14.6,14.0,14.6,14.6,14.6,14.0,14.0,14.0];
-
-  const segs = [];
-  let routeLength = 0;
-  for (let i=0;i<route.length-1;i++){
-    const a=route[i], b=route[i+1];
-    const dx=b[0]-a[0], dy=b[1]-a[1];
-    const L=Math.hypot(dx,dy) || 1;
-    segs.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,nx:-dy/L,ny:dx/L,start:routeLength});
-    routeLength += L;
+  let route=S_MAP_ROUTE_770.map(p=>[...p]);
+  let widths=[...S_MAP_WIDTHS_770];
+  const segs=[];
+  let routeLength=0;
+  function rebuildRouteGeometry770(){
+    segs.length=0;routeLength=0;
+    for(let i=0;i<route.length-1;i++){
+      const a=route[i],b=route[i+1];
+      const dx=b[0]-a[0],dy=b[1]-a[1];
+      const L=Math.hypot(dx,dy)||1;
+      segs.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,nx:-dy/L,ny:dx/L,start:routeLength});
+      routeLength+=L;
+    }
   }
+  rebuildRouteGeometry770();
 
-  const map = new Image();
-  map.src = "map_v672_equal_medium_start_goal.png?v=672-equal-medium-markers";
-  const MAP_IMAGE_SCALE_X=696/172;
-  const MAP_IMAGE_SCALE_Y=720/178;
+  const map=new Image();
+  let MAP_IMAGE_SCALE_X=696/172;
+  let MAP_IMAGE_SCALE_Y=720/178;
+  function applyMapImage770(m=currentMap770()){
+    const sz=m.imageSize||{w:696,h:720};
+    const ls=m.logicalSize||{w:172,h:178};
+    MAP_IMAGE_SCALE_X=sz.w/ls.w;MAP_IMAGE_SCALE_Y=sz.h/ls.h;
+    if(m.image && !map.src.endsWith(m.image.split("?")[0]))map.src=m.image;
+  }
+  applyMapImage770();
 
   let players = [];
   let observers = [];
@@ -290,6 +369,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
+      mapEngine:"Multi Map Core v7.70",
+      currentMap770:{id:currentMap770().id,name:currentMap770().name,en:currentMap770().en},
+      mapPoolSize770:MAP_POOL_770.length,
+      mapGeometryReady770:MAP_POOL_770.filter(m=>m.geometryReady).length,
       currentUnit764:{...unitChassis764()},
       unitSpeedSpreadPct764:+unitSpeedSpread764().spreadPct.toFixed(3)};
   }
@@ -402,13 +485,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
 
 
-  const SAFE_ZONES_620 = {
-    start:{x0:22.80,y0:124.30,x1:39.30,y1:140.80},
-    goal:{x0:133.25,y0:14.25,x1:149.75,y1:30.75}
-  };
+  function safeZones770(){
+    return currentMap770().safeZones||{
+      start:{x0:22.80,y0:124.30,x1:39.30,y1:140.80},
+      goal:{x0:133.25,y0:14.25,x1:149.75,y1:30.75}
+    };
+  }
 
   function safeAt(x,y){
-    const z=SAFE_ZONES_620;
+    const z=safeZones770();
     return (
       (x>=z.start.x0 && x<=z.start.x1 && y>=z.start.y0 && y<=z.start.y1) ||
       (x>=z.goal.x0 && x<=z.goal.x1 && y>=z.goal.y0 && y<=z.goal.y1)
@@ -432,6 +517,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     ];
     // v7.33 controlled stat experiment: fixed lane signatures per slot.
     // Do not reshuffle a hidden route advantage between test runs.
+    const spawn770=mapStart770();
     return activeSourceIndexes.map((src,i)=>{
       const laneSig=laneSignatures[i];
       const name=names[src];
@@ -508,7 +594,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         extremeInsideCooldown:900+Math.random()*1200, extremeInsideSide:0,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:31.05, y:132.55,
+        x:spawn770.x, y:spawn770.y,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -523,7 +609,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.566903319,
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:31.05, prevY:132.55, simPrevX:31.05, simPrevY:132.55,
+        hitFxUntil:0, visualAngle:0, prevX:spawn770.x, prevY:spawn770.y, simPrevX:spawn770.x, simPrevY:spawn770.y,
         // v4.69: brief tolerance for borderline upper-left corner exits.
         outsideGrace69Since:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
@@ -542,8 +628,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         modeStart:0,
         lastProgress:0,
         lastAdvanceAt:0,
-        lastX:31.05,
-        lastY:132.55,
+        lastX:spawn770.x,
+        lastY:spawn770.y,
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
@@ -726,10 +812,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // v3.1 옵저버 함정 구간: 매 라운드 실제 코스 위 1~2곳에 작은 밀집 구간.
     // 옵저버는 스폰 후 기존처럼 독립적으로 랜덤 이동하므로 코스를 따라다니지 않는다.
     const trapCount=1+(Math.random()<.45?1:0);
-    const trapCandidates=[6,9,13,18,22,27,31];
+    const trapCandidates=[.16,.28,.42,.56,.70,.84,.94]
+      .map(r=>Math.max(0,Math.min(route.length-1,Math.round((route.length-1)*r))));
     for(let i=0;i<trapCount;i++){
       const ri=trapCandidates[Math.floor(Math.random()*trapCandidates.length)];
-      const pt=route[Math.min(route.length-1,ri)];
+      const pt=route[ri];
       zones.push({
         x:pt[0],y:pt[1],
         rx:7.5+Math.random()*3.5,ry:6.0+Math.random()*3.0,
@@ -798,11 +885,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._integrated759=null;p._normalEntryAt759=0;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._integrated759=null;p._normalEntryAt759=0;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._splineRepair770=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
-    camX=31.05; camY=132.55;
+    {const sp770=mapStart770();camX=sp770.x;camY=sp770.y;}
     prevCamX730=camX; prevCamY730=camY;
     renderAlpha730=1;
     players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;});
@@ -1017,7 +1104,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   // v4.96 HARD RESTRICTED AREAS
   // These seven rectangles are the exact red boxes marked by the user on the full-map
   // screenshot, transformed into game coordinates. They are absolute no-entry zones.
-  const FORBIDDEN96=[
+  const S_MAP_FORBIDDEN_770=[
     {x1:0.00,y1:0.80,x2:86.99,y2:11.72},
     {x1:0.18,y1:11.46,x2:10.22,y2:78.34},
     {x1:55.78,y1:35.17,x2:88.78,y2:45.83},
@@ -1027,9 +1114,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     {x1:61.34,y1:156.95,x2:165.36,y2:170.54}
   ];
   const FORBIDDEN96_PAD=.18;
+  function currentForbidden770(){return currentMap770().forbiddenZones770||[];}
 
   function inForbidden96(x,y,pad=FORBIDDEN96_PAD){
-    for(const z of FORBIDDEN96){
+    for(const z of currentForbidden770()){
       if(x>=z.x1-pad && x<=z.x2+pad && y>=z.y1-pad && y<=z.y2+pad) return true;
     }
     return false;
@@ -4292,7 +4380,7 @@ function calibratedFastCorridor79(si){
 
 
   function forceStartCenter625(p){
-    const sx=31.05, sy=132.55;
+    const sp=mapStart770(),sx=sp.x,sy=sp.y;
     p.x=sx; p.y=sy;
     p.prevX=sx; p.prevY=sy;
     p.simPrevX=sx; p.simPrevY=sy;
@@ -4446,7 +4534,7 @@ function calibratedFastCorridor79(si){
   function sanitizeRaceState666(p){
     if(!p) return false;
     if(!Number.isFinite(p.x)||!Number.isFinite(p.y)){
-      p.x=31.05;p.y=132.55;p.seg=0;
+      const sp770=mapStart770();p.x=sp770.x;p.y=sp770.y;p.seg=0;
       p.prevX=p.x;p.prevY=p.y;p.simPrevX=p.x;p.simPrevY=p.y;
       p._lastLegal636={x:p.x,y:p.y};p._lastLegal619={x:p.x,y:p.y};
     }
@@ -4456,7 +4544,7 @@ function calibratedFastCorridor79(si){
     return true;
   }
 
-  function visualRoadMask674(x,y,si){
+  function sMapVisualRoadMask770(x,y){
     if(!courseContainsPoint(x,y,0)) return false;
     if(y>=123.2&&y<=142.2&&x>=20.5&&x<=130.5) return true;
     if(x>=119&&x<=137&&y>=72&&y<=134) return true;
@@ -4466,6 +4554,10 @@ function calibratedFastCorridor79(si){
     for(const c of [[128,132.8,12],[128,74,11.5],[44,74,10.5],[44,23.5,10.5]])
       if(Math.hypot(x-c[0],y-c[1])<=c[2]) return true;
     return false;
+  }
+  function visualRoadMask674(x,y,si){
+    const fn=currentMap770().roadMask770;
+    return typeof fn==="function"?!!fn(x,y,si):false;
   }
 
   function broadcastCamera695(now,dt,leader,cache){
@@ -4513,22 +4605,17 @@ function calibratedFastCorridor79(si){
     return p.telemetry696;
   }
 
-  const SECTOR_NAMES_749=[
-    "스타트→첫 코너","5→3시 세로","3→9시 중단",
-    "9→11시 세로","11→12시 상단","마지막 직선"
-  ];
+  function sectorNames770(){
+    return currentMap770().sectorNames||["Sector 1","Sector 2","Sector 3","Sector 4","Sector 5","Sector 6"];
+  }
 
   function sectorIndex749(p){
     const prog=Number.isFinite(p?._splineProg720)?p._splineProg720:0;
     const total=Math.max(1,RACING_SPLINE_SEGS_720?.total||1);
     const r=Math.max(0,Math.min(.999999,prog/total));
-    // Geometry-aware approximate cuts for the current S map.
-    if(r<.29)return 0;
-    if(r<.42)return 1;
-    if(r<.66)return 2;
-    if(r<.77)return 3;
-    if(r<.84)return 4;
-    return 5;
+    const cuts=currentMap770().sectorCuts||[.17,.34,.51,.68,.84];
+    for(let i=0;i<cuts.length;i++)if(r<cuts[i])return i;
+    return Math.min(5,cuts.length);
   }
 
   function evadeBucket749(action){
@@ -4683,7 +4770,7 @@ function calibratedFastCorridor79(si){
       maxLineDeviation:t.lineDevMax749||0,
       finishTime:t.finishTime,deathProgress:t.deathProgress,
       sectors:(t.sectors749||[]).map((x,i)=>({
-        name:SECTOR_NAMES_749[i],timeMs:x.timeMs,path:x.path,threats:x.threats,evades:x.evades,
+        name:sectorNames770()[i]||`Sector ${i+1}`,timeMs:x.timeMs,path:x.path,threats:x.threats,evades:x.evades,
         avgLineDeviation:x.lineSamples?x.lineDevSum/x.lineSamples:0,
         minObserverGap:x.minGap<999?x.minGap:null
       }))
@@ -4798,7 +4885,7 @@ function calibratedFastCorridor79(si){
   // a different macro/micro lane. Avoidance and racecraft are the only exceptions.
   // ============================================================
 
-  const GLOBAL_OPTIMAL_LINE_710=[
+  const S_MAP_GLOBAL_OPTIMAL_LINE_770=[
     // v7.19 HOTFIX2: fine-grid A* + visibility-string-pulled shortest path
     // through the current actual visible road mask.
     [31.05,132.55],
@@ -4810,7 +4897,9 @@ function calibratedFastCorridor79(si){
     [143.00,23.50]
   ];
 
-  const GLOBAL_OPTIMAL_SEGS_710=(()=>{
+  let GLOBAL_OPTIMAL_LINE_710=S_MAP_GLOBAL_OPTIMAL_LINE_770;
+  let GLOBAL_OPTIMAL_SEGS_710=[];
+  function rebuildGlobalOptimal770(){
     const a=[];let total=0;
     for(let i=0;i<GLOBAL_OPTIMAL_LINE_710.length-1;i++){
       const p=GLOBAL_OPTIMAL_LINE_710[i],q=GLOBAL_OPTIMAL_LINE_710[i+1];
@@ -4818,9 +4907,9 @@ function calibratedFastCorridor79(si){
       a.push({a:p,b:q,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
       total+=L;
     }
-    a.total=total;
-    return a;
-  })();
+    a.total=total;GLOBAL_OPTIMAL_SEGS_710=a;
+  }
+  rebuildGlobalOptimal770();
 
   function nearestOptimalProgress710(x,y){
     let bestD=Infinity,bestP=0;
@@ -4944,7 +5033,7 @@ function calibratedFastCorridor79(si){
   // This is the intended final AI layer before FM stats/team/league work.
   // ============================================================
 
-  const RACING_SPLINE_720=[
+  const S_MAP_RACING_SPLINE_770=[
     [31.05000,132.55000],
     [117.50868,123.36377],
     [117.60039,123.38517],
@@ -5337,7 +5426,10 @@ function calibratedFastCorridor79(si){
     [143.00000,23.50000]
   ];
 
-  const RACING_SPLINE_SEGS_720=(()=>{
+  let RACING_SPLINE_720=S_MAP_RACING_SPLINE_770;
+  let RACING_SPLINE_SEGS_720=[];
+  let RACING_SPLINE_LENGTH_720=0;
+  function rebuildRacingSpline770(){
     const out=[];let total=0;
     for(let i=0;i<RACING_SPLINE_720.length-1;i++){
       const a=RACING_SPLINE_720[i],b=RACING_SPLINE_720[i+1];
@@ -5345,11 +5437,41 @@ function calibratedFastCorridor79(si){
       out.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
       total+=L;
     }
-    out.total=total;
-    return out;
-  })();
+    out.total=total;RACING_SPLINE_SEGS_720=out;RACING_SPLINE_LENGTH_720=total;
+  }
+  rebuildRacingSpline770();
 
-  const RACING_SPLINE_LENGTH_720=323.247224786148;
+  function bindSMapGeometry770(){
+    const m=MAP_DEFINITIONS_770.s_map;
+    m.route770=S_MAP_ROUTE_770;
+    m.widths770=S_MAP_WIDTHS_770;
+    m.globalOptimal770=S_MAP_GLOBAL_OPTIMAL_LINE_770;
+    m.racingSpline770=S_MAP_RACING_SPLINE_770;
+    m.roadMask770=sMapVisualRoadMask770;
+    m.forbiddenZones770=S_MAP_FORBIDDEN_770;
+    m.geometryReady=true;
+  }
+  bindSMapGeometry770();
+
+  function applyMapDefinition770(id,opts={}){
+    const next=MAP_DEFINITIONS_770[id];
+    if(!next)return {ok:false,reason:"unknown-map",id};
+    if(!next.geometryReady||!next.route770||!next.racingSpline770||typeof next.roadMask770!=="function")
+      return {ok:false,reason:"geometry-not-ready",id,name:next.name};
+
+    activeMapId770=id;activeMap770=next;
+    route=next.route770.map(p=>[...p]);
+    widths=[...(next.widths770||[])];
+    GLOBAL_OPTIMAL_LINE_710=next.globalOptimal770||next.racingSpline770;
+    RACING_SPLINE_720=next.racingSpline770;
+    rebuildRouteGeometry770();rebuildGlobalOptimal770();rebuildRacingSpline770();
+    applyMapImage770(next);
+
+    if(opts.reset!==false && typeof resetRound==="function")resetRound();
+    return {ok:true,id:next.id,name:next.name,routeLength,splineLength:RACING_SPLINE_LENGTH_720};
+  }
+
+  function selectMap770(id){return applyMapDefinition770(id,{reset:true});}
 
   function clamp01720(v){ return Math.max(0,Math.min(1,v)); }
   function stat720(p,key,fallback=60){
@@ -5712,23 +5834,36 @@ function calibratedFastCorridor79(si){
     const dx=p.x-fromX,dy=p.y-fromY,d=Math.hypot(dx,dy);
     const allow=Math.max(.90,Math.abs(expectedMove)*2.30+.20);
     if(d<=allow||/back/.test(action||""))return false;
+    const mode754=p._raceState720?.mode||"NORMAL";
+    const normalGuard754=mode754==="NORMAL"&&!/back/.test(action||"");
+    const safeAllow754=normalGuard754
+      ? Math.max(.42,Math.abs(expectedMove)*1.60+.08)
+      : allow;
     const L=d||1;
     const attemptedX754=p.x,attemptedY754=p.y;
     const beforeProg754=Number(p._splineProg720)||0;
-    p.x=fromX+dx/L*allow;
-    p.y=fromY+dy/L*allow;
+    p.x=fromX+dx/L*safeAllow754;
+    p.y=fromY+dy/L*safeAllow754;
     p._teleportGuardTrips754=(p._teleportGuardTrips754||0)+1;
     if(!Array.isArray(p._teleportEvents754))p._teleportEvents754=[];
     p._teleportEvents754.push({
       fromX:+fromX.toFixed(3),fromY:+fromY.toFixed(3),
       attemptedX:+attemptedX754.toFixed(3),attemptedY:+attemptedY754.toFixed(3),
-      distance:+d.toFixed(3),allow:+allow.toFixed(3),
-      action:String(action||"none"),mode:p._raceState720?.mode||"NORMAL",
+      distance:+d.toFixed(3),allow:+safeAllow754.toFixed(3),
+      action:String(action||"none"),mode:mode754,
       prog:+beforeProg754.toFixed(3)
     });
     if(p._teleportEvents754.length>12)p._teleportEvents754.shift();
-    // Re-project locally but never permit backward spline progress.
-    syncEvadeSplineProgress754(p,fromX,fromY);
+    if(normalGuard754){
+      // Bookkeeping repair only: physical position never moves backward.
+      // Full projection runs only when the guard trips, so it has negligible cost.
+      const repaired=nearestSplineProgress720(p.x,p.y);
+      p._splineProg720=repaired;
+      p._splineFloor754=repaired;
+      p._splineRepair770=(p._splineRepair770||0)+1;
+    }else{
+      syncEvadeSplineProgress754(p,fromX,fromY);
+    }
     return true;
   }
 
@@ -8030,7 +8165,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         }else leadBattle.classList.add("hidden");
       }
       const unitHud764=unitChassis764();
-      cameraLabel.textContent=`${BUILD_ID} · ${unitHud764.name} · 속도 x${unitHud764.topSpeed.toFixed(3)} · 크기 ${unitHud764.hitRadius.toFixed(2)} · 옵저버 ${observers.length}`;
+      cameraLabel.textContent=`${BUILD_ID} · ${currentMap770().name} · ${unitHud764.name} · 속도 x${unitHud764.topSpeed.toFixed(3)} · 크기 ${unitHud764.hitRadius.toFixed(2)} · 옵저버 ${observers.length}`;
       renderDiagnostics();
       // v3.2 upper broadcast/leader-change strip removed.
       lastRankingRender=ts;
@@ -8230,7 +8365,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   const renderOrder=[];
 
-  const MINI_CROP={x:24,y:8,w:127,h:150};
+  function miniCrop770(){return currentMap770().miniCrop||{x:0,y:0,w:MAP_W,h:MAP_H};}
   let lastMiniMapRender=0;
   function renderMiniMap(){
     const now=performance.now();
@@ -8241,6 +8376,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(!mc||!map.complete)return;
     const mx=mc.getContext("2d"),W=mc.width,H=mc.height;
     mx.clearRect(0,0,W,H);
+    const MINI_CROP=miniCrop770();
     mx.globalAlpha=.78;
     mx.drawImage(map,MINI_CROP.x*MAP_IMAGE_SCALE_X,MINI_CROP.y*MAP_IMAGE_SCALE_Y,MINI_CROP.w*MAP_IMAGE_SCALE_X,MINI_CROP.h*MAP_IMAGE_SCALE_Y,0,0,W,H);
     mx.globalAlpha=1;
@@ -9983,6 +10119,10 @@ function seasonCardHtml(p){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버130");
+    if(MAP_POOL_770.length!==11)issues.push("맵풀11");
+    if(currentMap770().id!=="s_map")issues.push("v770기본맵");
+    if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
+    if(!["rubber_duck","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","star_fish","cliff_hanger","river_cross","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록");
     const u764=unitChassis764();
     if(Object.keys(UNIT_CHASSIS_764).length!==5)issues.push("유닛5");
     if(UNIT_CHASSIS_764[1].hitRadius>=Math.min(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.hitRadius)))issues.push("스커지크기");
@@ -10007,6 +10147,7 @@ function seasonCardHtml(p){
     getRules:()=>clonePlain(engineCoreRules()),
     getLastResult:()=>lastMasterResult?clonePlain(lastMasterResult):null,
     getCurrentState:()=>({build:BUILD_ID,running,paused,currentRound,simClock,
+      mapId:currentMap770().id,mapName:currentMap770().name,
       teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},finished:players.filter(p=>p.done).length}),
     startCurrent:start,resetMatch:reset,
     runStatLab739,
@@ -10022,10 +10163,19 @@ function seasonCardHtml(p){
     getUnitCompatibility769:(name)=>{const p=players.find(x=>x.name===name)||players[0];return p?clonePlain(unitCompatibility769(p)):null;},
     getUnitStats769:()=>clonePlain(unitStats769()),
     resetUnitStats769:()=>{try{localStorage.removeItem(UNIT_STATS_KEY_769);}catch(e){}return true;},
+    getMapPool770:()=>clonePlain(mapPoolPublic770()),
+    getCurrentMap770:()=>clonePlain({
+      id:currentMap770().id,slot:currentMap770().slot,name:currentMap770().name,en:currentMap770().en,
+      theme:currentMap770().theme,tags:[...(currentMap770().tags||[])],
+      geometryReady:!!currentMap770().geometryReady,start:{...mapStart770()},goal:{...mapGoal770()},
+      special:{...(currentMap770().special||{})},routeLength,splineLength:RACING_SPLINE_LENGTH_720
+    }),
+    selectMap770,
     getTeleportAudit754:()=>players.map(p=>({
       name:p.name,trips:p._teleportGuardTrips754||0,
       backtrackPrevented:p._backtrackPrevented754||0,
       topOffsetFlipPrevented:p._topOffsetFlipPrevented754||0,
+      splineRepairs770:p._splineRepair770||0,
       events:(p._teleportEvents754||[]).map(x=>({...x})),
       splineProgress:p._splineProg720||0,mode:p._raceState720?.mode||"NORMAL",
       action:p._raceState720?.action||"none",x:p.x,y:p.y
