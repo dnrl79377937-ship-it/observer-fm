@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.49";
+  const BUILD_ID = "v7.54";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -753,7 +753,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._driverSkill739=null;p._personality754=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._splineFloor754=0;p._topOffsetSign754=NaN;p._teleportGuardTrips754=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;p._nextThreatScan724=0;p._cachedThreat724=null;p._backOriginX732=undefined;p._backOriginY732=undefined;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -7524,7 +7524,7 @@ function farthestVisibleFastTarget91(p,si){
 
         // v7.40~v7.49 Statistics Engine
         threatReads749:0,evadeAttempts749:0,evadeSuccess749:0,evadeFailures749:0,
-        actionCounts749:{thread:0,diag:0,hard:0,brake:0,stop:0,backcon:0},
+        actionCounts749:{side:0,thread:0,diag:0,hard:0,brake:0,stop:0,backcon:0},
         reactionSum749:0,reactionSamples749:0,rejoinSum749:0,rejoinSamples749:0,
         lineDevSum749:0,lineDevMax749:0,lineSamples749:0,
         minObserverGap749:999,dangerMs749:0,highDangerMs749:0,
@@ -7559,6 +7559,7 @@ function farthestVisibleFastTarget91(p,si){
 
   function evadeBucket749(action){
     const a=String(action||"");
+    if(a.includes("side"))return "side";
     if(a.includes("thread"))return "thread";
     if(a.includes("diag"))return "diag";
     if(a.includes("hard"))return "hard";
@@ -7733,7 +7734,7 @@ function farthestVisibleFastTarget91(p,si){
   function styleProfile749(p){
     const a=advancedStats697(p)||{}, c=a.actionCounts||{};
     const attempts=Math.max(1,a.avoidanceCount||0);
-    const thread=(c.thread||0)+(c.diag||0);
+    const thread=(c.side||0)+(c.thread||0)+(c.diag||0);
     const back=c.backcon||0;
     const labels=[];
     if(a.insideLineAccuracy>=.94)labels.push("인코스 정밀형");
@@ -8758,6 +8759,60 @@ function farthestVisibleFastTarget91(p,si){
     };
   }
 
+
+  // ============================================================
+  // v7.50 ~ v7.54 DRIVER PERSONALITY ENGINE
+  // Personality changes local judgment/execution only.
+  // It may never intentionally choose a slower macro route.
+  // ============================================================
+  function driverPersonality754(p){
+    if(p?._personality754)return p._personality754;
+    const ex=driverExecution720(p),id=identityOf(p);
+    const style=p?.drivingStyle||{};
+    const clamp=x=>Math.max(0,Math.min(1,x));
+    const attackStyle=clamp(((Number(style.attack)||1)-.82)/.36);
+    const safetyStyle=clamp(((Number(style.safety)||1)-.82)/.36);
+    const wideStyle=id.control==="wide"?1:0;
+    const r={
+      // v7.50 persistent identity
+      style:style.style||"balanced",
+      // v7.51 aggression: narrow-gap commitment, never raw bonus speed
+      aggression:clamp(ex.aggression*.72+attackStyle*.28),
+      // v7.52 avoidance preference
+      lateral:clamp(.66+ex.control*.12+ex.avoidance*.12+wideStyle*.10),
+      thread:clamp(ex.aggression*.38+ex.prediction*.24+ex.control*.22+(1-wideStyle)*.16),
+      brake:clamp(ex.braking*.55+ex.riskControl*.25+safetyStyle*.20),
+      // v7.53 risk control
+      caution:clamp(ex.riskControl*.56+ex.prediction*.20+ex.stability*.12+safetyStyle*.12),
+      commitment:clamp(ex.aggression*.35+ex.control*.24+ex.focus*.18+(Number(id.commit)||1)*.12-.10),
+      // v7.54 pressure/mental
+      clutch:clamp(ex.pressure*.42+ex.focus*.25+ex.consistency*.20+ex.stability*.13),
+      patience:clamp(ex.riskControl*.34+ex.consistency*.24+safetyStyle*.22+(Number(id.patience)||1)*.10-.10)
+    };
+    if(p)p._personality754=r;
+    return r;
+  }
+
+  function racePressure754(p){
+    const prog=Number.isFinite(p?._splineProg720)?p._splineProg720:0;
+    const total=Math.max(1,RACING_SPLINE_SEGS_720?.total||1);
+    const late=Math.max(0,Math.min(1,(prog/total-.72)/.28));
+    let nearest=99;
+    const my=currentProgress(p);
+    for(const q of players){
+      if(q===p||q.dead||q.done)continue;
+      nearest=Math.min(nearest,Math.abs(currentProgress(q)-my));
+    }
+    const battle=Math.max(0,Math.min(1,(2.0-nearest)/2.0));
+    return Math.max(0,Math.min(1,battle*.68+late*.32));
+  }
+
+  function stableEvadeSide754(st,kind,now){
+    if(!/left|right/.test(kind||""))return;
+    st.side754=/left/.test(kind)?-1:1;
+    st.sideLockUntil754=now+285;
+  }
+
   function nearestSplineProgress720(x,y){
     let bestD=Infinity,bestP=0;
     for(const s of RACING_SPLINE_SEGS_720){
@@ -8879,9 +8934,82 @@ function farthestVisibleFastTarget91(p,si){
     if(!p || !(distance>0)) return false;
     let prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+distance);
+
+    const raw=splinePointAt720(prog);
     const q=executedSplinePoint720(p,prog);
-    p.x=q.x;p.y=q.y;p._splineProg720=prog;
-    p._lineOffset720=q.executionOffset720||0;
+    let off=Number(q.executionOffset720)||0;
+
+    // v7.54: the final top straight could flip "wideSide" from one frame to the
+    // other or fall from a legal offset to zero. Smooth only the execution offset;
+    // forward spline progress remains exact and monotonic.
+    const prev=Number.isFinite(p._lineOffset720)?p._lineOffset720:off;
+    const maxOffStep=Math.max(.035,Math.min(.095,distance*.31));
+    off=prev+Math.max(-maxOffStep,Math.min(maxOffStep,off-prev));
+
+    // Extra hysteresis on the 11 -> 1 o'clock upper straight.
+    const topStraight754=raw.x>=57.0&&raw.y<=33.0&&raw.y>=15.0;
+    if(topStraight754){
+      if(!Number.isFinite(p._topOffsetSign754)||Math.abs(prev)<.025)
+        p._topOffsetSign754=Math.sign(off)||Math.sign(prev)||1;
+      if(Math.sign(off)&&Math.sign(off)!==p._topOffsetSign754&&Math.abs(off)>.035)
+        off=p._topOffsetSign754*Math.min(Math.abs(off),Math.abs(prev)+maxOffStep);
+    }
+
+    const nx=-raw.uy,ny=raw.ux;
+    let x=raw.x+nx*off,y=raw.y+ny*off;
+    if(!visualRoadMask674(x,y,0)||!courseContainsPoint(x,y,0)){
+      // Blend toward center instead of snapping straight to zero offset.
+      let found=false;
+      for(const k of [.80,.60,.40,.20,0]){
+        const oo=off*k,xx=raw.x+nx*oo,yy=raw.y+ny*oo;
+        if(visualRoadMask674(xx,yy,0)&&courseContainsPoint(xx,yy,0)){
+          off=oo;x=xx;y=yy;found=true;break;
+        }
+      }
+      if(!found){x=raw.x;y=raw.y;off=0;}
+    }
+
+    p.x=x;p.y=y;p._splineProg720=prog;
+    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,prog);
+    p._lineOffset720=off;
+    return true;
+  }
+
+  function syncEvadeSplineProgress754(p,fromX,fromY){
+    if(!p)return;
+    const old=Number.isFinite(p._splineProg720)?p._splineProg720:
+      nearestSplineProgress720(fromX,fromY);
+    const projected=nearestSplineProgressLocal734(p.x,p.y,old,48);
+    const moved=Math.hypot(p.x-fromX,p.y-fromY);
+    const maxForward=old+Math.max(.18,moved*1.55+.12);
+    const floor=Math.max(Number(p._splineFloor754)||0,old);
+    const next=Math.max(floor,Math.min(projected,maxForward));
+    p._splineProg720=Math.min(RACING_SPLINE_SEGS_720.total,next);
+    p._splineFloor754=Math.max(floor,p._splineProg720);
+  }
+
+  function noTeleportGuard754(p,fromX,fromY,expectedMove,action){
+    if(!p)return false;
+    const dx=p.x-fromX,dy=p.y-fromY,d=Math.hypot(dx,dy);
+    const allow=Math.max(.72,Math.abs(expectedMove)*2.15+.18);
+    if(d<=allow||/back/.test(action||""))return false;
+    const L=d||1;
+    const attemptedX754=p.x,attemptedY754=p.y;
+    const beforeProg754=Number(p._splineProg720)||0;
+    p.x=fromX+dx/L*allow;
+    p.y=fromY+dy/L*allow;
+    p._teleportGuardTrips754=(p._teleportGuardTrips754||0)+1;
+    if(!Array.isArray(p._teleportEvents754))p._teleportEvents754=[];
+    p._teleportEvents754.push({
+      fromX:+fromX.toFixed(3),fromY:+fromY.toFixed(3),
+      attemptedX:+attemptedX754.toFixed(3),attemptedY:+attemptedY754.toFixed(3),
+      distance:+d.toFixed(3),allow:+allow.toFixed(3),
+      action:String(action||"none"),mode:p._raceState720?.mode||"NORMAL",
+      prog:+beforeProg754.toFixed(3)
+    });
+    if(p._teleportEvents754.length>12)p._teleportEvents754.shift();
+    // Re-project locally but never permit backward spline progress.
+    syncEvadeSplineProgress754(p,fromX,fromY);
     return true;
   }
 
@@ -9085,30 +9213,31 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function scoreEvadeCandidate720(p,c,kind,threat,obs723=null){
-    if(!c || !courseContainsPoint(c.x,c.y,0) || !actualRoadChord719(p.x,p.y,c.x,c.y))
+    if(!c||!courseContainsPoint(c.x,c.y,0)||!actualRoadChord719(p.x,p.y,c.x,c.y))
       return Infinity;
 
-    const ex=driverExecution720(p);
+    const ex=driverExecution720(p),pers=driverPersonality754(p);
     const obs=obs723||localObservers723(p,8.6);
     const ch=localCandidateRisk723(p,c,obs);
     const field=localFieldRisk723(c,obs);
     const dev=Math.min(5,splineDeviationPoint720(c.x,c.y,p._splineProg720));
     const dist=Math.hypot(c.x-p.x,c.y-p.y);
-    const critical=!!threat?.emergency && !!threat?.frontBlock && (threat?.dist??9)<3.25;
+    const critical=!!threat?.emergency&&!!threat?.frontBlock&&(threat?.dist??9)<3.25;
 
     let actionPenalty=0;
-    if(/thread/.test(kind)) actionPenalty=-1.10-ex.aggression*.35;
-    else if(/diag/.test(kind)) actionPenalty=-.58-ex.control*.14;
-    else if(/hard/.test(kind)) actionPenalty=.26+(1-ex.control)*.35;
-    else if(/brake/.test(kind)) actionPenalty=1.05-ex.braking*.30;
-    else if(/stop/.test(kind)) actionPenalty=2.65;
-    else if(/back/.test(kind)) actionPenalty=critical?2.25:8.0;
+    if(/side/.test(kind))actionPenalty=-1.55-pers.lateral*.45;
+    else if(/thread/.test(kind))actionPenalty=-1.12-pers.aggression*.34;
+    else if(/diag/.test(kind))actionPenalty=-1.02-pers.lateral*.30;
+    else if(/hard/.test(kind))actionPenalty=.30+(1-ex.control)*.38;
+    else if(/brake/.test(kind))actionPenalty=1.18-pers.brake*.28;
+    else if(/stop/.test(kind))actionPenalty=3.15;
+    else if(/back/.test(kind))actionPenalty=critical?6.4:14.0;
 
-    const riskWeight=13.5+ex.riskControl*8.5+ex.prediction*3.0;
-    const gapWeight=11.0+ex.avoidance*8.0+ex.control*3.0;
-    return ch.risk*riskWeight+field.risk*(5.5+ex.prediction*4.0)+
+    const riskWeight=13.0+ex.riskControl*8.5+ex.prediction*3.2;
+    const gapWeight=10.5+ex.avoidance*7.5+ex.control*3.0+pers.caution*2.0;
+    return ch.risk*riskWeight+field.risk*(5.2+ex.prediction*4.0)+
       Math.max(0,1.72-ch.nearest)*gapWeight+
-      dev*(.52+(1-ex.inside)*.35)+dist*.085+actionPenalty;
+      dev*(.50+(1-ex.inside)*.34)+dist*.08+actionPenalty;
   }
 
   function splineDeviationPoint720(x,y,hint=NaN){
@@ -9117,62 +9246,89 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function chooseEvadeAction720(p,now,threat){
-    const prog=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,28);
+    const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:0;
+    const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,28);
+    const prog=Math.max(oldProg,projected);
     const frame=splinePointAt720(prog);
     const nx=-frame.uy,ny=frame.ux,ex=driverExecution720(p);
+    const pers=driverPersonality754(p),st=ensureRaceState720(p,now);
 
-    const threadLat=1.05+(1-ex.avoidance)*.32;
-    const diagLat=1.65+(1-ex.avoidance)*.38;
-    const hardLat=2.25+(1-ex.avoidance)*.42;
-    const critical=!!threat?.emergency && !!threat?.frontBlock && (threat?.dist??9)<3.25;
+    const lateralScale=.94+pers.lateral*.13;
+    const threadLat=(1.00+(1-ex.avoidance)*.25)*lateralScale;
+    const sideLat=(1.36+(1-ex.control)*.24)*lateralScale;
+    const diagLat=(1.62+(1-ex.avoidance)*.30)*lateralScale;
+    const hardLat=(2.15+(1-ex.avoidance)*.34)*lateralScale;
+    const critical=!!threat?.emergency&&!!threat?.frontBlock&&(threat?.dist??9)<3.25;
 
+    // v7.52: natural sideways/diagonal movement is the default visual language.
     const candidates=[
-      ["thread-left",3.85,-threadLat],["thread-right",3.85,threadLat],
-      ["diag-left",3.25,-diagLat],["diag-right",3.25,diagLat],
-      ["hard-left",2.55,-hardLat],["hard-right",2.55,hardLat],
-      ["brake",1.10,0],["stop",.30,0]
+      ["side-left",1.55,-sideLat],["side-right",1.55,sideLat],
+      ["thread-left",3.70,-threadLat],["thread-right",3.70,threadLat],
+      ["diag-left",3.05,-diagLat],["diag-right",3.05,diagLat],
+      ["hard-left",2.40,-hardLat],["hard-right",2.40,hardLat],
+      ["brake",1.05,0],["stop",.28,0]
     ];
-    const st732=ensureRaceState720(p,now);
-    if(critical && now>=(st732.backCooldownUntil732||0)){
-      // v7.32: backcon is only a tiny emergency retreat, never a long escape route.
-      candidates.push(
-        ["back-left",-0.72,-0.58],
-        ["back-right",-0.72,0.58],
-        ["back",-0.86,0]
-      );
-    }
 
     const perceptionRadius734=5.6+ex.awareness*4.1;
     const obs723=localObservers723(p,perceptionRadius734);
     const ranked=[];
 
-    for(const [kind,f,l] of candidates){
+    function addCandidate(kind,f,l){
       const c={x:p.x+frame.ux*f+nx*l,y:p.y+frame.uy*f+ny*l,kind:"race720-evade-"+kind};
-      const score=scoreEvadeCandidate720(p,c,kind,threat,obs723);
-      if(Number.isFinite(score))ranked.push({kind,target:c,score});
+      let score=scoreEvadeCandidate720(p,c,kind,threat,obs723);
+      if(!Number.isFinite(score))return;
+
+      // Hold a chosen side briefly to eliminate left/right panic oscillation.
+      const side=/left/.test(kind)?-1:/right/.test(kind)?1:0;
+      if(side&&now<(st.sideLockUntil754||0)&&st.side754&&side!==st.side754)score+=2.9;
+
+      // v7.51 aggression + v7.53 risk control:
+      // aggression prefers forward threading; caution prefers a cleaner side gap.
+      if(/thread/.test(kind))score+=(pers.caution-pers.aggression)*.85;
+      if(/side|diag/.test(kind))score-=pers.lateral*.72+pers.caution*.22;
+      if(/brake/.test(kind))score-=pers.brake*.35;
+      ranked.push({kind,target:c,score,local:localCandidateRisk723(p,c,obs723)});
     }
+
+    for(const [kind,f,l] of candidates)addCandidate(kind,f,l);
+
+    // Backcon is a last-resort emergency only when every meaningful lateral
+    // corridor is boxed. If one natural side escape exists, reverse is unavailable.
+    const minGap=1.48+pers.caution*.24;
+    const maxRisk=1.85-pers.caution*.35;
+    const safeLateral=ranked.some(r=>
+      /side|thread|diag|hard/.test(r.kind)&&
+      r.local.nearest>minGap&&r.local.risk<maxRisk
+    );
+    if(critical&&!safeLateral&&now>=(st.backCooldownUntil732||0)){
+      addCandidate("back-left",-0.52,-0.44);
+      addCandidate("back-right",-0.52,0.44);
+      addCandidate("back",-0.62,0);
+    }
+
     ranked.sort((a,b)=>a.score-b.score);
     if(!ranked.length)return null;
 
-    const judgment=ex.judgment*.62+ex.survival*.23+ex.mental*.15;
+    const pressureLoad=racePressure754(p);
+    const judgment=ex.judgment*.57+ex.survival*.20+ex.mental*.13+pers.caution*.10;
     const threatId=threat?.o?.id??0;
     const stable=((p.index+3)*29+(threatId+5)*11+(currentRound||0)*7)%100/100;
-    const mistakeChance=Math.max(.015,(1-judgment)*.66);
+    // v7.54: low-pressure drivers degrade under P1/P2 or late-race stress.
+    const pressureError=pressureLoad*(1-pers.clutch)*.46;
+    const mistakeChance=Math.max(.012,(1-judgment)*.56+pressureError);
     let pick=0;
-    if(stable<mistakeChance && ranked.length>1)pick=1;
-    if(stable<mistakeChance*.24 && ranked.length>2)pick=2;
+    if(stable<mistakeChance&&ranked.length>1)pick=1;
+    if(stable<mistakeChance*.18&&ranked.length>2)pick=2;
 
     const best=ranked[pick];
-    // Lower control/avoidance adds a small stable hand-execution miss after the
-    // decision. It changes the local dodge, never the macro route.
     const hand=1-ex.hand;
-    if(hand>.03 && best && !/back|stop/.test(best.kind)){
+    if(hand>.03&&best&&!/back|stop/.test(best.kind)){
       const sign=(((p.index+1)*13+(threatId+1)*19)%2)?1:-1;
-      const mag=hand*.64;
+      const mag=hand*.56*(1-pressureLoad*(pers.clutch-.5)*.25);
       const tx=best.target.x+nx*sign*mag;
       const ty=best.target.y+ny*sign*mag;
-      if(courseContainsPoint(tx,ty,0) && actualRoadChord719(p.x,p.y,tx,ty)){
-        best.target={...best.target,x:tx,y:ty,kind:best.target.kind+"-exec734"};
+      if(courseContainsPoint(tx,ty,0)&&actualRoadChord719(p.x,p.y,tx,ty)){
+        best.target={...best.target,x:tx,y:ty,kind:best.target.kind+"-exec754"};
       }
     }
     return best;
@@ -9197,13 +9353,14 @@ function farthestVisibleFastTarget91(p,si){
     st.actionUntil=now+(back?145:stop?205:thread?225:245)*execTime739;
     st.planHoldUntil723=now+(back?115:thread?185:175)*(1.08-ex739.stability*.12);
     st.rejoinUntil=0;
+    stableEvadeSide754(st,st.action,now);
 
     if(back){
       const dx=st.target.x-p.x,dy=st.target.y-p.y,L=Math.hypot(dx,dy)||1;
       st.backDirX723=dx/L;st.backDirY723=dy/L;
       st.backOriginX732=p.x;st.backOriginY732=p.y;
-      st.backMaxTravel732=/back-left|back-right/.test(st.action)?0.92:0.82;
-      st.backCooldownUntil732=now+420;
+      st.backMaxTravel732=/back-left|back-right/.test(st.action)?0.66:0.58;
+      st.backCooldownUntil732=now+560;
       p.steerX=st.backDirX723;p.steerY=st.backDirY723;
       p.mouseTargetX=st.target.x;p.mouseTargetY=st.target.y;
       p.mouseMode="race720-backcon";
@@ -9215,8 +9372,10 @@ function farthestVisibleFastTarget91(p,si){
 
   function rejoinTarget720(p,now){
     const ex=driverExecution720(p);
-    const base=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,36);
-    const look=4.2+ex.rejoinSkill*3.1;
+    const old=Number.isFinite(p._splineProg720)?p._splineProg720:0;
+    const projected=nearestSplineProgressLocal734(p.x,p.y,old,36);
+    const base=Math.max(old,Number(p._splineFloor754)||0,projected);
+    const look=4.0+ex.rejoinSkill*2.8;
     for(let d=look;d>=2.2;d-=.35){
       const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,base+d));
       const t={x:q.x,y:q.y,kind:"race720-rejoin"};
@@ -9268,10 +9427,17 @@ function farthestVisibleFastTarget91(p,si){
       st.rejoinUntil=now+850+driverExecution720(p).recovery*350;
     }else if(st.mode==="REJOIN"){
       const dev=splineDeviation720(p);
-      if(dev<.32 || now>=st.rejoinUntil){
+      // v7.54: never jump onto the spline because a rejoin timer expired.
+      if(dev<.34){
         st.mode="NORMAL";st.since=now;st.action="none";st.target=null;
         st._justRejoined=true;
-        p._splineProg720=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,48);
+        const old=Number.isFinite(p._splineProg720)?p._splineProg720:0;
+        const projected=nearestSplineProgressLocal734(p.x,p.y,old,48);
+        p._splineProg720=Math.max(old,Number(p._splineFloor754)||0,projected);
+        p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
+      }else if(now>=st.rejoinUntil){
+        const ex754=driverExecution720(p);
+        st.rejoinUntil=now+360+ex754.recovery*180;
       }
     }
     if(st.mode==="NORMAL")st.pendingThreatId=-1;
@@ -9279,7 +9445,8 @@ function farthestVisibleFastTarget91(p,si){
   }
 
   function normalTarget720(p){
-    const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+    const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+    const prog=Math.max(old,Number(p._splineFloor754)||0);
     const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+8.0));
     return {x:q.x,y:q.y,kind:"race720-normal"};
   }
@@ -10241,6 +10408,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
       // v7.20 EVADE / REJOIN: shortest-line lock is released.
       p.x += moveDirX*move;
       p.y += moveDirY*move;
+      if(engineAuthority719)syncEvadeSplineProgress754(p,preMoveX719,preMoveY719);
+    }
+
+    // v7.54 invariant: no non-backcon control may relocate a racer farther than
+    // a physically plausible simulation step. This is a last-line guard, not wall rollback.
+    if(engineAuthority719){
+      const act754=p._raceState720?.action||"none";
+      noTeleportGuard754(p,preMoveX719,preMoveY719,move,act754);
     }
 
     // v7.34: the final Racing Spline / EVADE engine already supplies legal targets.
@@ -11861,7 +12036,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     return {races:0,wins:0,top3:0,finishes:0,rankSum:0,ratingSum:0,
       threats:0,evades:0,evadeSuccess:0,collisions:0,overtakes:0,leadMs:0,
       lineEffSum:0,insideAccSum:0,reactionSum:0,reactionN:0,rejoinSum:0,rejoinN:0,
-      actionCounts:{thread:0,diag:0,hard:0,brake:0,stop:0,backcon:0},
+      actionCounts:{side:0,thread:0,diag:0,hard:0,brake:0,stop:0,backcon:0},
       sectors:Array.from({length:6},()=>({races:0,timeSum:0,threats:0,evades:0,lineDevSum:0,lineN:0})),
       recent:[]};
   }
@@ -11924,7 +12099,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         <div><span>라인 효율</span><b>${(100*(a.racingLineEfficiency||0)).toFixed(1)}%</b></div>
         <div><span>인코스 정확도</span><b>${(100*(a.insideLineAccuracy||0)).toFixed(1)}%</b></div>
         <div><span>최소 옵저버 간격</span><b>${a.minObserverGap==null?"-":a.minObserverGap.toFixed(2)}</b></div>
-        <div><span>대각/스레드</span><b>${(actions.diag||0)+(actions.thread||0)}회</b></div>
+        <div><span>옆/대각/스레드</span><b>${(actions.side||0)+(actions.diag||0)+(actions.thread||0)}회</b></div>
         <div><span>빽컨</span><b>${actions.backcon||0}회</b></div>
         <div><span>강한 구간</span><b>${live.strongestSector||"-"}</b></div>
         <div><span>취약 구간</span><b>${live.weakestSector||"-"}</b></div>
@@ -13093,7 +13268,16 @@ function seasonCardHtml(p){
     getStatProfiles739:()=>players.map(p=>({name:p.name,stats:{...p.stats},skill:{...driverSkill739(p)}})),
     getAnalytics749:()=>players.map(p=>playerAnalytics749(p)),
     getCareerAnalytics749:(name)=>careerAnalytics749(name),
-    resetAnalytics749:()=>{try{localStorage.removeItem(ANALYTICS_KEY_749);}catch(e){} return true;}
+    resetAnalytics749:()=>{try{localStorage.removeItem(ANALYTICS_KEY_749);}catch(e){} return true;},
+    getDrivingPersonality754:()=>players.map(p=>({name:p.name,...driverPersonality754(p)})),
+    getTeleportAudit754:()=>players.map(p=>({
+      name:p.name,trips:p._teleportGuardTrips754||0,
+      backtrackPrevented:p._backtrackPrevented754||0,
+      topOffsetFlipPrevented:p._topOffsetFlipPrevented754||0,
+      events:(p._teleportEvents754||[]).map(x=>({...x})),
+      splineProgress:p._splineProg720||0,mode:p._raceState720?.mode||"NORMAL",
+      action:p._raceState720?.action||"none",x:p.x,y:p.y
+    }))
   };
 
   map.addEventListener("load",reset);
