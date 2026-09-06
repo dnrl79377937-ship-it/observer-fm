@@ -25,7 +25,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.21";
+  const BUILD_ID = "v7.22";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -724,7 +724,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
     telemetry696={raceStart:0,lastRanks:new Map(),leaderId:-1,leaderSince:0,leaderChanges:0};
-    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;sanitizeRaceState666(p);});
+    players.forEach(p=>{p._personality657=null;p._ability645=null;p._reaction646=null;p._stab648=null;p._overtake642Until=0;p._overtake642TargetId=-1;p._pass485=null;p.telemetry696=null;p._stable698=null;p._lastRaceTargetKind699="";p.lastAvoidance519=0;p.avoidance519Until=0;p.hardRouteLockUntil=0;p.routeBreakCombatUntil=0;p.lockedEscapeOffset=undefined;p._actualShortestProgress719=0;p._actualShortestDeviation719=0;p._splineProg720=0;p._raceState720=null;p._raceMode720="NORMAL";p._lineOffset720=0;p._speedMul720=1;p._backconImpulseUntil722=0;sanitizeRaceState666(p);});
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
@@ -9080,44 +9080,171 @@ function farthestVisibleFastTarget91(p,si){
     if(!p._raceState720){
       p._raceState720={
         mode:"NORMAL",since:now,lastThreatAt:0,reactionReadyAt:0,
-        pendingThreatId:-1,action:"none",target:null,actionUntil:0,rejoinUntil:0
+        pendingThreatId:-1,activeThreatId:-1,action:"none",target:null,actionUntil:0,rejoinUntil:0
       };
     }
     return p._raceState720;
   }
 
-  function readableThreat720(p,now){
-    const raw=falseThreatFilter482(p,collisionTTC479(p));
-    if(!raw)return null;
-    const ex=driverExecution720(p);
-    const horizon=.70+ex.prediction*.62;
-    if(raw.t>horizon)return null;
 
+  // ============================================================
+  // v7.22 REACTION & SURVIVAL HOTFIX
+  // - Early corridor threat prediction
+  // - Emergency proximity override
+  // - Immediate backcon direction/speed response
+  // ============================================================
+
+  function predictiveThreat722(p,now){
+    if(!p || safeAt(p.x,p.y)) return null;
+
+    const prog=Number.isFinite(p._splineProg720)
+      ? p._splineProg720
+      : nearestSplineProgress720(p.x,p.y);
+    const frame=splinePointAt720(prog);
+    const pv=Math.max(6.5,Number(p.speed)||9.72);
+    const pvx=frame.ux*pv,pvy=frame.uy*pv;
+
+    let best=null,bestScore=Infinity;
+
+    for(const o of observers){
+      const ox=o.x-p.x,oy=o.y-p.y;
+      const dist=Math.hypot(ox,oy);
+      if(dist>31) continue;
+
+      const forward=ox*frame.ux+oy*frame.uy;
+      const lateral=ox*(-frame.uy)+oy*frame.ux;
+      const ovx=Number.isFinite(o.vx)?o.vx:0;
+      const ovy=Number.isFinite(o.vy)?o.vy:0;
+      const rvx=ovx-pvx,rvy=ovy-pvy;
+      const vv=rvx*rvx+rvy*rvy;
+
+      let t=9,miss=dist;
+      if(vv>1e-7){
+        t=Math.max(0,Math.min(1.55,-(ox*rvx+oy*rvy)/vv));
+        miss=Math.hypot(ox+rvx*t,oy+rvy*t);
+      }
+
+      // Discrete forward corridor check catches cases where strict TTC misses a
+      // near-crossing observer because its current velocity is almost parallel.
+      let minSep=dist,minH=0;
+      for(const h of [.12,.22,.34,.50,.72,.96,1.22]){
+        const pp=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+pv*h));
+        const qx=o.x+ovx*h,qy=o.y+ovy*h;
+        const d=Math.hypot(pp.x-qx,pp.y-qy);
+        if(d<minSep){minSep=d;minH=h;}
+      }
+
+      const immediate=dist<3.75;
+      const frontBlock=forward>-.55 && forward<7.2 && Math.abs(lateral)<2.65;
+      const emergency=immediate ||
+        (frontBlock && dist<6.1) ||
+        (minSep<1.90 && minH<.48) ||
+        (t<.26 && miss<2.55);
+
+      const credible=emergency ||
+        (minSep<3.65 && minH<1.18) ||
+        (t<1.30 && miss<3.65 && dist<25);
+
+      if(!credible) continue;
+
+      const closingSpeed=dist>1e-4
+        ? Math.max(0,-(ox*rvx+oy*rvy)/dist)
+        : 99;
+
+      const effectiveT=emergency?Math.min(t,minH||.10):Math.min(t,minH||t);
+      const effectiveMiss=Math.min(miss,minSep);
+      const score=effectiveT*2.1+effectiveMiss*.68+dist*.018-(emergency?2.5:0);
+
+      if(score<bestScore){
+        bestScore=score;
+        best={
+          o,t:effectiveT,miss:effectiveMiss,dist,rx:ox,ry:oy,
+          closingSpeed,forward,lateral,minSep,minH,
+          frontBlock,emergency,source722:"corridor"
+        };
+      }
+    }
+
+    // Keep the old TTC result if it sees something even more urgent.
+    const legacy=collisionTTC479(p);
+    if(legacy){
+      const ls=(legacy.t||9)*2.1+(legacy.miss||9)*.68+(legacy.dist||20)*.018;
+      if(!best || ls<bestScore){
+        const forward=legacy.rx*frame.ux+legacy.ry*frame.uy;
+        const lateral=legacy.rx*(-frame.uy)+legacy.ry*frame.ux;
+        best={
+          ...legacy,forward,lateral,
+          frontBlock:forward>-.55&&forward<7.2&&Math.abs(lateral)<2.65,
+          emergency:(legacy.dist<3.75)||(legacy.t<.26&&legacy.miss<2.55),
+          source722:"legacy-ttc"
+        };
+      }
+    }
+
+    return best;
+  }
+
+  function readableThreat720(p,now){
+    const raw=predictiveThreat722(p,now);
+    if(!raw)return null;
+
+    const ex=driverExecution720(p);
     const st=ensureRaceState720(p,now),id=raw.o?.id??-1;
+
+    // Emergency Override: a close/front collision threat bypasses human reaction
+    // delay completely. This prevents "see observer, keep driving, die".
+    if(raw.emergency){
+      st.pendingThreatId=id;
+      st.reactionReadyAt=now;
+      st.emergency722=true;
+      return raw;
+    }
+
+    const horizon=.92+ex.prediction*.72;
+    if(raw.t>horizon && (raw.minH??9)>horizon)return null;
+
     if(st.pendingThreatId!==id){
       st.pendingThreatId=id;
-      const urgency=clamp01720((.72-raw.t)/.72);
-      const delay=(118-ex.reaction*82)*(1-urgency*.72);
-      st.reactionReadyAt=now+Math.max(12,delay);
+      const urgency=clamp01720((.82-Math.min(raw.t,raw.minH??raw.t))/.82);
+      const delay=(76-ex.reaction*56)*(1-urgency*.78);
+      st.reactionReadyAt=now+Math.max(8,delay);
     }
-    if(now<st.reactionReadyAt && raw.t>.23)return null;
+
+    if(now<st.reactionReadyAt && Math.min(raw.t,raw.minH??raw.t)>.31)
+      return null;
+
+    st.emergency722=false;
     return raw;
   }
 
   function scoreEvadeCandidate720(p,c,kind,threat){
     if(!c || !courseContainsPoint(c.x,c.y,0) || !actualRoadChord719(p.x,p.y,c.x,c.y))
       return Infinity;
+
     const ch=chainCollision714(p,p.seg||0,c);
     const field=dangerField713(p,c.x,c.y);
     const dev=Math.min(6,splineDeviationPoint720(c.x,c.y));
     const dist=Math.hypot(c.x-p.x,c.y-p.y);
-    const urgent=threat?.t<.48;
+    const urgent=!!threat?.emergency || threat?.t<.48 || (threat?.minH??9)<.48;
+    const front=!!threat?.frontBlock;
+
     let actionPenalty=0;
-    if(/back/.test(kind))actionPenalty=urgent?.45:4.2;
-    else if(/stop/.test(kind))actionPenalty=urgent?.75:2.4;
-    else if(/brake/.test(kind))actionPenalty=1.0;
+    if(/back/.test(kind)){
+      actionPenalty=front&&urgent ? -1.25 : urgent ? -.10 : 3.15;
+    }else if(/stop/.test(kind)){
+      actionPenalty=urgent?.55:2.4;
+    }else if(/brake/.test(kind)){
+      actionPenalty=urgent?.35:1.0;
+    }
+
+    // When an observer is physically blocking the forward corridor, continuing
+    // forward is extra expensive so side/backcon candidates win naturally.
+    const forwardPenalty=(front&&urgent&&!/back/.test(kind))
+      ? Math.max(0,2.2-(ch.nearest||0))*2.4
+      : 0;
+
     return ch.risk*22+field.risk*12+Math.max(0,2.0-ch.nearest)*20+
-      dev*.72+dist*.10+actionPenalty;
+      dev*.72+dist*.10+actionPenalty+forwardPenalty;
   }
 
   function splineDeviationPoint720(x,y){
@@ -9135,7 +9262,7 @@ function farthestVisibleFastTarget91(p,si){
       ["side-left", 2.8, -lat],["side-right",2.8,lat],
       ["hard-left",1.9,-hardLat],["hard-right",1.9,hardLat],
       ["brake",1.15,0],["stop",.35,0],
-      ["back-left",-1.25,-1.45],["back-right",-1.25,1.45],["back",-1.55,0]
+      ["back-left",-2.05,-1.55],["back-right",-2.05,1.55],["back",-2.30,0]
     ];
     let best=null,bestScore=Infinity;
     for(const [kind,f,l] of candidates){
@@ -9153,12 +9280,28 @@ function farthestVisibleFastTarget91(p,si){
   function startEvade720(p,now,threat){
     const st=ensureRaceState720(p,now);
     const choice=chooseEvadeAction720(p,now,threat);
+
     st.mode="EVADE";st.since=now;st.lastThreatAt=now;
+    st.activeThreatId=threat?.o?.id??-1;
     st.action=choice?.kind||"brake";
     st.target=choice?.target||{x:p.x,y:p.y,kind:"race720-evade-brake"};
+    st.emergency722=!!threat?.emergency;
+
     const back=/back/.test(st.action),stop=/stop|brake/.test(st.action);
-    st.actionUntil=now+(back?330:stop?260:300);
+    st.actionUntil=now+(back?245:stop?220:275);
     st.rejoinUntil=0;
+
+    if(back){
+      // v7.22: immediate backcon. No "slowly brake first" phase.
+      const prog=nearestSplineProgress720(p.x,p.y);
+      const frame=splinePointAt720(prog);
+      p.steerX=-frame.ux;p.steerY=-frame.uy;
+      p.mouseTargetX=st.target.x;p.mouseTargetY=st.target.y;
+      p.mouseMode="race720-backcon";
+      p._speedMul720=.82+.10*driverExecution720(p).avoidance;
+      p._backconImpulseUntil722=now+105;
+    }
+
     return st;
   }
 
@@ -9181,8 +9324,9 @@ function farthestVisibleFastTarget91(p,si){
 
     if(threat){
       st.lastThreatAt=now;
-      if(st.mode!=="EVADE")startEvade720(p,now,threat);
-      else if(now>=st.actionUntil || Math.hypot((st.target?.x??p.x)-p.x,(st.target?.y??p.y)-p.y)<.55)
+      const targetReached=Math.hypot((st.target?.x??p.x)-p.x,(st.target?.y??p.y)-p.y)<.55;
+      const changedThreat=(st.activeThreatId??-1)!==(threat.o?.id??-1);
+      if(st.mode!=="EVADE" || threat.emergency || changedThreat || now>=st.actionUntil || targetReached)
         startEvade720(p,now,threat);
       return {st,threat};
     }
@@ -9224,9 +9368,18 @@ function farthestVisibleFastTarget91(p,si){
   function speedMultiplier720(p,now,dt=16){
     const st=ensureRaceState720(p,now),ex=driverExecution720(p);
     let target=1;
+
     if(st.mode==="EVADE"){
-      if(/back/.test(st.action))target=.64+.10*ex.avoidance;
-      else if(/stop/.test(st.action))target=.18;
+      if(/back/.test(st.action)){
+        // Backcon is a deliberate instant reverse input. Do not low-pass the
+        // first reverse frames; that was the "느리게 끊기는" sensation.
+        target=now<(p._backconImpulseUntil722||0)
+          ? .88+.08*ex.avoidance
+          : .72+.08*ex.avoidance;
+        p._speedMul720=target;
+        return target;
+      }
+      if(/stop/.test(st.action))target=.18;
       else if(/brake/.test(st.action))target=.48+.12*ex.control;
       else target=.88+.08*ex.avoidance;
     }else if(st.mode==="REJOIN"){
@@ -9237,9 +9390,8 @@ function farthestVisibleFastTarget91(p,si){
       target=1-curve*(.052-.040*ex.corner);
     }
 
-    // v7.21: no per-frame speed snapping at corner sample boundaries.
     if(!Number.isFinite(p._speedMul720))p._speedMul720=target;
-    const tau=st.mode==="NORMAL"?135:65;
+    const tau=st.mode==="NORMAL"?135:st.mode==="EVADE"?28:65;
     const alpha=1-Math.exp(-Math.max(1,dt)/tau);
     p._speedMul720 += (target-p._speedMul720)*alpha;
     return p._speedMul720;
