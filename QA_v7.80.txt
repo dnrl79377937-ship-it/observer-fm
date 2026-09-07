@@ -1,0 +1,30 @@
+Observer Avoid FM v7.80 - 8 Map QA Release
+
+Neon Drift: 기존 완성형 유지, 이번 검수/패치 대상에서 제외.
+
+검수 대상 8개 맵:
+- Star Fish
+- Ice Crown
+- Desert Oasis
+- Heart
+- Black Hole
+- Space
+- Cliff Hanger
+- Rolling Stone
+
+검수 결과:
+- 9맵 선택 UI 구성 유지
+- 8맵 모두 geometryReady
+- 8맵 모두 strict road follow / route-center-hard
+- 각 맵 NORMAL racing line을 traced route 기준으로 재정규화
+- 시작=도착 맵은 shared red gate 규칙 유지
+- 시작/도착 분리 맵은 point-to-point 규칙 유지
+- Ice Crown 중앙 금지구역: 물리 진입 차단
+- Rolling Stone 큰 바위 3개: 물리 진입 차단
+- Rolling Stone 추가 작은 돌 5개: 제거된 이미지 사용
+- 미니맵 crop 범위와 맵 logical size 정합성 검사 통과
+- Chromium 런타임: 8맵 선택/시작 성공
+- 시작 직후 오완주: 0
+- 텔레포트 가드 이벤트: 0
+- 런타임 JS 오류: 0
+- selfAudit: PASS
