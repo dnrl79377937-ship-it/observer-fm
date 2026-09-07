@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.77";
+  const BUILD_ID = "v7.78";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -269,7 +269,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function mapPoolPublic770(){
     return MAP_POOL_770.map(m=>({
       id:m.id,slot:m.slot,name:m.name,en:m.en,theme:m.theme,tags:[...(m.tags||[])],
-      geometryReady:!!m.geometryReady,special:{...(m.special||{})},observerProfile:m.observerProfile
+      geometryReady:!!m.geometryReady,special:{...(m.special||{})},observerProfile:m.observerProfile,
+      courseType:m.courseType775||"point-to-point",lapRequired:!!m.lapRequired775,
+      finishRule:m.finishRule775||"end-gate",sharedGate778:!!m.sharedGate778,
+      start:{...(m.start||{})},finish:{...(m.goal||{})}
     }));
   }
 
@@ -5798,6 +5801,56 @@ applyMapSet776();
   }
   applyGeometry777();
 
+  // ============================================================
+  // v7.78 — SHARED RED START/FINISH + ROAD-FOLLOWING LINE LIMIT
+  // Normal driving on new maps follows the traced road. Large apex/string-pull
+  // cuts are disabled so nearby parallel road sections cannot be mistaken for
+  // a legal macro shortcut. Observer EVADE/REJOIN remains independent.
+  // ============================================================
+  function conservativeRacingLine778(m){
+    let line=densifyLine772(m.route770||[],.82);
+    // One light legality-aware smoothing pass: removes polygonal kinks without
+    // creating a new macro chord across an inner island or adjacent road.
+    line=smoothLegalLine772(m,line,1);
+    line=densifyLine772(line,.68);
+    if(line.length<3)line=(m.route770||[]).map(q=>[q[0],q[1]]);
+    if(line.length){
+      line[0]=[m.route770[0][0],m.route770[0][1]];
+      line[line.length-1]=[m.route770[m.route770.length-1][0],m.route770[m.route770.length-1][1]];
+    }
+    return line;
+  }
+
+  function applyRoadFollow778(){
+    for(const m of MAP_POOL_770){
+      if(m.id==="s_map"){
+        m.sharedGate778=false;
+        continue;
+      }
+      const line=conservativeRacingLine778(m);
+      m.racingSpline770=line;
+      m.globalOptimal770=line;
+      m.racingLineMode772="generated-v7.78";
+      m.strictRoadFollow778=true;
+
+      const sx=(m.safeZones.start.x0+m.safeZones.start.x1)*.5;
+      const sy=(m.safeZones.start.y0+m.safeZones.start.y1)*.5;
+      const gx=(m.safeZones.goal.x0+m.safeZones.goal.x1)*.5;
+      const gy=(m.safeZones.goal.y0+m.safeZones.goal.y1)*.5;
+      m.sharedGate778=!!m.lapRequired775 && Math.hypot(sx-gx,sy-gy)<.75;
+    }
+    // Heart uses a visibly larger common gate as requested.
+    const heart=MAP_DEFINITIONS_770.neon_city;
+    if(heart?.sharedGate778){
+      const c=[heart.start.x,heart.start.y],h=7.0;
+      heart.safeZones={
+        start:{x0:c[0]-h,y0:c[1]-h,x1:c[0]+h,y1:c[1]+h},
+        goal:{x0:c[0]-h,y0:c[1]-h,x1:c[0]+h,y1:c[1]+h}
+      };
+    }
+  }
+  applyRoadFollow778();
+
   function mapLapRule775(m=currentMap770()){
     return {
       type:m.courseType775||"point-to-point",
@@ -6154,7 +6207,8 @@ applyMapSet776();
     const miss=(1-line739)*.58;
     const variance739=(1-ex.consistency)*.13;
     const stable=.88+variance739*Math.sin(progress*.035+(p.index||0)*.73);
-    let off=wideSide*Math.min(.70,Math.max(0,miss*stable));
+    const maxExecOff778=currentMap770().strictRoadFollow778?.28:.70;
+    let off=wideSide*Math.min(maxExecOff778,Math.max(0,miss*stable));
 
     // v7.31 local smoothing only:
     // reduce execution-offset authority through the two C1 transition curves so
@@ -6753,7 +6807,8 @@ applyMapSet776();
   function normalTarget720(p){
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     const prog=Math.max(old,Number(p._splineFloor754)||0);
-    const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+8.0));
+    const look=currentMap770().strictRoadFollow778?4.2:8.0;
+    const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
     return {x:q.x,y:q.y,kind:"race720-normal"};
   }
 
@@ -8835,10 +8890,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
     };
     const smx=(zones775.start.x0+zones775.start.x1)*.5,smy=(zones775.start.y0+zones775.start.y1)*.5;
     const gmx=(zones775.goal.x0+zones775.goal.x1)*.5,gmy=(zones775.goal.y0+zones775.goal.y1)*.5;
-    miniZone775(zones775.start,"#ffd92f");
-    if(Math.hypot(smx-gmx,smy-gmy)<.75){
-      miniZone775({...zones775.goal,x0:(zones775.goal.x0+zones775.goal.x1)*.5},"#39ff6a");
-    }else miniZone775(zones775.goal,"#39ff6a");
+    const shared778=!!currentMap770().sharedGate778 || Math.hypot(smx-gmx,smy-gmy)<.75;
+    if(shared778){
+      miniZone775(zones775.start,"#ff3b3b");
+    }else{
+      miniZone775(zones775.start,"#ffd92f");
+      miniZone775(zones775.goal,"#39ff6a");
+    }
 
     for(let i=0;i<players.length;i++){
       const p=players[i];
@@ -8892,11 +8950,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function drawStartFinish775(view){
     if(!view)return;
     const zones=safeZones770();
-    const drawZone=(z,color)=>{
+    const drawZone=(z,color,fill=false)=>{
       const x=(z.x0-view.sx)*view.scale,y=(z.y0-view.sy)*view.scale;
       const w=(z.x1-z.x0)*view.scale,h=(z.y1-z.y0)*view.scale;
       if(x+w<0||y+h<0||x>canvas.width||y>canvas.height)return;
       ctx.save();
+      if(fill){
+        ctx.fillStyle="rgba(255,38,38,.72)";
+        ctx.fillRect(x,y,w,h);
+      }
       ctx.strokeStyle=color;
       ctx.lineWidth=Math.max(2.5,Math.min(6,view.scale*.75));
       ctx.shadowColor=color;ctx.shadowBlur=Math.max(2,view.scale*.7);
@@ -8905,11 +8967,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     };
     const scx=(zones.start.x0+zones.start.x1)*.5,scy=(zones.start.y0+zones.start.y1)*.5;
     const gcx=(zones.goal.x0+zones.goal.x1)*.5,gcy=(zones.goal.y0+zones.goal.y1)*.5;
-    const sameGate777=Math.hypot(scx-gcx,scy-gcy)<.75;
-    if(sameGate777){
-      drawZone(zones.start,"#ffd92f");
-      const g={...zones.goal,x0:(zones.goal.x0+zones.goal.x1)*.5};
-      drawZone(g,"#39ff6a");
+    const sameGate778=!!currentMap770().sharedGate778 || Math.hypot(scx-gcx,scy-gcy)<.75;
+    if(sameGate778){
+      drawZone(zones.start,"#ff3b3b",true);
     }else{
       drawZone(zones.start,"#ffd92f");
       drawZone(zones.goal,"#39ff6a");
@@ -10607,11 +10667,13 @@ function seasonCardHtml(p){
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버130");
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
-    if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("11맵지오메트리");
+    if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.77"))issues.push("레이싱라인775");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.78"))issues.push("레이싱라인775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
+    if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
     if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
