@@ -1,0 +1,20 @@
+Observer Avoid FM v7.78 CORRECTED2
+
+- Shared START/FINISH circuit maps: one red gate.
+- New 8 maps NORMAL racing line: exact traced route authority.
+- No apexPass/stringPull/smoothing macro chord on new maps.
+- Normal execution lateral offset on strict maps: 0.
+- Normal lookahead on strict maps: 2.35.
+- EVADE/REJOIN target constrained to current route segment neighborhood (current -1 / +2).
+- Neon Drift keeps its existing validated S-map racing line.
+- Cache-buster updated to game.js?v=7.78-corrected2-hard-route.
+
+Route/spline audit:
+Star Fish: v7.77 spline/route 0.9261 -> v7.78 1.0000
+ICE M: 0.9651 -> 1.0000
+Desert Oasis: 0.9843 -> 1.0000
+Heart: 0.9777 -> 1.0000
+Black Hole: 0.9912 -> 1.0000
+Space: 1.0000 -> 1.0000
+Cliff Hanger: 0.9681 -> 1.0000
+Rolling Stone: 0.9707 -> 1.0000
