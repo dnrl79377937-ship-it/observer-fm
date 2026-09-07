@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.80";
+  const BUILD_ID = "v7.81";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6010,6 +6010,47 @@ applyMapSet776();
   }
   applyMapQA780();
 
+  // ============================================================
+  // v7.81 — STAR FISH + ICE CROWN TARGETED ROAD PATH FIX
+  // 1) Star Fish: retrace NORMAL driving against the CURRENT gray-road artwork.
+  // 2) Ice Crown: keep the central M transition on the broad outer half of the road;
+  //    the v7.80 hard-forbidden box must never overlap the legal driving lane.
+  // Other map geometry is intentionally unchanged from v7.80.
+  // ============================================================
+  function applyTargetedPathFix781(){
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      star.route770=[[86.0,28.6],[86.0,31.821],[87.234,31.959],[92.858,37.582],[93.681,40.6],[96.013,44.303],[96.836,47.321],[99.716,53.493],[104.242,58.019],[107.534,58.156],[108.906,58.705],[112.472,59.116],[128.931,59.116],[133.321,60.214],[144.293,60.214],[142.373,60.9],[140.727,60.9],[130.029,71.598],[127.148,74.067],[124.268,75.576],[119.879,79.279],[114.255,84.903],[111.649,84.903],[115.627,88.88],[116.861,92.035],[117.547,95.601],[119.193,97.659],[120.016,101.362],[122.759,106.437],[124.268,113.295],[124.268,120.016],[129.343,125.091],[124.131,120.153],[118.919,120.153],[113.981,118.507],[108.083,115.078],[106.848,113.844],[100.676,110.826],[90.938,104.38],[89.429,103.968],[82.982,103.968],[81.199,104.242],[77.77,106.3],[75.164,108.494],[72.421,109.592],[63.643,114.667],[59.939,117.547],[52.807,120.29],[47.183,120.29],[44.029,123.308],[41.834,123.308],[47.458,117.684],[47.595,112.335],[48.967,107.123],[51.984,101.499],[52.533,98.344],[54.179,95.738],[56.236,89.018],[56.648,88.195],[61.722,83.394],[56.236,83.394],[51.984,79.142],[49.241,77.222],[43.206,71.735],[41.423,71.049],[31.136,60.762],[25.923,60.762],[37.582,60.762],[42.657,59.116],[60.488,58.979],[64.054,58.156],[67.895,57.882],[72.01,53.767],[75.713,45.812],[76.124,43.48],[78.182,40.188],[78.73,37.856],[84.628,31.959],[86.0,31.821],[86.0,28.6]];
+      star.widths770=new Array(Math.max(1,star.route770.length-1)).fill(9.0);
+      star.strictRoadFollow778=true;
+      star.roadFollowMode778="route-center-hard";
+      star.extraRoads771=[];
+      star.forbiddenZones770=[];
+      const line=conservativeRacingLine778(star);
+      star.racingSpline770=line;
+      star.globalOptimal770=line;
+      star.racingLineMode772="generated-v7.81";
+      star.roadTrace781="current-gray-road";
+    }
+
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      ice.route770=[[20.377,138.642],[20.314,126.0],[20.314,112.0],[20.314,98.0],[20.314,84.0],[20.314,70.0],[20.55,56.0],[21.3,44.0],[23.4,33.2],[27.6,25.5],[33.6,22.4],[40.2,22.0],[45.5,24.8],[49.1,31.0],[51.6,39.8],[53.4,49.8],[55.1,59.6],[58.8,65.5],[63.7,71.6],[71.099,74.0],[78.5,71.6],[83.4,65.5],[87.0,59.6],[88.8,49.8],[90.6,39.8],[93.1,31.0],[96.7,24.8],[102.0,22.0],[108.6,22.4],[114.6,25.5],[118.8,33.2],[120.9,44.0],[121.65,56.0],[121.95,70.0],[121.95,84.0],[121.95,98.0],[121.946,112.0],[121.946,126.0],[121.946,138.642]];
+      ice.widths770=new Array(Math.max(1,ice.route770.length-1)).fill(16.0);
+      ice.forbiddenZones770=[{x1:60.5,y1:5.5,x2:81.8,y2:45.5}];
+      ice.hardForbidden780=true;
+      ice.strictRoadFollow778=true;
+      ice.roadFollowMode778="route-center-hard";
+      ice.extraRoads771=[];
+      const line=conservativeRacingLine778(ice);
+      ice.racingSpline770=line;
+      ice.globalOptimal770=line;
+      ice.racingLineMode772="generated-v7.81";
+      ice.wideMRoute781=true;
+    }
+  }
+  applyTargetedPathFix781();
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -10875,7 +10916,10 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!["star_fish","ice_ring"].includes(m.id)&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
+    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="generated-v7.81"))issues.push("레이싱라인781");
+    if(MAP_DEFINITIONS_770.star_fish?.roadTrace781!=="current-gray-road")issues.push("스타피쉬도로781");
+    if(!MAP_DEFINITIONS_770.ice_ring?.wideMRoute781)issues.push("아이스넓은길781");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
