@@ -21,13 +21,13 @@
   const mapSelect774 = document.getElementById("mapSelect774");
   const mapSelectIcon774 = document.getElementById("mapSelectIcon774");
 
-  const MAP_W = 172, MAP_H = 178;
+  let MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 130;
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.75";
+  const BUILD_ID = "v7.77";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -312,7 +312,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function applyMapImage770(m=currentMap770()){
     const sz=m.imageSize||{w:696,h:720};
     const ls=m.logicalSize||{w:172,h:178};
-    MAP_IMAGE_SCALE_X=sz.w/ls.w;MAP_IMAGE_SCALE_Y=sz.h/ls.h;
+    MAP_W=Number(ls.w)||172;MAP_H=Number(ls.h)||178;
+    MAP_IMAGE_SCALE_X=sz.w/MAP_W;MAP_IMAGE_SCALE_Y=sz.h/MAP_H;
     if(m.image && !map.src.endsWith(m.image.split("?")[0]))map.src=m.image;
   }
   applyMapImage770();
@@ -1290,9 +1291,14 @@ function courseContainsPoint(x,y,extra=0){
 
 
   const OBS_GRID_SIZE = 16;
-  const OBS_GRID_COLS = Math.ceil(MAP_W/OBS_GRID_SIZE);
-  const OBS_GRID_ROWS = Math.ceil(MAP_H/OBS_GRID_SIZE);
-  const observerGrid = Array.from({length:OBS_GRID_COLS*OBS_GRID_ROWS},()=>[]);
+  let OBS_GRID_COLS = Math.ceil(MAP_W/OBS_GRID_SIZE);
+  let OBS_GRID_ROWS = Math.ceil(MAP_H/OBS_GRID_SIZE);
+  let observerGrid = Array.from({length:OBS_GRID_COLS*OBS_GRID_ROWS},()=>[]);
+  function resizeObserverGrid777(){
+    OBS_GRID_COLS=Math.max(1,Math.ceil(MAP_W/OBS_GRID_SIZE));
+    OBS_GRID_ROWS=Math.max(1,Math.ceil(MAP_H/OBS_GRID_SIZE));
+    observerGrid=Array.from({length:OBS_GRID_COLS*OBS_GRID_ROWS},()=>[]);
+  }
 
   function rebuildObserverGrid(){
     for(let i=0;i<observerGrid.length;i++) observerGrid[i].length=0;
@@ -5579,8 +5585,41 @@ function calibratedFastCorridor79(si){
   bindMapGeometry771();
 
 
-  const CIRCUIT_MAPS_775=new Set(["desert_oasis","double_hairpin","ice_ring","industrial_zone","neon_city","rubber_duck","star_fish"]);
-  const POINT_TO_POINT_MAPS_775=new Set(["cliff_hanger","river_cross","skyway"]);
+
+// ============================================================
+// v7.76 MAP PACK REFRESH — 9 MAP CURATION
+// Keep Neon Drift + Star Fish and refresh the rest of the visible map pool.
+// Geometry stays on the closest existing playable layouts; this patch focuses
+// on the in-game map roster, names, thumbnails, and artwork replacement.
+// ============================================================
+function applyMapSet776(){
+  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"];
+  const meta={
+    s_map:{slot:1,name:"네온 드리프트",en:"Neon Drift",theme:"Blue Neon S Course",tags:["기본","S자","네온"],image:"map_v672_equal_medium_start_goal.png?v=776-neon-drift"},
+    star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_772.png?v=776-star-fish"},
+    ice_ring:{slot:3,name:"ICE M",en:"ICE M",theme:"Frozen M Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_776.png?v=776-ice-m",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_776.png?v=776-desert-oasis",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_776.png?v=776-heart",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=776-black-hole",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_776.png?v=776-space",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
+    cliff_hanger:{slot:8,name:"클리프 행거",en:"Cliff Hanger",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_776.png?v=776-cliff-hanger",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
+    industrial_zone:{slot:9,name:"롤링 스톤",en:"Rolling Stone",theme:"Ancient Ruins Obstacle",tags:["장애물","낙석","회피"],image:"map_rolling_stone_776.png?v=776-rolling-stone",special:{shortcuts:false,obstacles:true,wideRoad:false,multiRoute:false,verticality:false}}
+  };
+  for(const id of keep){
+    const m=MAP_DEFINITIONS_770[id];
+    if(!m)continue;
+    Object.assign(m,meta[id]);
+  }
+  MAP_POOL_770.splice(0,MAP_POOL_770.length,...keep.map(id=>MAP_DEFINITIONS_770[id]));
+  if(!keep.includes(activeMapId770)){
+    activeMapId770="s_map";
+    activeMap770=MAP_DEFINITIONS_770.s_map;
+  }
+}
+applyMapSet776();
+
+  const CIRCUIT_MAPS_775=new Set(["star_fish","desert_oasis","neon_city","industrial_zone"]);
+  const POINT_TO_POINT_MAPS_775=new Set(["ice_ring","double_hairpin","skyway","cliff_hanger"]);
   const CIRCUIT_CLOSURES_775={"rubber_duck":[[126.3,26.7],[130,42],[132,60],[132,78],[131,96],[127,110],[120,120],[112,125],[103,127],[94,130],[86,136],[78,144],[70,150],[61.1,153.1]],"ice_ring":[[126.3,24.9],[138,34],[145,47],[150,63],[152,82],[151,100],[146,116],[137,129],[124,137],[108,142],[90,145],[73,145],[57.5,142.4]],"desert_oasis":[[100.2,24.9],[116,28],[130,37],[140,50],[145,66],[146,83],[143,99],[137,113],[128,124],[118,134],[110,142],[105,147.7]],"neon_city":[[114.5,23.1],[127,31],[136,44],[141,61],[142,80],[140,99],[135,116],[127,131],[115,141],[101,147],[84,150],[68.2,149.5]],"double_hairpin":[[125.1,24.9],[139,30],[146,43],[149,60],[149,80],[147,99],[143,116],[135,131],[123,141],[108,146],[93,148],[86,147.7]],"star_fish":[[88.4,28.5],[81,33],[75,39],[70,46],[65,53],[60,58],[57.5,58.7]],"industrial_zone":[[126.3,21.4],[138,30],[146,43],[150,59],[151,77],[151,96],[148,113],[141,128],[131,139],[117,146],[100,150],[80,152],[62,153],[56.3,153.1]]};
 
   function densifyClosure775(points,maxStep=1.45){
@@ -5662,10 +5701,102 @@ function calibratedFastCorridor79(si){
       const line=generateRacingLine772(m);
       m.racingSpline770=line;
       m.globalOptimal770=line;
-      m.racingLineMode772="generated-v7.75";
+      m.racingLineMode772="generated-v7.76";
     }
   }
   applyStartFinishRules775();
+
+
+  // ============================================================
+  // v7.77 PER-MAP ROAD GEOMETRY / START-FINISH / MINIMAP QA
+  // Routes below are traced against the actual v7.76 map artwork.
+  // ============================================================
+  function applyGeometry777(){
+    const set777=(id,data)=>{
+      const m=MAP_DEFINITIONS_770[id];
+      if(!m)return;
+      Object.assign(m,data);
+      m.extraRoads771=[];m.forbiddenZones770=[];m.geometryReady=true;m.approvedImageShape772=true;
+      const line=generateRacingLine772(m);
+      m.racingSpline770=line;
+      m.globalOptimal770=line;
+    };
+    set777("star_fish",{
+      image:"map_star_fish_772.png?v=777-geometry",imageSize:{w:696,h:720},
+      logicalSize:{w:172,h:178},
+      route770:[[86.0,23.486],[101.322,43.264],[132.213,46.972],[147.04,61.806],[130.977,76.639],[122.328,98.394],[101.322,92.708],[86.0,110.014],[70.678,92.708],[49.92,98.394],[40.776,76.639],[24.218,61.806],[40.034,46.972],[70.678,43.264],[86.0,23.486]],widths770:[13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5],
+      start:{x:86.0,y:23.486},goal:{x:86.0,y:23.486},
+      safeZones:{"start":{"x0":80.75,"y0":18.236,"x1":91.25,"y1":28.736},"goal":{"x0":80.75,"y0":18.236,"x1":91.25,"y1":28.736}},miniCrop:{x:0,y:0,w:172,h:178},
+      courseType775:"circuit",finishRule775:"one-lap-gate",lapRequired775:true,
+      lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
+    });
+    set777("ice_ring",{
+      image:"map_ice_m_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
+      logicalSize:{w:142.451,h:178},
+      route770:[[20.314,140.927],[20.314,116.805],[20.314,91.412],[20.314,63.481],[20.949,36.819],[29.201,20.949],[43.167,20.314],[54.594,38.088],[64.116,59.672],[71.099,69.194],[78.081,59.672],[87.604,38.088],[99.665,20.949],[114.266,20.314],[122.518,36.819],[122.518,63.481],[122.518,91.412],[122.518,116.805],[122.518,140.927]],widths770:[16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5],
+      start:{x:20.314,y:140.927},goal:{x:122.518,y:140.927},
+      safeZones:{"start":{"x0":14.814,"y0":135.427,"x1":25.814,"y1":146.427},"goal":{"x0":117.018,"y0":135.427,"x1":128.018,"y1":146.427}},miniCrop:{x:0,y:0,w:142.451,h:178},
+      courseType775:"point-to-point",finishRule775:"end-gate",lapRequired775:false,
+      lapArmFraction775:0,racingLineMode772:"generated-v7.77"
+    });
+    set777("desert_oasis",{
+      image:"map_desert_oasis_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
+      logicalSize:{w:142.451,h:178},
+      route770:[[18.409,60.942],[17.775,82.525],[19.044,105.378],[29.836,130.77],[54.594,138.388],[82.525,138.388],[106.648,132.04],[118.074,114.265],[121.248,88.873],[121.248,63.481],[116.805,41.897],[101.569,26.662],[78.716,21.583],[59.672,26.662],[45.706,36.184],[27.932,38.088],[20.314,45.071],[18.409,60.942]],widths770:[17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0],
+      start:{x:18.409,y:60.942},goal:{x:18.409,y:60.942},
+      safeZones:{"start":{"x0":12.908999999999999,"y0":55.442,"x1":23.909,"y1":66.44200000000001},"goal":{"x0":12.908999999999999,"y0":55.442,"x1":23.909,"y1":66.44200000000001}},miniCrop:{x:0,y:0,w:142.451,h:178},
+      courseType775:"circuit",finishRule775:"one-lap-gate",lapRequired775:true,
+      lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
+    });
+    set777("neon_city",{
+      image:"map_heart_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
+      logicalSize:{w:142.451,h:178},
+      route770:[[71.099,131.405],[57.133,119.979],[43.167,107.917],[31.106,93.317],[23.488,76.177],[22.853,54.593],[29.836,38.088],[43.167,29.201],[57.133,31.106],[71.099,43.802],[85.064,31.106],[99.03,29.201],[112.361,38.088],[119.344,54.593],[118.709,76.177],[111.091,93.317],[99.03,107.917],[85.064,119.979],[71.099,131.405]],widths770:[16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5],
+      start:{x:71.099,y:131.405},goal:{x:71.099,y:131.405},
+      safeZones:{"start":{"x0":65.599,"y0":125.905,"x1":76.599,"y1":136.905},"goal":{"x0":65.599,"y0":125.905,"x1":76.599,"y1":136.905}},miniCrop:{x:0,y:0,w:142.451,h:178},
+      courseType775:"circuit",finishRule775:"one-lap-gate",lapRequired775:true,
+      lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
+    });
+    set777("double_hairpin",{
+      image:"map_black_hole_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
+      logicalSize:{w:142.451,h:178},
+      route770:[[32.721,128.013],[25.467,120.68],[19.564,112.346],[15.142,103.251],[12.292,93.653],[11.057,83.819],[11.439,74.017],[13.394,64.507],[16.838,55.537],[21.648,47.337],[27.666,40.108],[34.707,34.024],[42.561,29.223],[50.998,25.806],[59.782,23.834],[68.669,23.328],[77.42,24.268],[85.802,26.597],[93.6,30.222],[100.618,35.014],[106.687,40.818],[111.666,47.454],[115.447,54.725],[117.958,62.421],[119.162,70.323],[119.061,78.216],[117.688,85.886],[115.114,93.134],[111.438,99.775],[106.788,105.647],[101.315,110.611],[95.188,114.559],[88.591,117.411],[81.713,119.12],[74.749,119.673],[67.889,119.086],[61.315,117.409],[55.196,114.718],[49.686,111.116],[44.915,106.728],[40.989,101.696],[37.99,96.178],[35.969,90.337],[34.951,84.343],[34.931,78.363],[35.878,72.561],[37.732,67.088],[40.412,62.084],[43.818,57.667],[47.83,53.939],[52.317,50.977],[57.138,48.836],[62.149,47.542],[67.205,47.101],[72.164,47.492],[76.893,48.671],[81.271,50.575],[85.19,53.121],[88.56,56.213],[91.311,59.74],[93.392,63.586],[94.774,67.63],[95.45,71.748],[95.433,75.82],[94.757,79.735],[93.471,83.389],[91.643,86.69],[89.351,89.561],[86.686,91.943],[83.745,93.791],[80.627,95.083],[77.433,95.81]],widths770:[15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5],
+      start:{x:32.721,y:128.013},goal:{x:77.433,y:95.81},
+      safeZones:{"start":{"x0":27.220999999999997,"y0":122.513,"x1":38.221,"y1":133.513},"goal":{"x0":71.933,"y0":90.31,"x1":82.933,"y1":101.31}},miniCrop:{x:0,y:0,w:142.451,h:178},
+      courseType775:"point-to-point",finishRule775:"end-gate",lapRequired775:false,
+      lapArmFraction775:0,racingLineMode772:"generated-v7.77"
+    });
+    set777("skyway",{
+      image:"map_space_776.png?v=777-geometry",imageSize:{w:724,h:2172},
+      logicalSize:{w:59.333,h:178},
+      route770:[[29.666,167.182],[29.666,152.431],[29.666,135.221],[29.666,118.011],[29.666,100.801],[29.666,83.591],[29.666,66.381],[29.666,49.171],[29.666,31.961],[29.666,12.703]],widths770:[5.8,5.8,5.8,5.8,5.8,5.8,5.8,5.8,5.8],
+      start:{x:29.666,y:167.182},goal:{x:29.666,y:12.703},
+      safeZones:{"start":{"x0":26.416,"y0":163.932,"x1":32.916,"y1":170.432},"goal":{"x0":26.416,"y0":9.453,"x1":32.916,"y1":15.953}},miniCrop:{x:0,y:0,w:59.333,h:178},
+      courseType775:"point-to-point",finishRule775:"end-gate",lapRequired775:false,
+      lapArmFraction775:0,racingLineMode772:"generated-v7.77"
+    });
+    set777("cliff_hanger",{
+      image:"map_cliff_hanger_776.png?v=777-geometry",imageSize:{w:1086,h:1448},
+      logicalSize:{w:133.5,h:178},
+      route770:[[27.044,14.137],[36.878,14.137],[47.942,18.439],[57.776,26.43],[68.84,35.035],[84.82,40.566],[102.03,45.483],[116.167,52.859],[121.084,63.923],[120.47,79.903],[117.396,94.655],[110.635,106.948],[100.801,114.323],[88.508,115.552],[79.903,107.562],[70.684,95.884],[61.464,84.82],[51.63,81.133],[41.181,83.591],[31.347,89.738],[25.2,98.343],[25.2,108.177],[30.732,116.167],[39.337,121.084],[40.566,129.075],[36.878,135.221],[42.41,139.523],[54.703,139.523]],widths770:[6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4],
+      start:{x:27.044,y:14.137},goal:{x:54.703,y:139.523},
+      safeZones:{"start":{"x0":23.794,"y0":10.887,"x1":30.294,"y1":17.387},"goal":{"x0":51.453,"y0":136.273,"x1":57.953,"y1":142.773}},miniCrop:{x:0,y:0,w:133.5,h:178},
+      courseType775:"point-to-point",finishRule775:"end-gate",lapRequired775:false,
+      lapArmFraction775:0,racingLineMode772:"generated-v7.77"
+    });
+    set777("industrial_zone",{
+      image:"map_rolling_stone_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
+      logicalSize:{w:142.451,h:178},
+      route770:[[71.099,18.409],[54.594,18.409],[38.089,20.949],[26.662,27.932],[20.949,38.088],[26.027,48.245],[38.089,57.767],[45.071,66.655],[41.897,77.447],[33.01,87.603],[26.027,99.03],[26.662,111.726],[34.914,121.248],[49.515,126.961],[71.099,128.231],[92.682,125.692],[107.917,118.074],[117.44,106.648],[120.614,93.317],[116.805,79.351],[107.917,69.194],[100.3,63.481],[103.474,54.593],[111.726,46.341],[119.979,36.819],[117.44,27.932],[106.648,21.583],[88.873,18.409],[71.099,18.409]],widths770:[16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0],
+      start:{x:71.099,y:18.409},goal:{x:71.099,y:18.409},
+      safeZones:{"start":{"x0":65.599,"y0":12.908999999999999,"x1":76.599,"y1":23.909},"goal":{"x0":65.599,"y0":12.908999999999999,"x1":76.599,"y1":23.909}},miniCrop:{x:0,y:0,w:142.451,h:178},
+      courseType775:"circuit",finishRule775:"one-lap-gate",lapRequired775:true,
+      lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
+    });
+    const s=MAP_DEFINITIONS_770.s_map;
+    if(s){s.name="네온 드리프트";s.en="Neon Drift";s.courseType775="point-to-point";s.finishRule775="end-gate";s.lapRequired775=false;}
+  }
+  applyGeometry777();
 
   function mapLapRule775(m=currentMap770()){
     return {
@@ -5684,6 +5815,9 @@ function calibratedFastCorridor79(si){
       return {ok:false,reason:"geometry-not-ready",id,name:next.name};
 
     activeMapId770=id;activeMap770=next;
+    const logical777=next.logicalSize||{w:172,h:178};
+    MAP_W=Number(logical777.w)||172;MAP_H=Number(logical777.h)||178;
+    resizeObserverGrid777();
     route=next.route770.map(p=>[...p]);
     widths=[...(next.widths770||[])];
     GLOBAL_OPTIMAL_LINE_710=next.globalOptimal770||next.racingSpline770;
@@ -7684,7 +7818,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       } else break;
     }
 
-    // v7.75 START/FINISH + one-lap finish authority.
+    // v7.76 START/FINISH + one-lap finish authority.
     const last=route[route.length-1];
     const fs=segs[segs.length-1];
     const frx=p.x-fs.a[0], fry=p.y-fs.a[1];
@@ -8699,8 +8833,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
       mx.save();mx.strokeStyle=color;mx.lineWidth=1.8;
       mx.strokeRect(x,y,w,h);mx.restore();
     };
+    const smx=(zones775.start.x0+zones775.start.x1)*.5,smy=(zones775.start.y0+zones775.start.y1)*.5;
+    const gmx=(zones775.goal.x0+zones775.goal.x1)*.5,gmy=(zones775.goal.y0+zones775.goal.y1)*.5;
     miniZone775(zones775.start,"#ffd92f");
-    miniZone775(zones775.goal,"#39ff6a");
+    if(Math.hypot(smx-gmx,smy-gmy)<.75){
+      miniZone775({...zones775.goal,x0:(zones775.goal.x0+zones775.goal.x1)*.5},"#39ff6a");
+    }else miniZone775(zones775.goal,"#39ff6a");
 
     for(let i=0;i<players.length;i++){
       const p=players[i];
@@ -8765,8 +8903,17 @@ targetOff=clampRoadOffset(si,targetOff,p);
       ctx.strokeRect(x,y,w,h);
       ctx.restore();
     };
-    drawZone(zones.start,"#ffd92f");
-    drawZone(zones.goal,"#39ff6a");
+    const scx=(zones.start.x0+zones.start.x1)*.5,scy=(zones.start.y0+zones.start.y1)*.5;
+    const gcx=(zones.goal.x0+zones.goal.x1)*.5,gcy=(zones.goal.y0+zones.goal.y1)*.5;
+    const sameGate777=Math.hypot(scx-gcx,scy-gcy)<.75;
+    if(sameGate777){
+      drawZone(zones.start,"#ffd92f");
+      const g={...zones.goal,x0:(zones.goal.x0+zones.goal.x1)*.5};
+      drawZone(g,"#39ff6a");
+    }else{
+      drawZone(zones.start,"#ffd92f");
+      drawZone(zones.goal,"#39ff6a");
+    }
   }
 
   function render(ts){
@@ -10459,15 +10606,17 @@ function seasonCardHtml(p){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버130");
-    if(MAP_POOL_770.length!==11)issues.push("맵풀11");
+    if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("11맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.75"))issues.push("레이싱라인775");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.racingLineMode772!=="generated-v7.77"))issues.push("레이싱라인775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
-    if(!["rubber_duck","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","star_fish","cliff_hanger","river_cross","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록");
+    if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
+    if(!["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록777");
+    if(MAP_POOL_770.some(m=>!m.logicalSize||!m.miniCrop||!m.route770?.length))issues.push("맵geometry777");
     const u764=unitChassis764();
     if(Object.keys(UNIT_CHASSIS_764).length!==5)issues.push("유닛5");
     if(UNIT_CHASSIS_764[1].hitRadius>=Math.min(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.hitRadius)))issues.push("스커지크기");
@@ -10541,6 +10690,13 @@ function seasonCardHtml(p){
       armed:!!p._lapArmed775,complete:!!p._lapComplete775,
       maxFraction:p._lapMaxFraction775||0,done:!!p.done
     })),
+    getMapQA777:()=>MAP_POOL_770.map(m=>({
+      id:m.id,name:m.name,world:{...(m.logicalSize||{})},imageSize:{...(m.imageSize||{})},
+      start:{...(m.start||{})},finish:{...(m.goal||{})},miniCrop:{...(m.miniCrop||{})},
+      routePoints:m.route770?.length||0,roadWidth:Number(m.widths770?.[0]||0),
+      courseType:m.courseType775||"point-to-point",lapRequired:!!m.lapRequired775
+    })),
+
     getTeleportAudit754:()=>players.map(p=>({
       name:p.name,trips:p._teleportGuardTrips754||0,
       backtrackPrevented:p._backtrackPrevented754||0,
