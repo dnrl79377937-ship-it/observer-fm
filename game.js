@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.81";
+  const BUILD_ID = "v7.82";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6051,6 +6051,69 @@ applyMapSet776();
   }
   applyTargetedPathFix781();
 
+  // ============================================================
+  // v7.82 — ROAD-ONLY INSIDE RACING LINE
+  // Star Fish / Ice Crown keep the v7.81 physical road corridors.
+  // NORMAL racing no longer follows their center trace verbatim:
+  // it locally string-pulls across each bend to take the shortest legal inside
+  // chord, while every sampled chord must remain inside the map's road ribbon.
+  // The physical route itself is NOT shortened, so off-road/exterior space
+  // remains unreachable and EVADE/REJOIN keeps the same road authority.
+  // ============================================================
+  function localInsideRacingLine782(m,maxChord,roadMargin=-.45){
+    const src=densifyLine772(m.route770||[],.35);
+    if(src.length<3)return (m.route770||[]).map(q=>[q[0],q[1]]);
+    const out=[[src[0][0],src[0][1]]];
+    let i=0;
+    while(i<src.length-1){
+      let best=i+1;
+      for(let j=i+2;j<src.length;j++){
+        if(Math.hypot(src[j][0]-src[i][0],src[j][1]-src[i][1])>maxChord)break;
+        // Critical safety rule: the whole chord, not just its endpoints,
+        // must stay comfortably inside the traced road corridor.
+        if(mapLineInside772(m,src[i],src[j],roadMargin))best=j;
+        else break;
+      }
+      i=best;
+      out.push([src[i][0],src[i][1]]);
+    }
+    let line=densifyLine772(out,.50);
+    if(line.length){
+      line[0]=[m.route770[0][0],m.route770[0][1]];
+      line[line.length-1]=[
+        m.route770[m.route770.length-1][0],
+        m.route770[m.route770.length-1][1]
+      ];
+    }
+    return line;
+  }
+
+  function applyRoadOnlyInsideLine782(){
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      // Moderate local apex cuts: visibly inside, but never a jump between star arms.
+      const line=localInsideRacingLine782(star,6.5,-.55);
+      star.racingSpline770=line;
+      star.globalOptimal770=line;
+      star.racingLineMode772="road-inside-v7.82";
+      star.insideRoadOnly782=true;
+      star.insideChord782=6.5;
+    }
+
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      // The M road is much wider, so a longer legal chord is allowed through
+      // the two crown turns and the central U. This removes the needless wide arc.
+      const line=localInsideRacingLine782(ice,18.0,-.55);
+      ice.racingSpline770=line;
+      ice.globalOptimal770=line;
+      ice.racingLineMode772="road-inside-v7.82";
+      ice.insideRoadOnly782=true;
+      ice.insideChord782=18.0;
+    }
+  }
+  applyRoadOnlyInsideLine782();
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -10917,8 +10980,9 @@ function seasonCardHtml(p){
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!["star_fish","ice_ring"].includes(m.id)&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
-    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="generated-v7.81"))issues.push("레이싱라인781");
+    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="road-inside-v7.82"))issues.push("레이싱라인782");
     if(MAP_DEFINITIONS_770.star_fish?.roadTrace781!=="current-gray-road")issues.push("스타피쉬도로781");
+    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782))issues.push("도로내인코스782");
     if(!MAP_DEFINITIONS_770.ice_ring?.wideMRoute781)issues.push("아이스넓은길781");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
