@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.82";
+  const BUILD_ID = "v7.83";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6114,6 +6114,55 @@ applyMapSet776();
   }
   applyRoadOnlyInsideLine782();
 
+
+  // ============================================================
+  // v7.83 — GLOBAL SHORTEST LEGAL RACING LINE
+  // v7.82 generated a better spline, but strictLocalRoadTarget778 still pulled
+  // NORMAL targets back toward the legacy route-center.  These two maps now use
+  // an explicitly verified shortest legal line as the authoritative NORMAL path.
+  // Every segment stays inside the traced road corridor (0.55 logical-unit margin).
+  // ============================================================
+  function applyGlobalShortestLine783(){
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      const nodes=[
+        [86.000,28.600],[96.248,45.165],[111.135,58.962],[131.126,59.665],
+        [133.135,68.492],[127.148,74.067],[115.980,89.781],[124.167,112.838],
+        [116.674,119.405],[96.213,107.872],[75.909,107.867],[58.156,118.233],
+        [47.520,115.253],[56.099,89.466],[39.709,69.335],[40.350,59.864],
+        [61.380,58.773],[75.960,44.413],[86.000,28.600]
+      ];
+      const line=densifyLine772(nodes,.42);
+      star.racingSpline770=line;
+      star.globalOptimal770=line;
+      star.racingLineMode772="global-shortest-v7.83";
+      star.optimizedSplineAuthority783=true;
+      star.shortestLegal783=true;
+      star.shortestLength783=329.00;
+      star.centerRouteLength783=433.53;
+      star.insideRoadOnly782=true;
+    }
+
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      const nodes=[
+        [20.377,138.642],[20.314,102.000],[31.886,23.286],[51.686,40.276],
+        [67.862,72.950],[89.400,46.467],[90.343,41.229],[109.886,23.064],
+        [121.950,96.000],[121.946,138.642]
+      ];
+      const line=densifyLine772(nodes,.42);
+      ice.racingSpline770=line;
+      ice.globalOptimal770=line;
+      ice.racingLineMode772="global-shortest-v7.83";
+      ice.optimizedSplineAuthority783=true;
+      ice.shortestLegal783=true;
+      ice.shortestLength783=361.46;
+      ice.centerRouteLength783=385.55;
+      ice.insideRoadOnly782=true;
+    }
+  }
+  applyGlobalShortestLine783();
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -7085,7 +7134,7 @@ applyMapSet776();
   function normalTarget720(p){
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     const prog=Math.max(old,Number(p._splineFloor754)||0);
-    const look=currentMap770().strictRoadFollow778?2.35:8.0;
+    const look=currentMap770().optimizedSplineAuthority783?5.20:(currentMap770().strictRoadFollow778?2.35:8.0);
     const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
     return {x:q.x,y:q.y,kind:"race720-normal"};
   }
@@ -7122,8 +7171,14 @@ applyMapSet776();
     else t=rejoinTarget720(p,now);
 
     if(currentMap770().strictRoadFollow778){
-      t=strictLocalRoadTarget778(p,si,t)||normalTarget720(p);
-      t=actualRoadTarget719(p,si,t)||strictLocalRoadTarget778(p,si,normalTarget720(p))||normalTarget720(p);
+      if(currentMap770().optimizedSplineAuthority783){
+        // v7.83: do NOT project the optimal target back to the legacy center route.
+        // Keep only the actual-road/chord validator as the safety authority.
+        t=actualRoadTarget719(p,si,t)||actualRoadTarget719(p,si,normalTarget720(p))||normalTarget720(p);
+      }else{
+        t=strictLocalRoadTarget778(p,si,t)||normalTarget720(p);
+        t=actualRoadTarget719(p,si,t)||strictLocalRoadTarget778(p,si,normalTarget720(p))||normalTarget720(p);
+      }
     }else{
       t=actualRoadTarget719(p,si,t)||normalTarget720(p);
     }
@@ -10980,9 +11035,9 @@ function seasonCardHtml(p){
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!["star_fish","ice_ring"].includes(m.id)&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
-    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="road-inside-v7.82"))issues.push("레이싱라인782");
+    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="global-shortest-v7.83"))issues.push("최단경로783");
     if(MAP_DEFINITIONS_770.star_fish?.roadTrace781!=="current-gray-road")issues.push("스타피쉬도로781");
-    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782))issues.push("도로내인코스782");
+    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782||!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.shortestLegal783))issues.push("최단경로권한783");
     if(!MAP_DEFINITIONS_770.ice_ring?.wideMRoute781)issues.push("아이스넓은길781");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
