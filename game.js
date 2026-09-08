@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.87";
+  const BUILD_ID = "v7.89";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6373,6 +6373,239 @@ applyMapSet776();
   }
   applyPatch787();
 
+  // ============================================================
+  // v7.88 — BLACK HOLE GATE CORRECTION + SPACE +2 ROAD ROWS
+  // ============================================================
+  function applyPatch788(){
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      // v7.87 had yellow/green roles reversed. Restore the opposite gate roles.
+      // Start at the outer-left gate; finish at the inner-right gate.
+      black.image="map_black_hole_776.png?v=788-correct-gates";
+      let r=(black.route770||[]).map(q=>[q[0],q[1]]);
+      // v7.87 reversed the original route. Put it back to outer -> inner.
+      if(black.blackHoleReverse787 && r.length>=2) r=r.reverse();
+      black.route770=r;
+      if((black.widths770||[]).length) black.widths770=black.widths770.slice().reverse();
+      black.start={x:14.6,y:145.0};
+      black.goal={x:77.72,y:96.768};
+      black.safeZones={
+        start:{x0:9.2,y0:139.6,x1:20.0,y1:150.4},
+        goal:{x0:72.72,y0:91.768,x1:82.72,y1:101.768}
+      };
+      black.courseType775="point-to-point";
+      black.finishRule775="end-gate";
+      black.lapRequired775=false;
+      black.sharedGate778=false;
+      black.blackHoleReverse787=false;
+      black.startDirection788="route-forward";
+      black.strictRoadFollow778=true;
+      black.roadFollowMode778="route-center-hard";
+      const line=conservativeRacingLine778(black);
+      black.racingSpline770=line;
+      black.globalOptimal770=line;
+      black.racingLineMode772="correct-gates-v7.88";
+    }
+
+    const space=MAP_DEFINITIONS_770.skyway;
+    if(space){
+      // Widen the physical/player road by two logical rows total (+1 each side).
+      space.widths770=(space.widths770||[]).map(w=>w+1.0);
+      space.special=Object.assign({},space.special,{wideRoad:true});
+      space.spaceRoadRowsAdded788=2;
+      space.image="map_space_788.png?v=788-plus-two-rows";
+      const line=conservativeRacingLine778(space);
+      space.racingSpline770=line;
+      space.globalOptimal770=line;
+      space.racingLineMode772="wider-road-v7.88";
+    }
+  }
+  applyPatch788();
+
+
+  // ============================================================
+  // v7.89 — GLOBAL SLIGHT-INSIDE TUNE + OUTER-REGION SOFT LIMIT
+  // Goal:
+  // - NORMAL racing is a little more inside at real bends.
+  // - Do not intentionally take exaggerated outside arcs.
+  // - Road edge/rail remains pass-through (not a wall). If an air unit drifts far
+  //   beyond the road, it naturally REJOINs; there is no snap/rollback/death.
+  // ============================================================
+  function mapRouteInfo789(m,x,y){
+    const rr=m?.route770||[],ww=m?.widths770||[];
+    let best=null,bestD=Infinity;
+    for(let i=0;i<rr.length-1;i++){
+      const a=rr[i],b=rr[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1;
+      const u=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/L2));
+      const cx=a[0]+dx*u,cy=a[1]+dy*u,L=Math.sqrt(L2),ux=dx/L,uy=dy/L,nx=-uy,ny=ux;
+      const ex=x-cx,ey=y-cy,d2=ex*ex+ey*ey;
+      if(d2<bestD){
+        bestD=d2;
+        best={i,cx,cy,ux,uy,nx,ny,lat:ex*nx+ey*ny,half:Math.max(.55,Number(ww[i]??ww[0]??10)*.5),d2};
+      }
+    }
+    return best;
+  }
+
+  function mapTurn789(m,i){
+    const rr=m?.route770||[];
+    if(rr.length<3)return {side:0,power:0};
+    let score=0,weight=0,pMax=0;
+    for(let k=0;k<5;k++){
+      const j=Math.max(0,Math.min(rr.length-3,(i|0)+k));
+      const a=rr[j],b=rr[j+1],c=rr[j+2];
+      let x1=b[0]-a[0],y1=b[1]-a[1],x2=c[0]-b[0],y2=c[1]-b[1];
+      const l1=Math.hypot(x1,y1)||1,l2=Math.hypot(x2,y2)||1;
+      x1/=l1;y1/=l1;x2/=l2;y2/=l2;
+      const cross=x1*y2-y1*x2;
+      const dot=Math.max(-1,Math.min(1,x1*x2+y1*y2));
+      const power=Math.acos(dot)/Math.PI;
+      if(power>.018 && Math.abs(cross)>.01){
+        // Existing engine convention: screen-space negative cross = visual left,
+        // and the inside lane is negative route-normal offset.
+        const side=cross<0?-1:1,w=power/(1+k*.62);
+        score+=side*w;weight+=w;pMax=Math.max(pMax,power);
+      }
+    }
+    if(weight<.006)return {side:0,power:0};
+    return {side:Math.sign(score)||0,power:Math.min(1,pMax*4.2)};
+  }
+
+  function mapForbiddenPoint789(m,x,y,pad=.10){
+    if(!m?.hardForbidden780)return false;
+    for(const z of (m.forbiddenZones770||[])){
+      if(x>=z.x1-pad&&x<=z.x2+pad&&y>=z.y1-pad&&y<=z.y2+pad)return true;
+    }
+    return false;
+  }
+
+  function mapRoadPoint789(m,x,y,margin=-.18){
+    if(!m)return false;
+    if(m.id==='s_map')return true; // S-map keeps its hand-tuned spline; runtime guard still applies.
+    return genericCourseMask771(m,x,y,margin)&&!mapForbiddenPoint789(m,x,y,.08);
+  }
+
+  function mapRoadSegment789(m,a,b,margin=-.14){
+    if(m.id==='s_map')return true;
+    const d=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(2,Math.ceil(d/.24));
+    for(let k=0;k<=n;k++){
+      const t=k/n,x=a[0]+(b[0]-a[0])*t,y=a[1]+(b[1]-a[1])*t;
+      if(!mapRoadPoint789(m,x,y,margin))return false;
+    }
+    return true;
+  }
+
+  function tuneRacingSpline789(m){
+    const src=(m?.racingSpline770||[]).map(q=>[q[0],q[1]]);
+    if(m?.id==='s_map'||src.length<3)return src;
+    const out=src.map(q=>[q[0],q[1]]);
+    const star=m.id==='star_fish', narrow=m.id==='skyway'||m.id==='cliff_hanger';
+    for(let i=1;i<src.length-1;i++){
+      const q=src[i],info=mapRouteInfo789(m,q[0],q[1]);
+      if(!info)continue;
+      const turn=mapTurn789(m,info.i),half=info.half;
+      let lat=info.lat;
+      if(turn.side){
+        let signed=lat*turn.side; // + = inside, - = outside
+        const outsideCap=half*(star?.28:narrow?.34:.38);
+        const insideCap=half*(star?.55:narrow?.66:.70);
+        // Never keep a large outside setup arc.
+        signed=Math.max(-outsideCap,signed);
+        // Small universal inside nudge; strongest only where a real bend is nearby.
+        const push=Math.min(.34,half*.055)*(.38+turn.power*.62);
+        if(signed<insideCap) signed=Math.min(insideCap,signed+push);
+        lat=signed*turn.side;
+      }else{
+        // On straights there is no reason to cruise near an outer edge.
+        const cap=half*(star?.50:narrow?.58:.60);
+        lat=Math.max(-cap,Math.min(cap,lat));
+      }
+      const c=[info.cx+info.nx*lat,info.cy+info.ny*lat];
+      if(!mapRoadPoint789(m,c[0],c[1],-.22))continue;
+      if(!mapRoadSegment789(m,out[i-1],c,-.16))continue;
+      if(!mapRoadSegment789(m,c,src[i+1],-.16))continue;
+      out[i]=c;
+    }
+    out[0]=src[0];out[out.length-1]=src[src.length-1];
+    return out;
+  }
+
+  function softLaneTarget789(p,t,mode){
+    if(!t)return t;
+    const m=currentMap770(),info=mapRouteInfo789(m,t.x,t.y);
+    if(!info)return t;
+    const turn=mapTurn789(m,info.i),half=info.half;
+    let lat=info.lat;
+    if(turn.side){
+      let signed=lat*turn.side;
+      const outsideFrac=mode==='EVADE'?.72:mode==='REJOIN'?.52:.40;
+      const insideFrac=mode==='EVADE'?.90:mode==='REJOIN'?.76:.72;
+      signed=Math.max(-half*outsideFrac,Math.min(half*insideFrac,signed));
+      lat=signed*turn.side;
+    }else{
+      const frac=mode==='EVADE'?.80:mode==='REJOIN'?.62:.60;
+      lat=Math.max(-half*frac,Math.min(half*frac,lat));
+    }
+    const x=info.cx+info.nx*lat,y=info.cy+info.ny*lat;
+    if(visualRoadMask674(x,y,info.i)&&courseContainsPoint(x,y,0)&&
+       !(m.hardForbidden780&&inForbidden96(x,y,0))&&actualRoadChord719(p.x,p.y,x,y))
+      return {...t,x,y,kind:(t.kind||'race720')+'-soft789'};
+    return t;
+  }
+
+  function softOuterRecovery789(p,now){
+    const m=currentMap770();
+    if(!m.edgePassThrough786)return false;
+    // One road-edge line plus a small exterior skim remains freely traversable.
+    // Only a genuinely large exterior excursion requests a natural REJOIN.
+    if(courseContainsPoint(p.x,p.y,1.20))return false;
+    const st=ensureRaceState720(p,now);
+    if(st.mode!=='REJOIN'){
+      st.mode='REJOIN';st.since=now;st.target=null;st.action='none';st.actionUntil=0;
+      st.rejoinUntil=now+620+driverExecution720(p).recovery*260;
+    }
+    p._outerSoftRecoveries789=(p._outerSoftRecoveries789||0)+1;
+    return true;
+  }
+
+  function applyGlobalInsideTune789(){
+    for(const m of MAP_POOL_770){
+      m.outerSoftLimit789=true;
+      m.edgePassThrough786=true; // reaffirm: this limiter is NOT a wall.
+      if(m.id==='s_map'){
+        m.insideTune789='existing-optimized+runtime-bias';
+        continue;
+      }
+      const tuned=tuneRacingSpline789(m);
+      if(tuned.length>=3){
+        m.racingSpline770=tuned;
+        m.globalOptimal770=tuned;
+        m.insideTune789='slight-inside-no-wide-outside';
+        m.racingLineMode772=(m.racingLineMode772||'generated')+'+v7.89';
+      }
+    }
+  }
+  applyGlobalInsideTune789();
+
+
+  // v7.89 code-audit fix: Rolling Stone's v7.796 center route passed through
+  // the three hard boulder rectangles.  That could trap NORMAL racers in a
+  // hard-obstacle rollback/rejoin loop.  Restore enough real road width for the
+  // narrow side passages and use a prevalidated continuous bypass spline.
+  function applyRollingStoneObstacleBypass789(){
+    const m=MAP_DEFINITIONS_770.industrial_zone;
+    if(!m)return;
+    m.widths770=new Array(Math.max(1,(m.route770||[]).length-1)).fill(14.0);
+    const line=[[71.099,18.409],[70.405,18.421],[69.712,18.433],[69.018,18.445],[68.324,18.457],[67.631,18.469],[66.937,18.481],[66.243,18.493],[65.549,18.505],[64.856,18.516],[64.162,18.528],[63.468,18.54],[62.775,18.552],[62.081,18.564],[61.387,18.576],[60.694,18.588],[60.0,18.6],[59.312,18.613],[58.625,18.625],[57.938,18.638],[57.25,18.65],[56.562,18.663],[55.875,18.675],[55.188,18.688],[54.5,18.7],[53.812,18.713],[53.125,18.725],[52.438,18.738],[51.75,18.75],[51.062,18.762],[50.375,18.775],[49.688,18.788],[49.0,18.8],[48.318,18.934],[47.636,19.069],[46.954,19.203],[46.272,19.337],[45.59,19.472],[44.908,19.606],[44.226,19.74],[43.544,19.875],[42.863,20.009],[42.181,20.143],[41.499,20.277],[40.817,20.412],[40.135,20.546],[39.453,20.68],[38.771,20.815],[38.089,20.949],[37.475,21.203],[36.862,21.456],[36.248,21.71],[35.635,21.964],[35.021,22.217],[34.408,22.471],[33.794,22.724],[33.181,22.978],[32.567,23.232],[31.954,23.485],[31.34,23.739],[30.975,24.593],[30.61,25.448],[30.455,25.382],[29.994,25.882],[29.532,26.382],[29.071,26.882],[28.609,27.382],[28.148,27.882],[27.686,28.382],[27.702,29.323],[27.718,30.264],[27.734,31.204],[27.75,32.145],[27.766,33.086],[27.305,33.586],[27.795,32.503],[27.579,33.118],[27.364,33.734],[27.762,34.564],[27.547,35.179],[27.331,35.795],[27.729,36.625],[27.514,37.24],[27.912,38.07],[27.697,38.686],[27.481,39.301],[25.425,39.272],[23.369,39.244],[19.432,39.285],[20.216,39.809],[21.0,40.333],[21.15,41.0],[21.3,41.667],[21.45,42.333],[21.6,43.0],[21.75,43.667],[21.9,44.333],[22.05,45.0],[22.2,45.667],[22.35,46.333],[22.5,47.0],[22.958,47.5],[23.417,48.0],[23.875,48.5],[24.333,49.0],[24.792,49.5],[25.25,50.0],[25.708,50.5],[26.167,51.0],[26.625,51.5],[27.083,52.0],[27.542,52.5],[28.0,53.0],[28.533,53.387],[29.067,53.773],[29.6,54.16],[30.133,54.547],[30.667,54.933],[31.2,55.32],[31.733,55.707],[32.267,56.093],[32.8,56.48],[33.333,56.867],[33.867,57.253],[34.4,57.64],[34.933,58.027],[35.467,58.413],[36.0,58.8],[36.482,59.265],[36.965,59.729],[37.447,60.194],[37.929,60.659],[38.412,61.124],[38.894,61.588],[39.376,62.053],[39.859,62.518],[40.341,62.982],[40.824,63.447],[41.306,63.912],[41.788,64.376],[42.271,64.841],[42.753,65.306],[43.235,65.771],[43.718,66.235],[44.2,66.7],[44.053,67.353],[43.907,68.007],[43.76,68.66],[43.613,69.313],[43.467,69.967],[43.32,70.62],[43.173,71.273],[43.027,71.927],[42.88,72.58],[42.733,73.233],[42.587,73.887],[42.44,74.54],[42.293,75.193],[42.147,75.847],[42.0,76.5],[41.613,77.033],[41.227,77.567],[40.84,78.1],[40.453,78.633],[40.067,79.167],[39.68,79.7],[39.293,80.233],[38.907,80.767],[38.52,81.3],[38.133,81.833],[37.747,82.367],[37.36,82.9],[36.973,83.433],[36.587,83.967],[36.2,84.5],[35.8,85.033],[35.4,85.567],[35.0,86.1],[34.6,86.633],[34.2,87.167],[33.8,87.7],[33.4,88.233],[33.0,88.767],[32.6,89.3],[32.2,89.833],[31.8,90.367],[31.4,90.9],[31.0,91.433],[30.6,91.967],[30.2,92.5],[29.936,93.107],[29.671,93.714],[29.407,94.321],[29.143,94.929],[28.879,95.536],[28.614,96.143],[28.35,96.75],[28.086,97.357],[27.821,97.964],[27.557,98.571],[27.293,99.179],[27.029,99.786],[26.764,100.393],[26.5,101.0],[26.607,101.679],[26.714,102.357],[26.821,103.036],[26.929,103.714],[27.036,104.393],[27.143,105.071],[27.25,105.75],[27.357,106.429],[27.464,107.107],[27.571,107.786],[27.679,108.464],[27.786,109.143],[27.893,109.821],[28.0,110.5],[28.357,111.093],[28.714,111.686],[29.071,112.279],[29.429,112.871],[29.786,113.464],[30.143,114.057],[30.5,114.65],[30.857,115.243],[31.214,115.836],[31.571,116.429],[31.929,117.021],[32.286,117.614],[32.643,118.207],[33.0,118.8],[33.567,119.16],[34.133,119.52],[34.7,119.88],[35.267,120.24],[35.833,120.6],[36.4,120.96],[36.967,121.32],[37.533,121.68],[38.1,122.04],[38.667,122.4],[39.233,122.76],[39.8,123.12],[40.367,123.48],[40.933,123.84],[41.5,124.2],[42.147,124.382],[42.794,124.565],[43.441,124.747],[44.088,124.929],[44.735,125.112],[45.382,125.294],[46.029,125.476],[46.676,125.659],[47.324,125.841],[47.971,126.024],[48.618,126.206],[49.265,126.388],[49.912,126.571],[50.559,126.753],[51.206,126.935],[51.853,127.118],[52.5,127.3],[53.176,127.347],[53.853,127.394],[54.529,127.441],[55.206,127.488],[55.882,127.535],[56.559,127.582],[57.235,127.629],[57.912,127.676],[58.588,127.724],[59.265,127.771],[59.941,127.818],[60.618,127.865],[61.294,127.912],[61.971,127.959],[62.647,128.006],[63.324,128.053],[64.0,128.1],[64.667,128.1],[65.333,128.1],[66.0,128.1],[66.667,128.1],[67.333,128.1],[68.0,128.1],[68.667,128.1],[69.333,128.1],[70.0,128.1],[70.667,128.1],[71.333,128.1],[72.0,128.1],[72.667,128.1],[73.333,128.1],[74.0,128.1],[74.667,128.1],[75.333,128.1],[76.0,128.1],[76.667,128.05],[77.333,128.0],[78.0,127.95],[78.667,127.9],[79.333,127.85],[80.0,127.8],[80.667,127.75],[81.333,127.7],[82.0,127.65],[82.667,127.6],[83.333,127.55],[84.0,127.5],[84.667,127.45],[85.333,127.4],[86.0,127.35],[86.667,127.3],[87.333,127.25],[88.0,127.2],[88.647,127.071],[89.294,126.941],[89.941,126.812],[90.588,126.682],[91.235,126.553],[91.882,126.424],[92.529,126.294],[93.176,126.165],[93.824,126.035],[94.471,125.906],[95.118,125.776],[95.765,125.647],[96.412,125.518],[97.059,125.388],[97.706,125.259],[98.353,125.129],[99.0,125.0],[99.6,124.7],[100.2,124.4],[100.8,124.1],[101.4,123.8],[102.0,123.5],[102.6,123.2],[103.2,122.9],[103.8,122.6],[104.4,122.3],[105.0,122.0],[105.6,121.7],[106.2,121.4],[106.8,121.1],[107.4,120.8],[108.0,120.5],[108.5,120.062],[109.0,119.625],[109.5,119.188],[110.0,118.75],[110.5,118.312],[111.0,117.875],[111.5,117.438],[112.0,117.0],[112.5,116.562],[113.0,116.125],[113.5,115.688],[114.0,115.25],[114.5,114.812],[115.0,114.375],[115.5,113.938],[116.0,113.5],[116.333,112.933],[116.667,112.367],[117.0,111.8],[117.333,111.233],[117.667,110.667],[118.0,110.1],[118.333,109.533],[118.667,108.967],[119.0,108.4],[119.333,107.833],[119.667,107.267],[120.0,106.7],[120.333,106.133],[120.667,105.567],[121.0,105.0],[121.133,104.333],[121.267,103.667],[121.4,103.0],[121.533,102.333],[121.667,101.667],[121.8,101.0],[121.933,100.333],[122.067,99.667],[122.2,99.0],[122.333,98.333],[122.467,97.667],[122.6,97.0],[122.733,96.333],[122.867,95.667],[123.0,95.0],[122.969,94.312],[122.938,93.625],[122.906,92.938],[122.875,92.25],[122.844,91.562],[122.812,90.875],[122.781,90.188],[122.75,89.5],[122.719,88.812],[122.688,88.125],[122.656,87.438],[122.625,86.75],[122.594,86.062],[122.562,85.375],[122.531,84.688],[122.5,84.0],[122.353,83.353],[122.206,82.706],[122.059,82.059],[121.912,81.412],[121.765,80.765],[121.618,80.118],[121.471,79.471],[121.324,78.824],[121.81,78.032],[121.663,77.385],[121.516,76.738],[121.369,76.091],[121.856,75.3],[121.709,74.653],[121.562,74.006],[120.781,73.503],[120.0,73.0],[119.7,72.387],[119.4,71.773],[119.1,71.16],[118.8,70.547],[118.5,69.933],[118.2,69.32],[117.9,68.707],[117.6,68.093],[117.3,67.48],[117.0,66.867],[116.7,66.253],[116.4,65.64],[116.1,65.027],[115.8,64.413],[115.5,63.8],[115.2,63.213],[114.9,62.627],[114.6,62.04],[114.3,61.453],[114.0,60.867],[113.7,60.28],[113.4,59.693],[113.1,59.107],[112.8,58.52],[112.5,57.933],[112.2,57.347],[111.9,56.76],[111.6,56.173],[111.3,55.587],[111.0,55.0],[111.042,54.333],[111.083,53.667],[111.125,53.0],[111.167,52.333],[111.208,51.667],[111.25,51.0],[111.292,50.333],[111.333,49.667],[111.375,49.0],[111.417,48.333],[111.458,47.667],[111.5,47.0],[111.821,46.429],[112.143,45.857],[112.464,45.286],[112.786,44.714],[113.107,44.143],[113.429,43.571],[113.75,43.0],[114.071,42.429],[114.393,41.857],[114.714,41.286],[115.036,40.714],[115.357,40.143],[115.679,39.571],[116.0,39.0],[116.323,38.385],[116.646,37.769],[116.969,37.154],[117.292,36.538],[117.615,35.923],[117.938,35.308],[118.262,34.692],[118.585,34.077],[118.908,33.462],[119.231,32.846],[119.554,32.231],[119.877,31.615],[119.633,31.318],[119.31,30.741],[118.987,30.164],[118.664,29.587],[118.341,29.01],[118.017,28.433],[117.694,27.856],[117.371,27.279],[117.048,26.702],[116.725,26.125],[116.402,25.548],[116.079,24.971],[115.756,24.395],[115.753,24.101],[115.357,23.236],[114.714,22.971],[114.071,22.707],[113.429,22.443],[112.786,22.179],[112.143,21.914],[111.5,21.65],[110.857,21.386],[110.214,21.121],[109.571,20.857],[108.929,20.593],[108.286,20.329],[107.643,20.064],[107.0,19.8],[106.306,19.739],[105.611,19.678],[104.917,19.617],[104.222,19.556],[103.528,19.494],[102.833,19.433],[102.139,19.372],[101.444,19.311],[100.75,19.25],[100.056,19.189],[99.361,19.128],[98.667,19.067],[97.972,19.006],[97.278,18.944],[96.583,18.883],[95.889,18.822],[95.194,18.761],[94.5,18.7],[93.833,18.686],[93.167,18.672],[92.5,18.658],[91.833,18.644],[91.167,18.631],[90.5,18.617],[89.833,18.603],[89.167,18.589],[88.5,18.575],[87.833,18.561],[87.167,18.547],[86.5,18.533],[85.833,18.519],[85.167,18.506],[84.5,18.492],[83.833,18.478],[83.167,18.464],[82.5,18.45],[81.829,18.448],[81.159,18.445],[80.488,18.443],[79.817,18.44],[79.147,18.438],[78.476,18.436],[77.805,18.433],[77.135,18.431],[76.464,18.428],[75.794,18.426],[75.123,18.423],[74.452,18.421],[73.782,18.419],[73.111,18.416],[72.44,18.414],[71.77,18.411],[71.099,18.409]];
+    m.racingSpline770=line;
+    m.globalOptimal770=line;
+    m.racingLineMode772='boulder-bypass-v7.89';
+    m.boulderBypass789=true;
+    m.insideTune789='boulder-bypass+runtime-bias';
+  }
+  applyRollingStoneObstacleBypass789();
+
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -6774,11 +7007,18 @@ applyMapSet776();
     off+=sigBias;
 
     // v7.84: Star Fish / Ice Crown already encode the final optimal lane in the
-    // spline itself. Do not let per-driver execution fingerprints push that line
-    // back onto the rail or outside the legal ribbon. Avoidance still remains free.
+    // spline itself. Do not let per-driver fingerprints move that macro line.
     if(currentMap770().lockOptimalExecution784) off=0;
 
-    const x=q.x+nx*off,y=q.y+ny*off;
+    // v7.89: a very small additional inside execution bias on real bends.
+    // This applies even to the hand-tuned S-map, while staying far smaller than one road row.
+    const turn789=mapTurn789(currentMap770(),Math.max(0,Math.min(segs.length-1,p.seg|0)));
+    if(turn789.side&&turn789.power>.05){
+      const localHalf789=Math.max(.55,(widths[Math.max(0,Math.min(widths.length-1,p.seg|0))]||8)*.5);
+      off+=turn789.side*Math.min(.20,localHalf789*.032)*(.35+turn789.power*.65);
+    }
+
+    let x=q.x+nx*off,y=q.y+ny*off;
     if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
       return {...q,x,y,executionOffset720:off};
     return {...q,executionOffset720:0};
@@ -7397,6 +7637,9 @@ applyMapSet776();
     }else{
       t=actualRoadTarget719(p,si,t)||normalTarget720(p);
     }
+    // v7.89: keep AI route choices out of exaggerated outside lanes.
+    // EVADE may still use more of the road than NORMAL; edge rails remain pass-through.
+    t=softLaneTarget789(p,t,st.mode);
     if(t)p._lastRaceTargetKind699=t.kind||"race720";
     p._raceMode720=st.mode;
     return t;
@@ -8391,6 +8634,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v7.80: only explicitly marked obstacle zones are physically non-drivable.
     enforceHardForbidden780(p,preMoveX719,preMoveY719);
+
+    // v7.89: far exterior wandering is not an AI route. Crossing the visible edge is
+    // still legal, but a large excursion requests a smooth REJOIN on the next frames.
+    softOuterRecovery789(p,now);
 
     // v7.34: the final Racing Spline / EVADE engine already supplies legal targets.
     // Never project or roll it back to a legacy segment/lastLegal position: that was
@@ -11258,8 +11505,8 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!["star_fish","ice_ring"].includes(m.id)&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
-    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="safe-shortest-v7.84"))issues.push("안전최단경로784");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.racingLineMode772))issues.push("레이싱라인정의");
+    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.stallProofSpline784))issues.push("최적경로권한784");
     if(MAP_DEFINITIONS_770.star_fish?.roadTrace781!=="current-gray-road")issues.push("스타피쉬도로781");
     if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782||!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.shortestLegal783||!MAP_DEFINITIONS_770[id]?.safeShortest784||!MAP_DEFINITIONS_770[id]?.stallProofSpline784||!MAP_DEFINITIONS_770[id]?.edgeFlow785))issues.push("끝라인자연주행권한785");
     if(!MAP_DEFINITIONS_770.ice_ring?.wideMRoute781)issues.push("아이스넓은길781");
@@ -11270,11 +11517,16 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.roadFollowMode778!=="route-center-hard"))issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     if(!MAP_DEFINITIONS_770.industrial_zone?.hardForbidden780||(MAP_DEFINITIONS_770.industrial_zone.forbiddenZones770||[]).length!==3)issues.push("롤링스톤바위780");
+    if(!MAP_DEFINITIONS_770.industrial_zone?.boulderBypass789)issues.push("롤링스톤우회789");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
     if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
     if(!["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록777");
     if(MAP_POOL_770.some(m=>!m.logicalSize||!m.miniCrop||!m.route770?.length))issues.push("맵geometry777");
+    if(MAP_POOL_770.some(m=>!m.outerSoftLimit789||!m.insideTune789))issues.push("전역인코스789");
+    if(!MAP_DEFINITIONS_770.skyway?.spaceRoadRowsAdded788||MAP_DEFINITIONS_770.skyway.spaceRoadRowsAdded788!==2)issues.push("스페이스폭788");
+    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.start?.x||0)-14.6,(MAP_DEFINITIONS_770.double_hairpin?.start?.y||0)-145.0)>.05)issues.push("블랙홀시작788");
+    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.goal?.x||0)-77.72,(MAP_DEFINITIONS_770.double_hairpin?.goal?.y||0)-96.768)>.05)issues.push("블랙홀도착788");
     const u764=unitChassis764();
     if(Object.keys(UNIT_CHASSIS_764).length!==5)issues.push("유닛5");
     if(UNIT_CHASSIS_764[1].hitRadius>=Math.min(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.hitRadius)))issues.push("스커지크기");
@@ -11370,6 +11622,7 @@ function seasonCardHtml(p){
       backtrackPrevented:p._backtrackPrevented754||0,
       topOffsetFlipPrevented:p._topOffsetFlipPrevented754||0,
       splineRepairs770:p._splineRepair770||0,stallProofRecoveries784:p._stallProofRecoveries784||0,
+      outerSoftRecoveries789:p._outerSoftRecoveries789||0,
       events:(p._teleportEvents754||[]).map(x=>({...x})),
       splineProgress:p._splineProg720||0,mode:p._raceState720?.mode||"NORMAL",
       action:p._raceState720?.action||"none",x:p.x,y:p.y
