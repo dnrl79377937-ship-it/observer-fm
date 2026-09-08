@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.84";
+  const BUILD_ID = "v7.85";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1228,6 +1228,22 @@ function courseContainsPoint(x,y,extra=0){
   }
 
   function lethalOutsideRoad(p,now){
+    // v7.85 edge hysteresis: a racer following the authoritative optimal spline may
+    // visually skim the last legal road line. Small floating-point / capsule-boundary
+    // disagreements must not alternate legal/illegal every frame. Accept a narrow
+    // soft envelope only while NORMAL on the two patched maps; this never opens a
+    // shortcut because actual position still advances on the prevalidated spline.
+    const m785=currentMap770();
+    if(m785.edgeFlow785 && p?._raceState720?.mode==="NORMAL" &&
+       courseContainsPoint(p.x,p.y,.38)) {
+      const pr785=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total||0,Number(p._splineProg720)||0));
+      const rq785=splinePointAt720(pr785);
+      if(rq785 && Math.hypot(p.x-rq785.x,p.y-rq785.y)<=.72){
+        p.outsideGrace69Since=0;
+        return false;
+      }
+    }
+
     // v7.84 targeted anti-stall guard. If numerical steering ever places a calm
     // racer outside while its authoritative spline point is still legal, recover
     // to that same-progress spline point instead of killing/freezing the unit.
@@ -6208,6 +6224,7 @@ applyMapSet776();
       star.stallProofSpline784=true;
       star.lockOptimalExecution784=true;
       star.safeClearance784=1.80;
+      star.edgeFlow785=true;
       star.shortestLength784=349.35;
       star.centerRouteLength784=433.53;
     }
@@ -6231,6 +6248,7 @@ applyMapSet776();
       ice.stallProofSpline784=true;
       ice.lockOptimalExecution784=true;
       ice.safeClearance784=1.60;
+      ice.edgeFlow785=true;
       ice.shortestLength784=337.12;
       ice.centerRouteLength784=385.55;
       ice.earlyCrownTurn784=true;
@@ -8216,7 +8234,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     if(engineAuthority719) speedMul=speedMultiplier720(p,now,dt);
     const step=p.speed*speedMul*dt/1000;
-    const move=step>=0 ? Math.min(step,d) : Math.max(step,-0.55);
+    // v7.85 EDGE-FLOW: on the two optimized maps, calm NORMAL movement is
+    // authoritative spline motion. Near a legal road edge, target validation may
+    // temporarily shrink the look-ahead target almost onto the racer. Capping the
+    // physical step by that tiny target distance made the unit hesitate/freeze even
+    // though the spline ahead was valid. Keep full forward spline progress in NORMAL;
+    // EVADE/REJOIN and every other map retain the existing target-distance cap.
+    const edgeFlow785=!!currentMap770().edgeFlow785 && st723.mode==="NORMAL" &&
+      shortestCalm719 && /race720-normal/.test(racing529?.kind||"");
+    const move=edgeFlow785 ? Math.max(0,step) :
+      (step>=0 ? Math.min(step,d) : Math.max(step,-0.55));
 
     // v5.18: abnormal-driving detector.
     detectAnomaly519(p,si,now,tx,ty,moveDirX,moveDirY);
@@ -11117,7 +11144,7 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!["star_fish","ice_ring"].includes(m.id)&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
     if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="safe-shortest-v7.84"))issues.push("안전최단경로784");
     if(MAP_DEFINITIONS_770.star_fish?.roadTrace781!=="current-gray-road")issues.push("스타피쉬도로781");
-    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782||!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.shortestLegal783||!MAP_DEFINITIONS_770[id]?.safeShortest784||!MAP_DEFINITIONS_770[id]?.stallProofSpline784))issues.push("안전최단경로권한784");
+    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782||!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.shortestLegal783||!MAP_DEFINITIONS_770[id]?.safeShortest784||!MAP_DEFINITIONS_770[id]?.stallProofSpline784||!MAP_DEFINITIONS_770[id]?.edgeFlow785))issues.push("끝라인자연주행권한785");
     if(!MAP_DEFINITIONS_770.ice_ring?.wideMRoute781)issues.push("아이스넓은길781");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
