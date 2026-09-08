@@ -1,0 +1,15 @@
+Observer Avoid FM v7.86 - QA
+
+Static checks
+- BUILD_ID v7.86
+- game.js syntax: PASS
+- Filled start/finish overlay calls: 0
+- Global edgePassThrough786 applied to full map pool
+- Legacy physical road snap bypassed when edgePassThrough786 is active
+- OUTSIDE road-edge death bypassed when edgePassThrough786 is active
+- Hard obstacle enforcement preserved
+- Star Fish optimized line length: ~366.04 vs center ~433.53
+- Star Fish sampled maximum route-center deviation: ~2.30 on a 4.50 half-width road
+- Star Fish minimum geometric curb buffer: ~2.20
+- Ice Crown central forbidden intersection: 0
+- Ice Crown endpoint artwork: outline-only
