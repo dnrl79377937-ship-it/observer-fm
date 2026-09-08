@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.85";
+  const BUILD_ID = "v7.86";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -200,7 +200,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     };
   }
 
-  const signatureMoves={apexHunter:{label:"WALL APEX",inside:1.24,skim:1.18},safeReader:{label:"SAFE ARC",inside:.82,skim:1.04},attacker:{label:"THREAD ATTACK",inside:1.08,skim:1.30},lineMaster:{label:"PERFECT LINE",inside:1.30,skim:1.14},balanced:{label:"ADAPTIVE",inside:1,skim:1},controller:{label:"CONTROL CUT",inside:.90,skim:1.06},patient:{label:"WAIT & CUT",inside:.92,skim:1.08},opportunist:{label:"GAP HUNTER",inside:1.16,skim:1.26}};
+  const signatureMoves={apexHunter:{label:"INSIDE APEX",inside:1.24,skim:1.18},safeReader:{label:"SAFE ARC",inside:.82,skim:1.04},attacker:{label:"THREAD ATTACK",inside:1.08,skim:1.30},lineMaster:{label:"PERFECT LINE",inside:1.30,skim:1.14},balanced:{label:"ADAPTIVE",inside:1,skim:1},controller:{label:"CONTROL CUT",inside:.90,skim:1.06},patient:{label:"WAIT & CUT",inside:.92,skim:1.08},opportunist:{label:"GAP HUNTER",inside:1.16,skim:1.26}};
   function signatureOf(p){return signatureMoves[p.drivingStyle?.style]||signatureMoves.balanced;}
 
 
@@ -1228,6 +1228,15 @@ function courseContainsPoint(x,y,extra=0){
   }
 
   function lethalOutsideRoad(p,now){
+    // v7.86 GLOBAL AIR-UNIT EDGE RULE:
+    // Road rails/outer edge lines are visual guidance, NOT physical walls.
+    // NORMAL, EVADE and REJOIN may cross them without death, bounce, rollback or freeze.
+    // Planning still prefers the road, and explicit hardForbidden780 obstacles remain physical.
+    if(currentMap770().edgePassThrough786){
+      p.outsideGrace69Since=0;
+      return false;
+    }
+
     // v7.85 edge hysteresis: a racer following the authoritative optimal spline may
     // visually skim the last legal road line. Small floating-point / capsule-boundary
     // disagreements must not alternate legal/illegal every frame. Accept a narrow
@@ -3371,7 +3380,7 @@ function calibratedFastCorridor79(si){
       // but racers understand the third row is lethal. Extreme inside specialists can
       // exploit the survivable margin while normal lines keep a safer buffer.
       const legalRatio=Math.abs(off)/Math.max(1,half);
-      const edgeRisk=Math.max(0,legalRatio-.91);
+      const edgeRisk=currentMap770().edgePassThrough786?0:Math.max(0,legalRatio-.91);
       const insideN=(p.stats.insideLine-72)/27;
       const controlN=(p.stats.control-72)/27;
       score += edgeRisk*edgeRisk*(.42-insideN*.16-controlN*.10);
@@ -3614,9 +3623,8 @@ function calibratedFastCorridor79(si){
     }
     if(!p.extremeInsideActive || !p.extremeInsideSide) return baseOff;
     const routeHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
-    // Successful attempt skims just inside the lethal boundary. Failed attempt goes
-    // one step too deep; there is no fake random death — the ordinary course death
-    // detector kills the racer only if the driven position actually crosses the edge.
+    // v7.86: this is execution style only. Edge rails are pass-through, so a deep
+    // attempt may visibly cross the rail but is never treated as a wall collision/death.
     const depth=routeHalf+DEATH_EDGE_EXTRA+(p.extremeInsideFail?.78:-.62);
     return p.extremeInsideSide*depth;
   }
@@ -4497,6 +4505,16 @@ function calibratedFastCorridor79(si){
   }
 
   function enforcePhysicalRoad636(p){
+    // v7.86: edge rails are non-solid on every active map. Do not project, snap or
+    // restore a racer merely because it crossed the visual road edge.
+    if(currentMap770().edgePassThrough786){
+      if(courseContainsPoint(p.x,p.y,0.00)){
+        p._lastLegal636={x:p.x,y:p.y};
+        p._lastLegal619={x:p.x,y:p.y};
+      }
+      return true;
+    }
+
     // The old order allowed OUTSIDE death before road containment ran.
     // v6.36 makes containment authoritative immediately after movement.
     if(courseContainsPoint(p.x,p.y,0.00)){
@@ -6256,6 +6274,49 @@ applyMapSet776();
   }
   applySafeEarlyTurn784();
 
+  // ============================================================
+  // v7.86 — GLOBAL NON-SOLID EDGE + OUTLINE GATES
+  // 1) Every map: road edge/rail is visual only. It can be crossed like Neon Drift.
+  //    Normal route planning still stays on the road, so this does not invent shortcuts.
+  // 2) Star Fish: preserve early optimized turns but pull the authoritative line
+  //    toward the traced road center enough to stop visible curb/wall hugging.
+  // 3) Ice Crown: use the cleaned map artwork whose START/GOAL boxes are outlines only.
+  // ============================================================
+  function applyGlobalNonSolidEdge786(){
+    for(const m of MAP_POOL_770){
+      m.edgePassThrough786=true;
+      m.wallCollision786=false;
+      m.edgeRailMode786="visual-pass-through";
+    }
+
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      // Re-solve inside the traced road with a full 2.0 logical-unit curb buffer.
+      // This is still ~15.6% shorter than the center trace, but no normal segment
+      // rides the visual rail/wall line.
+      const line=localInsideRacingLine782(star,12.0,-2.0);
+      star.racingSpline770=line;
+      star.globalOptimal770=line;
+      star.racingLineMode772="safe-center-shortest-v7.86";
+      star.wallHugFix786=true;
+      star.minimumVisualEdgeClearance786=2.0;
+      star.shortestLength786=366.042;
+      star.centerRouteLength786=433.53;
+      star.optimizedSplineAuthority783=true;
+      star.stallProofSpline784=true;
+      star.edgeFlow785=true;
+    }
+
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      ice.image="map_ice_m_786.png?v=786-outline-gates";
+      ice.gateArtwork786="outline-only";
+      ice.edgeFlow785=true;
+      ice.stallProofSpline784=true;
+    }
+  }
+  applyGlobalNonSolidEdge786();
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -6489,7 +6550,7 @@ applyMapSet776();
   function signatureProfile759(p){
     const style=p?.drivingStyle?.style||"balanced";
     const map={
-      apexHunter:{label:"WALL APEX",side:.12,thread:.16,diag:.04,hard:.02,brake:-.02,rejoin:.10},
+      apexHunter:{label:"INSIDE APEX",side:.12,thread:.16,diag:.04,hard:.02,brake:-.02,rejoin:.10},
       safeReader:{label:"SAFE ARC",side:.18,thread:-.08,diag:.12,hard:-.05,brake:.10,rejoin:-.05},
       attacker:{label:"THREAD ATTACK",side:.04,thread:.24,diag:.12,hard:.05,brake:-.10,rejoin:.08},
       lineMaster:{label:"PERFECT LINE",side:.08,thread:.08,diag:.06,hard:-.04,brake:.02,rejoin:.14},
@@ -6650,7 +6711,7 @@ applyMapSet776();
     const mix759=integratedDriver759(p),sig759=mix759.signature;
     const sigRaw=((sig759.insideBias||0) + ((sig759.rejoin||0)*.10));
     const sigBias=Math.max(-.045,Math.min(.045,
-      (sig759.label==="WALL APEX"?.035:
+      (sig759.label==="INSIDE APEX"?.035:
        sig759.label==="PERFECT LINE"?.020:
        sig759.label==="SAFE ARC"?-.018:
        sig759.label==="CONTROL CUT"?-.010:0) * mix759.personalityAuthority));
@@ -8290,8 +8351,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v5.00: no shortcut-route resync. Segment advancement below is sequential again.
 
-    // v4.09 AIR UNIT: no wall, snap, bounce, or off-road slowdown.
-    // Death uses the route-derived capsule union, not hand-written red coordinates.
+    // v7.86 AIR UNIT: road rails are visual only — no wall, snap, bounce, off-road slowdown or edge death.
+    // Explicit hardForbidden780 obstacles are handled separately above.
     if(lethalOutsideRoad(p,now)){
       p.dead=true;
       p.match.collisions++;
@@ -9441,7 +9502,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const gcx=(zones.goal.x0+zones.goal.x1)*.5,gcy=(zones.goal.y0+zones.goal.y1)*.5;
     const sameGate778=!!currentMap770().sharedGate778 || Math.hypot(scx-gcx,scy-gcy)<.75;
     if(sameGate778){
-      drawZone(zones.start,"#ff3b3b",true);
+      drawZone(zones.start,"#ff3b3b",false);
     }else{
       drawZone(zones.start,"#ffd92f");
       drawZone(zones.goal,"#39ff6a");
