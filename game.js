@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.83";
+  const BUILD_ID = "v7.84";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1228,6 +1228,23 @@ function courseContainsPoint(x,y,extra=0){
   }
 
   function lethalOutsideRoad(p,now){
+    // v7.84 targeted anti-stall guard. If numerical steering ever places a calm
+    // racer outside while its authoritative spline point is still legal, recover
+    // to that same-progress spline point instead of killing/freezing the unit.
+    const m784=currentMap770();
+    if(m784.stallProofSpline784 && p?._raceState720?.mode==="NORMAL" &&
+       !courseContainsPoint(p.x,p.y,DEATH_EDGE_EXTRA)){
+      const pr=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total||0,Number(p._splineProg720)||0));
+      const rq=splinePointAt720(pr);
+      if(rq && courseContainsPoint(rq.x,rq.y,0) && visualRoadMask674(rq.x,rq.y,0) &&
+         !(m784.hardForbidden780&&inForbidden96(rq.x,rq.y,0))){
+        p.x=rq.x;p.y=rq.y;p.mouseTargetX=rq.x;p.mouseTargetY=rq.y;
+        p._stallProofRecoveries784=(p._stallProofRecoveries784||0)+1;
+        p.outsideGrace69Since=0;
+        return false;
+      }
+    }
+
     // Standard whole-map lethal corridor.
     if(courseContainsPoint(p.x,p.y,DEATH_EDGE_EXTRA)){
       p.outsideGrace69Since=0;
@@ -6163,6 +6180,64 @@ applyMapSet776();
   }
   applyGlobalShortestLine783();
 
+  // ============================================================
+  // v7.84 — SAFE EARLY-TURN SHORTEST LINE
+  // Star Fish: keep the early apex benefit from v7.83, but restore enough
+  // geometric clearance that the rendered unit can never fall outside the road.
+  // Ice Crown: re-solve both crown hairpins against the legal road ribbon so the
+  // car turns right/down as soon as the inner lane physically opens; it never
+  // climbs to the old 11/1-o'clock centerline tops.
+  // ============================================================
+  function applySafeEarlyTurn784(){
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      const nodes=[
+        [86.000,28.600],[102.000,52.100],[105.300,55.400],[112.800,56.600],
+        [140.727,60.900],[116.549,86.200],[124.131,120.153],[88.983,106.468],
+        [76.683,106.768],[54.783,116.968],[47.183,120.290],[55.323,85.849],
+        [41.423,71.049],[37.423,63.500],[63.523,55.700],[66.823,55.400],
+        [80.623,40.400],[86.000,28.600]
+      ];
+      const line=densifyLine772(nodes,.30);
+      star.racingSpline770=line;
+      star.globalOptimal770=line;
+      star.racingLineMode772="safe-shortest-v7.84";
+      star.optimizedSplineAuthority783=true;
+      star.shortestLegal783=true;
+      star.safeShortest784=true;
+      star.stallProofSpline784=true;
+      star.lockOptimalExecution784=true;
+      star.safeClearance784=1.80;
+      star.shortestLength784=349.35;
+      star.centerRouteLength784=433.53;
+    }
+
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      const nodes=[
+        [20.377,138.642],[26.564,59.050],[27.614,43.300],[29.364,35.250],
+        [32.164,30.350],[35.314,28.600],[38.814,28.250],[41.614,30.000],
+        [65.764,64.300],[68.564,67.450],[73.814,67.100],[82.214,58.000],
+        [101.464,29.300],[103.914,28.250],[107.064,28.600],[110.214,30.350],
+        [113.014,35.950],[114.764,46.100],[115.814,67.800],[121.946,138.642]
+      ];
+      const line=densifyLine772(nodes,.30);
+      ice.racingSpline770=line;
+      ice.globalOptimal770=line;
+      ice.racingLineMode772="safe-shortest-v7.84";
+      ice.optimizedSplineAuthority783=true;
+      ice.shortestLegal783=true;
+      ice.safeShortest784=true;
+      ice.stallProofSpline784=true;
+      ice.lockOptimalExecution784=true;
+      ice.safeClearance784=1.60;
+      ice.shortestLength784=337.12;
+      ice.centerRouteLength784=385.55;
+      ice.earlyCrownTurn784=true;
+    }
+  }
+  applySafeEarlyTurn784();
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -6562,6 +6637,11 @@ applyMapSet776();
        sig759.label==="SAFE ARC"?-.018:
        sig759.label==="CONTROL CUT"?-.010:0) * mix759.personalityAuthority));
     off+=sigBias;
+
+    // v7.84: Star Fish / Ice Crown already encode the final optimal lane in the
+    // spline itself. Do not let per-driver execution fingerprints push that line
+    // back onto the rail or outside the legal ribbon. Avoidance still remains free.
+    if(currentMap770().lockOptimalExecution784) off=0;
 
     const x=q.x+nx*off,y=q.y+ny*off;
     if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
@@ -11035,9 +11115,9 @@ function seasonCardHtml(p){
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!["star_fish","ice_ring"].includes(m.id)&&m.racingLineMode772!=="generated-v7.80"))issues.push("레이싱라인780");
-    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="global-shortest-v7.83"))issues.push("최단경로783");
+    if(["star_fish","ice_ring"].some(id=>MAP_DEFINITIONS_770[id]?.racingLineMode772!=="safe-shortest-v7.84"))issues.push("안전최단경로784");
     if(MAP_DEFINITIONS_770.star_fish?.roadTrace781!=="current-gray-road")issues.push("스타피쉬도로781");
-    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782||!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.shortestLegal783))issues.push("최단경로권한783");
+    if(["star_fish","ice_ring"].some(id=>!MAP_DEFINITIONS_770[id]?.insideRoadOnly782||!MAP_DEFINITIONS_770[id]?.optimizedSplineAuthority783||!MAP_DEFINITIONS_770[id]?.shortestLegal783||!MAP_DEFINITIONS_770[id]?.safeShortest784||!MAP_DEFINITIONS_770[id]?.stallProofSpline784))issues.push("안전최단경로권한784");
     if(!MAP_DEFINITIONS_770.ice_ring?.wideMRoute781)issues.push("아이스넓은길781");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("폐회로완주775");
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
@@ -11145,7 +11225,7 @@ function seasonCardHtml(p){
       name:p.name,trips:p._teleportGuardTrips754||0,
       backtrackPrevented:p._backtrackPrevented754||0,
       topOffsetFlipPrevented:p._topOffsetFlipPrevented754||0,
-      splineRepairs770:p._splineRepair770||0,
+      splineRepairs770:p._splineRepair770||0,stallProofRecoveries784:p._stallProofRecoveries784||0,
       events:(p._teleportEvents754||[]).map(x=>({...x})),
       splineProgress:p._splineProg720||0,mode:p._raceState720?.mode||"NORMAL",
       action:p._raceState720?.action||"none",x:p.x,y:p.y
