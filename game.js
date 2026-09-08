@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.86";
+  const BUILD_ID = "v7.87";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1228,7 +1228,7 @@ function courseContainsPoint(x,y,extra=0){
   }
 
   function lethalOutsideRoad(p,now){
-    // v7.86 GLOBAL AIR-UNIT EDGE RULE:
+    // v7.87 GLOBAL AIR-UNIT EDGE RULE:
     // Road rails/outer edge lines are visual guidance, NOT physical walls.
     // NORMAL, EVADE and REJOIN may cross them without death, bounce, rollback or freeze.
     // Planning still prefers the road, and explicit hardForbidden780 obstacles remain physical.
@@ -3623,7 +3623,7 @@ function calibratedFastCorridor79(si){
     }
     if(!p.extremeInsideActive || !p.extremeInsideSide) return baseOff;
     const routeHalf=Math.max(2.0,widths[si]*ROAD_MARGIN);
-    // v7.86: this is execution style only. Edge rails are pass-through, so a deep
+    // v7.87: this is execution style only. Edge rails are pass-through, so a deep
     // attempt may visibly cross the rail but is never treated as a wall collision/death.
     const depth=routeHalf+DEATH_EDGE_EXTRA+(p.extremeInsideFail?.78:-.62);
     return p.extremeInsideSide*depth;
@@ -4505,7 +4505,7 @@ function calibratedFastCorridor79(si){
   }
 
   function enforcePhysicalRoad636(p){
-    // v7.86: edge rails are non-solid on every active map. Do not project, snap or
+    // v7.87: edge rails are non-solid on every active map. Do not project, snap or
     // restore a racer merely because it crossed the visual road edge.
     if(currentMap770().edgePassThrough786){
       if(courseContainsPoint(p.x,p.y,0.00)){
@@ -6275,7 +6275,7 @@ applyMapSet776();
   applySafeEarlyTurn784();
 
   // ============================================================
-  // v7.86 — GLOBAL NON-SOLID EDGE + OUTLINE GATES
+  // v7.87 — GLOBAL NON-SOLID EDGE + OUTLINE GATES
   // 1) Every map: road edge/rail is visual only. It can be crossed like Neon Drift.
   //    Normal route planning still stays on the road, so this does not invent shortcuts.
   // 2) Star Fish: preserve early optimized turns but pull the authoritative line
@@ -6297,7 +6297,7 @@ applyMapSet776();
       const line=localInsideRacingLine782(star,12.0,-2.0);
       star.racingSpline770=line;
       star.globalOptimal770=line;
-      star.racingLineMode772="safe-center-shortest-v7.86";
+      star.racingLineMode772="safe-center-shortest-v7.87";
       star.wallHugFix786=true;
       star.minimumVisualEdgeClearance786=2.0;
       star.shortestLength786=366.042;
@@ -6316,6 +6316,62 @@ applyMapSet776();
     }
   }
   applyGlobalNonSolidEdge786();
+
+
+  // ============================================================
+  // v7.87 — ICE CROWN LOAD FIX + CLEAN ART + BLACK HOLE REVERSE START
+  // 1) Ice Crown: stop using the temporary v7.87 asset reference; use the cleaned
+  //    v7.87 artwork and keep the existing safe-shortest geometry/racing line.
+  // 2) Heart: restore the pre-mosaic original artwork.
+  // 3) Black Hole: remove the outer-left start marker from artwork, make the old
+  //    inner-right marker the new START, reverse the route, and launch rightward.
+  // ============================================================
+  function applyPatch787(){
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      ice.image="map_ice_m_787.png?v=787-ice-load-fix";
+      ice.gateArtwork786="outline-only-clean-v787";
+      ice.geometryReady=true;
+    }
+
+    const heart=MAP_DEFINITIONS_770.neon_city;
+    if(heart){
+      heart.image="map_heart_776.png?v=787-original-restored";
+      heart.artworkRestored787=true;
+    }
+
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      black.image="map_black_hole_787.png?v=787-inner-right-start";
+      const oldRoute=(black.route770||[]).map(q=>[q[0],q[1]]);
+      if(oldRoute.length>=2){
+        black.route770=oldRoute.reverse();
+        const oldWidths=(black.widths770||[]).slice();
+        if(oldWidths.length) black.widths770=oldWidths.reverse();
+      }
+      // The former inner-right goal becomes the START. Reversed route initially
+      // moves +X (right) before continuing naturally along the spiral road.
+      black.start={x:77.72,y:96.768};
+      black.goal={x:14.6,y:145.0};
+      black.safeZones={
+        start:{x0:72.72,y0:91.768,x1:82.72,y1:101.768},
+        goal:{x0:9.2,y0:139.6,x1:20.0,y1:150.4}
+      };
+      black.courseType775="point-to-point";
+      black.finishRule775="end-gate";
+      black.lapRequired775=false;
+      black.sharedGate778=false;
+      black.blackHoleReverse787=true;
+      black.startDirection787="right";
+      black.strictRoadFollow778=true;
+      black.roadFollowMode778="route-center-hard";
+      const line=conservativeRacingLine778(black);
+      black.racingSpline770=line;
+      black.globalOptimal770=line;
+      black.racingLineMode772="reverse-right-start-v7.87";
+    }
+  }
+  applyPatch787();
 
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
@@ -8351,7 +8407,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v5.00: no shortcut-route resync. Segment advancement below is sequential again.
 
-    // v7.86 AIR UNIT: road rails are visual only — no wall, snap, bounce, off-road slowdown or edge death.
+    // v7.87 AIR UNIT: road rails are visual only — no wall, snap, bounce, off-road slowdown or edge death.
     // Explicit hardForbidden780 obstacles are handled separately above.
     if(lethalOutsideRoad(p,now)){
       p.dead=true;
