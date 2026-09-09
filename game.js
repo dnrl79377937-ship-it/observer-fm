@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.894";
+  const BUILD_ID = "v7.895";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4443,6 +4443,13 @@ function calibratedFastCorridor79(si){
   }
 
   function enforceRoadPosition619(p){
+    // v7.895: visual road edges/rails are never physical walls.
+    // The old fallback below was still restoring EVADE/REJOIN racers to their
+    // previous legal coordinate after crossing an edge, which looked like a freeze.
+    if(currentMap770().edgePassThrough786){
+      if(courseContainsPoint(p.x,p.y,0.00)) p._lastLegal619={x:p.x,y:p.y};
+      return;
+    }
     if(courseContainsPoint(p.x,p.y,0.00)){
       p._lastLegal619={x:p.x,y:p.y};
       return;
@@ -6543,6 +6550,14 @@ applyMapSet776();
     if(!info)return t;
     const turn=mapTurn789(m,info.i),half=info.half;
     let lat=info.lat;
+    // v7.895 Black Hole: keep every steering mode close to the traced spiral
+    // center so adjacent rings are never selected as a "wide" lane.
+    if(m.blackHoleCenterOnly895){
+      const frac=mode==='EVADE'?.24:mode==='REJOIN'?.14:.08;
+      lat=Math.max(-half*frac,Math.min(half*frac,lat));
+      const x=info.cx+info.nx*lat,y=info.cy+info.ny*lat;
+      return {...t,x,y,kind:(t.kind||'race720')+'-black-center895'};
+    }
     if(turn.side){
       let signed=lat*turn.side;
       const outsideFrac=mode==='EVADE'?.72:mode==='REJOIN'?.52:.40;
@@ -6563,6 +6578,10 @@ applyMapSet776();
   function softOuterRecovery789(p,now){
     const m=currentMap770();
     if(!m.edgePassThrough786)return false;
+    // v7.895 Star Fish: crossing the visual rail must never itself trigger
+    // a state change. Avoidance can continue through the edge and normal spline
+    // recovery will happen from ordinary race-state logic, without a freeze loop.
+    if(m.id==='star_fish')return false;
     // One road-edge line plus a small exterior skim remains freely traversable.
     // Only a genuinely large exterior excursion requests a natural REJOIN.
     if(courseContainsPoint(p.x,p.y,1.20))return false;
@@ -6775,6 +6794,39 @@ applyMapSet776();
     }
   }
   applyPatch7894();
+
+
+  // ============================================================
+  // v7.895 — STAR FISH TRUE PASS-THROUGH + BLACK HOLE CENTERLINE LOCK
+  // ============================================================
+  function applyPatch7895(){
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      star.edgePassThrough786=true;
+      star.wallCollision786=false;
+      star.edgeRailMode786="visual-pass-through";
+      star.starFishNoEdgeRollback895=true;
+      star.starFishNoOuterStateTrigger895=true;
+      // Keep the safer v7.894 normal line; only remove the last hidden wall behavior.
+    }
+
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      // The traced v7.892 spiral is the road center. Do not run inside/outside
+      // optimization over it: follow this center all the way to the green goal.
+      const center=densifyLine772((black.route770||[]).map(q=>[q[0],q[1]]),.28);
+      black.racingSpline770=center;
+      black.globalOptimal770=center;
+      black.lockOptimalExecution784=true;
+      black.strictRoadFollow778=true;
+      black.roadFollowMode778="route-center-hard";
+      black.blackHoleCenterOnly895=true;
+      black.racingLineMode772="spiral-road-center-v7.895";
+      black.insideTune789="centerline-only-v7.895";
+      black.outerSoftLimit789=true;
+    }
+  }
+  applyPatch7895();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
