@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.895";
+  const BUILD_ID = "v7.896";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6546,7 +6546,18 @@ applyMapSet776();
 
   function softLaneTarget789(p,t,mode){
     if(!t)return t;
-    const m=currentMap770(),info=mapRouteInfo789(m,t.x,t.y);
+    const m=currentMap770();
+    // v7.896 Black Hole hard center: never project an EVADE target onto the
+    // nearest spiral ring (which can be the adjacent lane). Use the authoritative
+    // center spline progress itself for NORMAL / EVADE / REJOIN.
+    if(m.blackHoleHardCenter896){
+      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
+      const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+      const look=mode==='NORMAL'?5.20:3.10;
+      const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
+      return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-hard-center896'};
+    }
+    const info=mapRouteInfo789(m,t.x,t.y);
     if(!info)return t;
     const turn=mapTurn789(m,info.i),half=info.half;
     let lat=info.lat;
@@ -6827,6 +6838,45 @@ applyMapSet776();
     }
   }
   applyPatch7895();
+
+
+  // ============================================================
+  // v7.896 — BLACK HOLE EXACT CENTER + SPACE +2 MORE ROAD ROWS
+  // ============================================================
+  function applyPatch7896(){
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      const center=densifyLine772((black.route770||[]).map(q=>[q[0],q[1]]),.24);
+      black.racingSpline770=center;
+      black.globalOptimal770=center;
+      black.lockOptimalExecution784=true;
+      black.optimizedSplineAuthority783=true;
+      black.strictRoadFollow778=true;
+      black.roadFollowMode778="route-center-hard";
+      black.blackHoleCenterOnly895=true;
+      black.blackHoleHardCenter896=true;
+      black.racingLineMode772="exact-gray-road-center-v7.896";
+      black.insideTune789="disabled-center-only-v7.896";
+      black.outerSoftLimit789=true;
+    }
+
+    const space=MAP_DEFINITIONS_770.skyway;
+    if(space){
+      // v7.88 added a logical +1 per side but the artwork still looked nearly
+      // unchanged. v7.896 adds two more logical rows total and uses a visibly
+      // widened road asset (+16 px each side through the straight corridor).
+      space.widths770=(space.widths770||[]).map(w=>w+2.0);
+      space.special=Object.assign({},space.special,{wideRoad:true});
+      space.spaceRoadRowsAdded896=2;
+      space.spaceRoadTotalExtra896=4;
+      space.image="map_space_896.png?v=7896-plus-two-visible-rows";
+      const line=conservativeRacingLine778(space);
+      space.racingSpline770=line;
+      space.globalOptimal770=line;
+      space.racingLineMode772="wider-road-v7.896";
+    }
+  }
+  applyPatch7896();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
@@ -7189,6 +7239,11 @@ applyMapSet776();
 
   function executedSplinePoint720(p,progress){
     const q=splinePointAt720(progress);
+    // v7.896 Black Hole: the route spline IS the road center. No driver fingerprint,
+    // no inside bias and no lateral execution offset may move the unit off it.
+    if(currentMap770().blackHoleHardCenter896){
+      return {...q,executionOffset720:0};
+    }
     const nx=-q.uy,ny=q.ux;
     const plus=roadClearance720(q,nx,ny,1),minus=roadClearance720(q,nx,ny,-1);
     const wideSide=plus>=minus?1:-1;
@@ -8837,7 +8892,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     const preMoveX719=p.x, preMoveY719=p.y;
-    if(st723.mode==="NORMAL" && shortestCalm719 && /race720-normal/.test(racing529?.kind||"") && move>0){
+    if(currentMap770().blackHoleHardCenter896 && move>0){
+      // v7.896 Black Hole: physical position is hard-locked to the gray-road center
+      // from start to green goal in every steering state. Tactical actions may
+      // change speed, but they cannot choose an inside/outside/adjacent-ring line.
+      if(!advanceOnSpline720(p,move)){
+        const q896=splinePointAt720(Number(p._splineProg720)||0);
+        p.x=q896.x; p.y=q896.y;
+      }
+    }else if(st723.mode==="NORMAL" && shortestCalm719 && /race720-normal/.test(racing529?.kind||"") && move>0){
       // v7.20 NORMAL: actual rendered position advances on the rounded racing spline.
       if(!advanceOnSpline720(p,move)){
         p.x=preMoveX719+moveDirX*move;
