@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.89";
+  const BUILD_ID = "v7.892";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4424,6 +4424,8 @@ function calibratedFastCorridor79(si){
 
   function hardRoadClamp619(p,si,target){
     if(!target) return null;
+    // v7.891: visual road edges are not physical walls.
+    if(currentMap770().edgePassThrough786) return target;
     if(courseContainsPoint(target.x,target.y,0.00) &&
        lineStaysOnCourse(p.x,p.y,target.x,target.y,0.00)) return target;
 
@@ -4494,6 +4496,8 @@ function calibratedFastCorridor79(si){
 
   function finalRoadTarget636(p,si,target){
     if(!target) return null;
+    // v7.891: do not clamp movement targets to visual edge rails.
+    if(currentMap770().edgePassThrough786) return target;
     let t=hardRoadClamp619(p,si,target);
     if(!t){
       const s=segs[Math.max(0,Math.min(segs.length-1,si))];
@@ -5083,6 +5087,9 @@ function calibratedFastCorridor79(si){
 
   function actualRoadTarget719(p,si,t){
     if(!t)return null;
+    // v7.891: a visual edge line is pass-through, so this legacy road/chord
+    // validator must never shrink the target to zero at the boundary.
+    if(currentMap770().edgePassThrough786) return t;
     if(courseContainsPoint(t.x,t.y,0.00) &&
        visualRoadMask674(t.x,t.y,si) &&
        actualRoadChord719(p.x,p.y,t.x,t.y)) return t;
@@ -6336,7 +6343,7 @@ applyMapSet776();
 
     const heart=MAP_DEFINITIONS_770.neon_city;
     if(heart){
-      heart.image="map_heart_776.png?v=787-original-restored";
+      heart.image="map_heart_7891_clean.png?v=7891-heart-no-gates";
       heart.artworkRestored787=true;
     }
 
@@ -6604,6 +6611,48 @@ applyMapSet776();
     m.insideTune789='boulder-bypass+runtime-bias';
   }
   applyRollingStoneObstacleBypass789();
+
+
+  // ============================================================
+  // v7.892 — BLACK HOLE TRUE OUTER-TO-INNER SPIRAL
+  // - Remove the duplicate LEFT runtime yellow gate by aligning START to the
+  //   single yellow artwork gate immediately to its right.
+  // - Start moves RIGHT along the bottom road (7 -> 5), then winds through
+  //   5 -> 1 -> 11 -> 9 repeatedly, shrinking inward to the central green gate.
+  // - Do not reuse the old route whose first target pulled units straight upward.
+  // ============================================================
+  function applyPatch7892(){
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(!black)return;
+    black.image="map_black_hole_776.png?v=7892-single-yellow-spiral";
+    black.route770=[[20.007,149.93],[21.187,149.973],[23.44,150.037],[26.821,150.132],[31.328,150.259],[36.136,150.354],[41.247,150.418],[46.658,150.449],[52.372,150.449],[58.006,150.251],[63.56,149.854],[69.035,149.259],[74.431,148.466],[79.589,147.394],[84.509,146.045],[89.191,144.419],[93.634,142.514],[97.84,140.372],[101.807,137.991],[105.537,135.373],[109.028,132.516],[112.321,129.263],[115.416,125.613],[118.312,121.566],[121.01,117.122],[123.431,112.44],[125.573,107.521],[127.438,102.363],[129.025,96.967],[130.215,91.571],[131.009,86.175],[131.405,80.779],[131.405,75.383],[130.969,70.027],[130.096,64.711],[128.787,59.434],[127.041,54.197],[124.859,49.317],[122.24,44.794],[119.185,40.628],[115.694,36.819],[111.885,33.486],[107.759,30.629],[103.315,28.249],[98.554,26.345],[93.634,24.797],[88.556,23.607],[83.319,22.774],[77.923,22.298],[72.606,22.258],[67.369,22.655],[62.211,23.488],[57.133,24.757],[52.292,26.345],[47.69,28.249],[43.326,30.471],[39.199,33.01],[35.391,35.787],[31.899,38.803],[28.725,42.056],[25.868,45.547],[23.329,49.198],[21.107,53.006],[19.203,56.974],[17.616,61.1],[16.307,65.226],[15.275,69.353],[14.521,73.479],[14.045,77.605],[13.886,81.731],[14.045,85.858],[14.521,89.984],[15.315,94.11],[16.346,97.998],[17.616,101.649],[19.124,105.061],[20.869,108.235],[22.774,111.091],[24.837,113.631],[27.059,115.852],[29.439,117.757],[32.256,119.463],[35.51,120.97],[39.199,122.28],[43.326,123.391],[47.69,124.303],[52.292,125.017],[57.133,125.533],[62.211,125.851],[67.131,125.89],[71.892,125.652],[76.494,125.136],[80.938,124.343],[85.223,123.192],[89.349,121.685],[93.317,119.82],[97.126,117.598],[100.577,115.059],[103.672,112.202],[106.41,109.028],[108.79,105.537],[110.853,101.807],[112.599,97.84],[114.027,93.634],[115.138,89.19],[115.813,84.905],[116.051,80.779],[115.853,76.812],[115.218,73.003],[114.186,69.392],[112.758,65.98],[110.933,62.767],[108.711,59.751],[106.172,57.053],[103.315,54.673],[100.141,52.61],[96.65,50.864],[93.079,49.396],[89.429,48.206],[85.699,47.293],[81.89,46.658],[78.081,46.301],[74.273,46.222],[70.464,46.42],[66.655,46.896],[63.084,47.69],[59.751,48.801],[56.657,50.229],[53.8,51.975],[51.181,53.919],[48.801,56.061],[46.658,58.402],[44.754,60.942],[43.088,63.639],[41.659,66.496],[40.469,69.511],[39.517,72.685],[38.882,75.82],[38.565,78.914],[38.565,81.97],[38.882,84.985],[39.517,87.921],[40.469,90.777],[41.739,93.555],[43.326,96.253],[45.27,98.752],[47.571,101.053],[50.229,103.156],[53.245,105.061],[56.339,106.687],[59.513,108.036],[62.767,109.108],[66.099,109.901],[69.392,110.417],[72.646,110.655],[75.86,110.615],[79.034,110.298],[82.009,109.742],[84.787,108.949],[87.366,107.917],[89.746,106.648],[91.928,105.18],[93.912,103.513],[95.697,101.649],[97.284,99.585],[98.673,97.403],[99.863,95.102],[100.855,92.682],[101.649,90.143],[102.164,87.603],[102.403,85.064],[102.363,82.525],[102.045,79.986],[101.49,77.526],[100.696,75.145],[99.665,72.844],[98.395,70.622],[96.967,68.559],[95.38,66.655],[93.634,64.909],[91.73,63.322],[89.706,61.933],[87.564,60.743],[85.302,59.751],[82.922,58.958],[80.541,58.442],[78.161,58.204],[75.78,58.244],[73.4,58.561],[71.138,59.116],[68.996,59.91],[66.972,60.942],[65.068,62.211],[63.401,63.639],[61.973,65.226],[60.783,66.972],[59.831,68.877],[59.077,70.821],[58.521,72.804],[58.164,74.828],[58.006,76.891],[58.085,78.914],[58.402,80.898],[58.958,82.842],[59.751,84.747],[60.783,86.493],[62.053,88.08],[63.56,89.508],[65.306,90.777],[67.052,91.888],[68.797,92.841],[70.543,93.634],[72.289,94.269],[73.836,94.769],[75.185,95.134],[76.336,95.364],[77.288,95.459],[78.002,95.531],[78.478,95.578],[78.738,95.661]];
+    black.widths770=[13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5];
+    black.start={x:20.007,y:149.93};
+    black.goal={x:78.738,y:95.661};
+    // Match the baked artwork boxes so a second adjacent runtime box is not drawn.
+    black.safeZones={
+      start:{x0:13.458,y0:144.101,x1:27.043,y1:156.036},
+      goal:{x0:74.019,y0:90.650,x1:83.541,y1:100.807}
+    };
+    black.courseType775="point-to-point";
+    black.finishRule775="end-gate";
+    black.lapRequired775=false;
+    black.sharedGate778=false;
+    black.strictRoadFollow778=true;
+    black.roadFollowMode778="route-center-hard";
+    black.blackHoleReverse787=false;
+    black.startDirection788="right-along-bottom-road";
+    black.startDirection892="right";
+    black.spiralDirection892="7->5->1->11->9->inward";
+    black.leftDuplicateGateRemoved892=true;
+    const line=conservativeRacingLine778(black);
+    black.racingSpline770=line;
+    black.globalOptimal770=line;
+    black.racingLineMode772="outer-to-inner-spiral-v7.892";
+    black.insideTune789="slight-inside-no-wide-outside+spiral-v7.892";
+    black.outerSoftLimit789=true;
+  }
+  applyPatch7892();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
@@ -7596,6 +7645,8 @@ applyMapSet776();
 
   function strictLocalRoadTarget778(p,si,target){
     if(!target||!currentMap770().strictRoadFollow778||!segs.length)return target;
+    // v7.891: route-centre guidance is advisory only; road edges are non-solid.
+    if(currentMap770().edgePassThrough786) return target;
     const base=Math.max(0,Math.min(segs.length-1,si|0));
     const lo=Math.max(0,base-1),hi=Math.min(segs.length-1,base+2);
     let best=null,bestScore=Infinity;
@@ -11525,8 +11576,9 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>!m.logicalSize||!m.miniCrop||!m.route770?.length))issues.push("맵geometry777");
     if(MAP_POOL_770.some(m=>!m.outerSoftLimit789||!m.insideTune789))issues.push("전역인코스789");
     if(!MAP_DEFINITIONS_770.skyway?.spaceRoadRowsAdded788||MAP_DEFINITIONS_770.skyway.spaceRoadRowsAdded788!==2)issues.push("스페이스폭788");
-    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.start?.x||0)-14.6,(MAP_DEFINITIONS_770.double_hairpin?.start?.y||0)-145.0)>.05)issues.push("블랙홀시작788");
-    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.goal?.x||0)-77.72,(MAP_DEFINITIONS_770.double_hairpin?.goal?.y||0)-96.768)>.05)issues.push("블랙홀도착788");
+    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.start?.x||0)-20.007,(MAP_DEFINITIONS_770.double_hairpin?.start?.y||0)-149.930)>.05)issues.push("블랙홀시작7892");
+    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.goal?.x||0)-78.738,(MAP_DEFINITIONS_770.double_hairpin?.goal?.y||0)-95.661)>.05)issues.push("블랙홀도착7892");
+    if(!MAP_DEFINITIONS_770.double_hairpin?.leftDuplicateGateRemoved892||MAP_DEFINITIONS_770.double_hairpin?.startDirection892!=="right")issues.push("블랙홀경로7892");
     const u764=unitChassis764();
     if(Object.keys(UNIT_CHASSIS_764).length!==5)issues.push("유닛5");
     if(UNIT_CHASSIS_764[1].hitRadius>=Math.min(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.hitRadius)))issues.push("스커지크기");
