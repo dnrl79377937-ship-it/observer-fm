@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.893";
+  const BUILD_ID = "v7.894";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6719,6 +6719,62 @@ applyMapSet776();
     }
   }
   applyPatch7893();
+
+
+  // ============================================================
+  // v7.894 — Star Fish stall guard + Black Hole single yellow gate + Desert cleanup
+  // 1) Star Fish: use a safer, more center-biased authoritative racing spline and
+  //    a slightly wider legal ribbon so touching the visual wall no longer makes
+  //    racers appear to stall or pin in place.
+  // 2) Black Hole: refresh the runtime artwork to the fully single-yellow version.
+  // 3) Desert Oasis: refresh the cleaned artwork so the start-side mosaic is gone.
+  // ============================================================
+  function applyPatch7894(){
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      star.image="map_star_fish_791.png?v=791-approved-art";
+      star.widths770=new Array(Math.max(1,(star.route770||[]).length-1)).fill(9.6);
+      star.strictRoadFollow778=true;
+      star.roadFollowMode778="route-center-hard";
+      star.edgePassThrough786=true;
+      star.wallCollision786=false;
+      star.edgeFlow785=true;
+      star.outerSoftLimit789=true;
+      const nodes=[
+        [86.000,28.600],[98.600,44.800],[112.200,57.800],[132.900,60.000],
+        [124.200,74.600],[115.600,88.400],[123.600,118.000],[111.000,116.200],
+        [95.200,108.600],[77.200,108.600],[58.300,118.000],[52.800,105.800],
+        [56.400,88.800],[42.100,71.100],[43.700,60.300],[63.000,58.500],
+        [76.400,44.400],[86.000,28.600]
+      ];
+      const line=densifyLine772(nodes,.30);
+      star.racingSpline770=line;
+      star.globalOptimal770=line;
+      star.racingLineMode772="stall-guard-centerline-v7.894";
+      star.optimizedSplineAuthority783=true;
+      star.shortestLegal783=true;
+      star.safeShortest784=true;
+      star.stallProofSpline784=true;
+      star.lockOptimalExecution784=true;
+      star.wallHugFix786=true;
+      star.minimumVisualEdgeClearance786=2.8;
+      star.starFishStallFix894=true;
+    }
+
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      black.image="map_black_hole_776.png?v=7894-single-yellow-clean";
+      black.leftDuplicateGateRemoved892=true;
+      black.blackHoleSingleYellow894=true;
+    }
+
+    const desert=MAP_DEFINITIONS_770.desert_oasis;
+    if(desert){
+      desert.image="map_desert_oasis_776.png?v=7894-start-mosaic-clean";
+      desert.desertStartClean894=true;
+    }
+  }
+  applyPatch7894();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
