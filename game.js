@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.896";
+  const BUILD_ID = "v7.897";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6879,6 +6879,49 @@ applyMapSet776();
   applyPatch7896();
 
 
+  // ============================================================
+  // v7.897 — TRUE BLACK HOLE GRAY-ROAD CENTER + SPACE 4 ROWS
+  // ============================================================
+  function applyPatch7897(){
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      // This path was re-traced from the actual gray roadway artwork; it is not
+      // the old approximate spiral and is intentionally NOT inside-biased.
+      black.route770=[[20.007,149.93],[21.159,150.925],[23.415,150.884],[26.795,151.159],[31.304,151.391],[36.116,151.609],[41.235,151.779],[46.665,151.891],[52.409,151.93],[58.084,151.72],[63.686,151.256],[69.206,150.55],[74.64,149.617],[79.828,148.391],[84.772,146.892],[89.467,145.135],[93.92,143.129],[98.144,140.922],[102.147,138.515],[105.945,135.905],[109.546,133.086],[112.997,129.888],[116.292,126.295],[119.41,122.291],[122.326,117.861],[124.934,113.154],[127.218,108.175],[129.179,102.929],[130.823,97.425],[132.037,91.906],[132.828,86.376],[133.202,80.842],[133.172,75.308],[132.705,69.814],[131.795,64.361],[130.426,58.951],[128.576,53.592],[126.235,48.614],[123.407,44.032],[120.123,39.86],[116.41,36.087],[112.41,32.813],[108.137,30.011],[103.594,27.663],[98.77,25.754],[93.807,24.165],[88.692,22.912],[83.411,22.012],[77.96,21.481],[72.577,21.404],[67.266,21.784],[62.035,22.615],[56.889,23.9],[51.99,25.529],[47.35,27.51],[42.976,29.845],[38.878,32.529],[35.14,35.47],[31.76,38.655],[28.739,42.068],[26.075,45.704],[23.773,49.482],[21.84,53.395],[20.277,57.444],[19.076,61.621],[18.181,65.758],[17.567,69.849],[17.21,73.873],[17.083,77.831],[17.201,81.731],[17.549,85.588],[18.036,89.452],[18.782,93.326],[19.746,96.96],[20.924,100.348],[22.315,103.494],[23.914,106.4],[25.638,108.985],[27.479,111.253],[29.412,113.187],[31.453,114.828],[33.919,116.321],[36.846,117.676],[40.263,118.888],[44.159,119.935],[48.324,120.805],[52.751,121.492],[57.42,122.023],[62.324,122.352],[67.059,122.375],[71.607,122.109],[75.97,121.62],[80.15,120.876],[84.152,119.802],[87.982,118.404],[91.653,116.679],[95.163,114.634],[98.316,112.316],[101.117,109.731],[103.601,106.85],[105.771,103.66],[107.667,100.23],[109.285,96.553],[110.616,92.633],[111.654,88.485],[112.279,84.521],[112.496,80.761],[112.317,77.183],[111.748,73.775],[110.831,70.567],[109.567,67.547],[107.952,64.703],[105.982,62.03],[103.736,59.642],[101.265,57.455],[98.521,55.381],[95.427,53.49],[92.198,51.789],[88.822,50.335],[85.309,49.185],[81.664,48.383],[77.986,47.95],[74.299,47.888],[70.627,48.181],[66.994,48.803],[63.656,49.762],[60.629,51.024],[57.883,52.572],[55.403,54.393],[53.172,56.355],[51.168,58.449],[49.373,60.663],[47.688,62.95],[46.194,65.369],[44.906,67.944],[43.829,70.671],[42.893,73.526],[42.024,76.3],[41.338,79.057],[40.917,81.847],[40.873,84.666],[41.277,87.439],[42.109,90.13],[43.284,92.734],[44.728,95.284],[46.474,97.687],[48.565,99.933],[51.054,102.005],[53.928,103.893],[56.871,105.567],[59.868,107.094],[62.942,108.497],[66.135,109.722],[69.362,110.677],[72.626,111.295],[75.912,111.581],[79.217,111.597],[82.405,111.429],[85.507,111.061],[88.511,110.407],[91.371,109.376],[94.018,107.959],[96.343,106.107],[98.383,103.978],[100.186,101.638],[101.754,99.176],[103.09,96.594],[104.204,93.875],[105.095,91.015],[105.68,88.125],[105.955,85.202],[105.91,82.288],[105.492,79.393],[104.624,76.652],[103.418,74.084],[101.924,71.705],[100.196,69.494],[98.347,67.51],[96.384,65.739],[94.299,64.18],[92.102,62.831],[89.853,61.696],[87.574,60.723],[85.262,59.856],[82.892,59.068],[80.541,58.444],[78.168,58.031],[75.755,57.902],[73.317,58.118],[70.999,58.662],[68.819,59.505],[66.763,60.585],[64.797,61.854],[63.0,63.227],[61.356,64.741],[59.9,66.44],[58.702,68.363],[57.808,70.398],[57.275,72.52],[57.089,74.696],[57.173,76.879],[57.458,78.976],[57.88,81.014],[58.452,83.022],[59.247,85.003],[60.361,86.784],[61.782,88.33],[63.56,89.508],[65.306,90.777],[67.052,91.888],[68.797,92.841],[70.543,93.634],[72.289,94.269],[73.836,94.769],[75.185,95.134],[76.336,95.364],[77.288,95.459],[78.002,95.531],[78.478,95.578],[78.738,95.661]];
+      black.widths770=new Array(Math.max(1,black.route770.length-1)).fill(13.5);
+      const exact=densifyLine772(black.route770,.20);
+      black.racingSpline770=exact;
+      black.globalOptimal770=exact;
+      black.lockOptimalExecution784=true;
+      black.optimizedSplineAuthority783=true;
+      black.strictRoadFollow778=true;
+      black.roadFollowMode778="route-center-hard";
+      black.blackHoleCenterOnly895=true;
+      black.blackHoleHardCenter896=true;
+      black.blackHoleExactCenter897=true;
+      black.racingLineMode772="actual-gray-road-center-v7.897";
+      black.insideTune789="OFF-exact-center-v7.897";
+      black.outerSoftLimit789=false;
+    }
+
+    const space=MAP_DEFINITIONS_770.skyway;
+    if(space){
+      // Base Space was 5.8 logical units wide (2 visible rows). 11.6 is an exact
+      // 2x road width = 4 visible rows, matching the widened artwork.
+      space.widths770=new Array(Math.max(1,(space.route770||[]).length-1)).fill(11.6);
+      space.special=Object.assign({},space.special,{wideRoad:true});
+      space.spaceRoadRows897=4;
+      space.spaceRoadDoubleWidth897=true;
+      space.image="map_space_897.png?v=7897-four-gray-rows";
+      const line=conservativeRacingLine778(space);
+      space.racingSpline770=line;
+      space.globalOptimal770=line;
+      space.racingLineMode772="four-row-road-v7.897";
+    }
+  }
+  applyPatch7897();
+
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
@@ -8892,10 +8935,19 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     const preMoveX719=p.x, preMoveY719=p.y;
-    if(currentMap770().blackHoleHardCenter896 && move>0){
-      // v7.896 Black Hole: physical position is hard-locked to the gray-road center
-      // from start to green goal in every steering state. Tactical actions may
-      // change speed, but they cannot choose an inside/outside/adjacent-ring line.
+    if(currentMap770().blackHoleExactCenter897){
+      // v7.897: absolute center authority. Variant controls cannot create lateral
+      // movement. Negative/back-control movement is converted to a centerline hold,
+      // never an off-center displacement.
+      let pr897=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+      pr897=Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,pr897+Math.max(0,move)));
+      const q897=splinePointAt720(pr897);
+      p.x=q897.x; p.y=q897.y;
+      p._splineProg720=pr897;
+      p._splineFloor754=Math.max(Number(p._splineFloor754)||0,pr897);
+      p._lineOffset720=0;
+      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
+    }else if(currentMap770().blackHoleHardCenter896 && move>0){
       if(!advanceOnSpline720(p,move)){
         const q896=splinePointAt720(Number(p._splineProg720)||0);
         p.x=q896.x; p.y=q896.y;
@@ -8923,9 +8975,15 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v7.80: only explicitly marked obstacle zones are physically non-drivable.
     enforceHardForbidden780(p,preMoveX719,preMoveY719);
 
-    // v7.89: far exterior wandering is not an AI route. Crossing the visible edge is
-    // still legal, but a large excursion requests a smooth REJOIN on the next frames.
-    softOuterRecovery789(p,now);
+    // v7.897 Black Hole final center clamp: after every movement/collision stage,
+    // render the racer exactly on the gray-road center spline.
+    if(currentMap770().blackHoleExactCenter897){
+      const q897f=splinePointAt720(Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,Number(p._splineProg720)||0)));
+      p.x=q897f.x; p.y=q897f.y; p._lineOffset720=0;
+    }else{
+      // v7.89: far exterior wandering is not an AI route.
+      softOuterRecovery789(p,now);
+    }
 
     // v7.34: the final Racing Spline / EVADE engine already supplies legal targets.
     // Never project or roll it back to a legacy segment/lastLegal position: that was

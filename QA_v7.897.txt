@@ -1,0 +1,7 @@
+Observer Avoid FM v7.897 QA
+- BUILD_ID: v7.897
+- Black Hole: actual gray-road center re-traced from artwork; no inside/outside bias.
+- Black Hole: final physical position hard-clamped to center spline in NORMAL/EVADE/REJOIN.
+- Space: visible gray road doubled from 2 rows to 4 rows.
+- Space logical width fixed to 11.6 (2x base 5.8).
+- map_space_897.png added.
