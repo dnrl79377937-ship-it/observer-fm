@@ -27,7 +27,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.892";
+  const BUILD_ID = "v7.893";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -5658,9 +5658,9 @@ function applyMapSet776(){
   const meta={
     s_map:{slot:1,name:"네온 드리프트",en:"Neon Drift",theme:"Blue Neon S Course",tags:["기본","S자","네온"],image:"map_v672_equal_medium_start_goal.png?v=776-neon-drift"},
     star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_791.png?v=791-card"},
-    ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_776.png?v=792-ice-crown",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_776.png?v=793-ice-crown-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_776.png?v=776-desert-oasis",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
-    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_776.png?v=776-heart",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_776.png?v=793-heart-clean",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
     double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=776-black-hole",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_776.png?v=776-space",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     cliff_hanger:{slot:8,name:"클리프 행거",en:"Cliff Hanger",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_776.png?v=776-cliff-hanger",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
@@ -6336,14 +6336,14 @@ applyMapSet776();
   function applyPatch787(){
     const ice=MAP_DEFINITIONS_770.ice_ring;
     if(ice){
-      ice.image="map_ice_m_787.png?v=787-ice-load-fix";
+      ice.image="map_ice_m_787.png?v=7893-ice-clean-runtime";
       ice.gateArtwork786="outline-only-clean-v787";
       ice.geometryReady=true;
     }
 
     const heart=MAP_DEFINITIONS_770.neon_city;
     if(heart){
-      heart.image="map_heart_7891_clean.png?v=7891-heart-no-gates";
+      heart.image="map_heart_7891_clean.png?v=7893-heart-runtime-fix";
       heart.artworkRestored787=true;
     }
 
@@ -6653,6 +6653,72 @@ applyMapSet776();
     black.outerSoftLimit789=true;
   }
   applyPatch7892();
+
+
+  // ============================================================
+  // v7.893 — Mosaic cleanup + Heart runtime refresh + tighter Black Hole line
+  // 1) Use the clean Heart/Ice artwork for thumbnails and runtime so leftover
+  //    gray mosaic/checker patches are gone.
+  // 2) Reaffirm the Heart shared red gate runtime setup with the clean asset.
+  // 3) Pull Black Hole's normal racing line slightly inward so it does not
+  //    take a huge outer setup arc that leaks into the adjacent lane.
+  // ============================================================
+  function applyPatch7893(){
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      ice.image="map_ice_m_787.png?v=7893-ice-clean-runtime";
+      ice.artworkRestored893=true;
+    }
+
+    const heart=MAP_DEFINITIONS_770.neon_city;
+    if(heart){
+      const p=[71.099,126.205];
+      heart.image="map_heart_7891_clean.png?v=7893-heart-runtime-fix";
+      heart.start={x:p[0],y:p[1]};
+      heart.goal={x:p[0],y:p[1]};
+      if(Array.isArray(heart.route770) && heart.route770.length>=2){
+        heart.route770[0]=[p[0],p[1]];
+        heart.route770[heart.route770.length-1]=[p[0],p[1]];
+      }
+      const h=7.0;
+      heart.safeZones={
+        start:{x0:p[0]-h,y0:p[1]-h,x1:p[0]+h,y1:p[1]+h},
+        goal:{x0:p[0]-h,y0:p[1]-h,x1:p[0]+h,y1:p[1]+h}
+      };
+      heart.sharedGate778=true;
+      heart.courseType775="circuit";
+      heart.finishRule775="one-lap-gate";
+      heart.lapRequired775=true;
+      heart.lapArmFraction775=.82;
+      let line=conservativeRacingLine778(heart);
+      heart.racingSpline770=line;
+      heart.globalOptimal770=line;
+      heart.racingLineMode772="heart-shared-red-gate-v7.893";
+      heart.heartRuntimeRefresh893=true;
+    }
+
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      if(Array.isArray(black.widths770)&&black.widths770.length){
+        black.widths770=black.widths770.map(()=>12.6);
+      }
+      let tuned=tuneRacingSpline789(black);
+      if(tuned.length>=3){
+        black.racingSpline770=tuned;
+        black.globalOptimal770=tuned;
+        tuned=tuneRacingSpline789(black);
+      }
+      if(tuned.length>=3){
+        black.racingSpline770=tuned;
+        black.globalOptimal770=tuned;
+      }
+      black.racingLineMode772=(black.racingLineMode772||'outer-to-inner-spiral-v7.892')+"+inboard-v7.893";
+      black.insideTune789="tighter-inboard-spiral-v7.893";
+      black.outerSoftLimit789=true;
+      black.blackHoleLaneTight893=true;
+    }
+  }
+  applyPatch7893();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
