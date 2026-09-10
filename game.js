@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.991";
+  const BUILD_ID = "v7.996";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1167,8 +1167,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const rockPad=m?.boulderClearance793!=null?Math.max(pad,Number(m.boulderClearance793)||0):
       (m?.boulderClearance791?Math.max(pad,Number(m.boulderClearance791)||0):pad);
     if(m?.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
-      for(const b of m.rollingBoulders798){
-        if(Math.hypot(x-b.x,y-b.y)<=b.r+rockPad)return true;
+      for(let bi=0;bi<m.rollingBoulders798.length;bi++){
+        const b=m.rollingBoulders798[bi];
+        // v7.996: rock #2 uses a smaller physical core so the extreme visual rim
+        // can be grazed without entering the collision/slide loop.  The lower
+        // outside shortcut is still blocked independently by rollingNoGoZones793.
+        const edgeFlex=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(rockPad,.03):rockPad;
+        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+        if(Math.hypot(x-b.x,y-b.y)<=rr+edgeFlex)return true;
       }
     }else{
       for(const z of currentForbidden770()){
@@ -6422,8 +6428,11 @@ applyMapSet776();
     // axis-aligned rectangles. This lets racers pass naturally right up to the
     // visible rock while still treating the rock itself as solid.
     if(m.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
-      for(const b of m.rollingBoulders798){
-        if(Math.hypot(x-b.x,y-b.y)<=b.r+Math.max(0,pad))return true;
+      for(let bi=0;bi<m.rollingBoulders798.length;bi++){
+        const b=m.rollingBoulders798[bi];
+        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+        const pp=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(Math.max(0,pad),.03):Math.max(0,pad);
+        if(Math.hypot(x-b.x,y-b.y)<=rr+pp)return true;
       }
       for(const z of (m.rollingNoGoZones793||[])){
         if(x>=z.x1-pad&&x<=z.x2+pad&&y>=z.y1-pad&&y<=z.y2+pad)return true;
@@ -7117,7 +7126,11 @@ applyMapSet776();
     const dist=Math.hypot(x2-x1,y2-y1);
     const n=Math.max(8,Math.ceil(dist/.10));
     const clearance=Math.max(0,Number(m.boulderClearance793)||0);
-    const inside=(x,y)=>m.rollingBoulders798.some(b=>Math.hypot(x-b.x,y-b.y)<=b.r+clearance);
+    const inside=(x,y)=>m.rollingBoulders798.some((b,bi)=>{
+      const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+      const cc=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(clearance,.03):clearance;
+      return Math.hypot(x-b.x,y-b.y)<=rr+cc;
+    });
     let prev=0;
     for(let i=1;i<=n;i++){
       const t=i/n,x=x1+(x2-x1)*t,y=y1+(y2-y1)*t;
@@ -12904,6 +12917,27 @@ function seasonCardHtml(p){
     roll.qaRollingRock2NoStall7995=true;
   }
   applyPatch7995();
+
+  // ============================================================
+  // v7.996 — ROLLING STONE ROCK #2 FLEX EDGE / ZERO-STALL CONTACT
+  // - shallow contact with the visible rim of rock #2 is legal,
+  // - only the inner physical core triggers collision handling,
+  // - keep the lower/outside shortcut block and 6->5->3 gate unchanged.
+  // ============================================================
+  function applyPatch7996(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.rollingRock2EdgeFlex7996=true;
+    roll.rollingRock2NoStall7995=true;
+    roll.rollingDualTangentEscape7995=true;
+    roll.rollingSmoothCollision7981=true;
+    roll.rollingNoTouch7991=false;
+    // Keep the artwork-size metadata, but use the dedicated smaller physical
+    // core in collision helpers above.  This avoids a visible snap or freeze
+    // when a racer merely brushes the rock's extreme edge.
+    roll.qaRollingRock2EdgeFlex7996=true;
+  }
+  applyPatch7996();
 
   function v36SelfAudit(){
     const issues=[];
