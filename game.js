@@ -30,7 +30,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.94";
+  const BUILD_ID = "v7.96";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -379,7 +379,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
-      mapEngine:"Active 9 Map Geometry · v7.94",
+      mapEngine:"Active 9 Map Geometry · v7.943",
       currentMap770:{id:currentMap770().id,name:currentMap770().name,en:currentMap770().en},
       mapPoolSize770:MAP_POOL_770.length,
       mapGeometryReady770:MAP_POOL_770.filter(m=>m.geometryReady).length,
@@ -1021,7 +1021,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const openingSide=Math.sign(openingInsideBias(0))||1;
         const openingSkill=(p.stats.routeReading+p.stats.insideLine+p.stats.cornering)/300;
         const microBand=Math.max(-.16,Math.min(.16,signature*.10+(p.index%3-1)*.018));
-        const fastStartNorm=Math.max(.64,Math.min(.94,.72+openingSkill*.14+start*.05+microBand));
+        const fastStartBase=.72+openingSkill*.14+start*.05+microBand;
+        const fastStartNorm=currentMap770().openingInsideLock795
+          ? Math.max(.74,Math.min(.94,fastStartBase+.035))
+          : Math.max(.64,Math.min(.94,fastStartBase));
         p.startLineTarget=openingSide*half0*fastStartNorm;
         p.startLineCommit=Math.max(.76,Math.min(1,.80+start*.08+reaction*.06+controlN*.05));
         p.startDecisionUntil=now+2050+start*330+reaction*170;
@@ -6468,6 +6471,20 @@ applyMapSet776();
   function softLaneTarget789(p,t,mode){
     if(!t)return t;
     const m=currentMap770();
+    // v7.95: edge rails stay pass-through, but an EVADE/REJOIN target may not
+    // connect to another nearby road leg by a diagonal chord. When that happens,
+    // fall back to a forward point on the authoritative spline at the same progress.
+    if(m.strictNoChord795 && mode!=='NORMAL'){
+      const sameLeg=mapRoadSegment789(m,[p.x,p.y],[t.x,t.y],-.62);
+      const forbiddenChord=mapForbiddenPoint789(m,t.x,t.y,.04);
+      if(!sameLeg || forbiddenChord){
+        const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+        const look=mode==='EVADE'?2.20:2.70;
+        const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
+        p._noChordGuards795=(p._noChordGuards795||0)+1;
+        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-no-chord795'};
+      }
+    }
     // v7.896 Black Hole hard center: never project an EVADE target onto the
     // nearest spiral ring (which can be the adjacent lane). Use the authoritative
     // center spline progress itself for NORMAL / EVADE / REJOIN.
@@ -6492,12 +6509,12 @@ applyMapSet776();
     }
     if(turn.side){
       let signed=lat*turn.side;
-      const outsideFrac=mode==='EVADE'?.72:mode==='REJOIN'?.52:.40;
-      const insideFrac=mode==='EVADE'?.90:mode==='REJOIN'?.76:.72;
+      const outsideFrac=m.insideAi795?(mode==='EVADE'?.64:mode==='REJOIN'?.43:.31):(mode==='EVADE'?.72:mode==='REJOIN'?.52:.40);
+      const insideFrac=m.insideAi795?(mode==='EVADE'?.92:mode==='REJOIN'?.82:.80):(mode==='EVADE'?.90:mode==='REJOIN'?.76:.72);
       signed=Math.max(-half*outsideFrac,Math.min(half*insideFrac,signed));
       lat=signed*turn.side;
     }else{
-      const frac=mode==='EVADE'?.80:mode==='REJOIN'?.62:.60;
+      const frac=m.insideAi795?(mode==='EVADE'?.76:mode==='REJOIN'?.56:.52):(mode==='EVADE'?.80:mode==='REJOIN'?.62:.60);
       lat=Math.max(-half*frac,Math.min(half*frac,lat));
     }
     const x=info.cx+info.nx*lat,y=info.cy+info.ny*lat;
@@ -6984,6 +7001,48 @@ applyMapSet776();
     roll.racingLineMode772="left-gap-road-center-no-chord-v7.93";
   }
   applyPatch793();
+
+  // ============================================================
+  // v7.95 — UNIFIED 9-MAP DRIVING STABILITY + INSIDE AI + NO-CHORD GUARD
+  // Combines the planned v7.944 / v7.95 / v7.96 work:
+  // 1) common anti-stall / anti-bounce runtime stability on all 9 active maps,
+  // 2) stronger inside-line preference without overwriting map-specific splines,
+  // 3) prevent EVADE/REJOIN targets from cutting across a different gray-road leg.
+  // Visual one-row edge rails remain pass-through and are NOT physical walls.
+  // ============================================================
+  function applyPatch795(){
+    for(const m of MAP_POOL_770){
+      m.driveStability795=true;
+      m.edgePassThrough786=true;
+      m.noDiagonalChord795=true;
+      m.noReverseRouteJump795=true;
+      m.cornerFlow795=true;
+      m.insideAi795=true;
+      // Keep every established map-specific racing spline. v7.95 adjusts only
+      // runtime target choice, so Star/Ice/Rolling/Black Hole fixes are preserved.
+    }
+
+    // Maps where adjacent road legs are physically close need the strictest
+    // same-leg protection. Black Hole already has exact-center authority.
+    for(const id of ['ice_ring','double_hairpin','industrial_zone']){
+      const m=MAP_DEFINITIONS_770[id];
+      if(m)m.strictNoChord795=true;
+    }
+
+    // Neon Drift opening remains the validated upper/inside S-course launch.
+    const neon=MAP_DEFINITIONS_770.s_map;
+    if(neon)neon.openingInsideLock795=true;
+
+    // Rolling Stone retains the left-only rock 2/3 bypass and curved bottom leg.
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(roll){
+      roll.boulderLeftOnly793=true;
+      roll.bottomRoadFollow793=true;
+      roll.rollingNoStop793=true;
+      roll.strictNoChord795=true;
+    }
+  }
+  applyPatch795();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
@@ -8616,6 +8675,25 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const steerTurn=cornerIntensity(si);
     targetOff=limitDecisionChanges(p,si,now,targetOff);
 
+    // v7.96 FINAL MOTION STABILIZER:
+    // Preserve corner/avoidance authority, but suppress frame-to-frame lateral target snaps
+    // that show up as left-right shake, edge detach/reattach, or an abrupt corner exit.
+    // Emergency observer combat is intentionally exempt so survival response stays immediate.
+    if(now>=(p.hardRouteLockUntil||0) && now>=(p.routeBreakCombatUntil||0) && p.controlMode==="normal") {
+      const roadHalf796=Math.max(1.8,widths[Math.min(si,widths.length-1)]*.70);
+      if(!Number.isFinite(p.stableTargetOff796)) p.stableTargetOff796=targetOff;
+      const delta796=targetOff-p.stableTargetOff796;
+      const corner796=Math.max(0,Math.min(1,steerTurn*3.2));
+      const maxDelta796=roadHalf796*(.070+corner796*.040)+Math.max(.08,dt*.006);
+      const clipped796=Math.max(-maxDelta796,Math.min(maxDelta796,delta796));
+      const control796=Math.max(0,Math.min(1,(p.stats.control-72)/27));
+      const blend796=Math.min(1,dt*(.0082+control796*.0018+corner796*.0022));
+      p.stableTargetOff796 += clipped796*blend796;
+      targetOff=p.stableTargetOff796;
+    } else {
+      p.stableTargetOff796=targetOff;
+    }
+
     // v5.01 FINAL AUTHORITY: calm horizontal road = route centerline.
     const centerLock501=horizontalCenterLock501(p,si,now);
     if(centerLock501 || horizontalHold503(p,si)){
@@ -9437,14 +9515,18 @@ targetOff=clampRoadOffset(si,targetOff,p);
   let fpsProtectLevel=0, fpsLowSince=0, fpsGoodSince=0;
   function updateFpsProtection(now){
     if(!running) return;
-    if(diagFps>0 && diagFps<42){
+    // v7.96: eight-racer final QA protection. Degrade visual-only work earlier during
+    // sustained frame pressure; simulation cadence and race physics remain unchanged.
+    const lowFps796=players.length>=8?46:42;
+    const goodFps796=players.length>=8?56:54;
+    if(diagFps>0 && diagFps<lowFps796){
       fpsGoodSince=0;
       fpsLowSince=fpsLowSince||now;
-      if(now-fpsLowSince>1600 && fpsProtectLevel<2){
+      if(now-fpsLowSince>1200 && fpsProtectLevel<2){
         fpsProtectLevel++;
         fpsLowSince=now;
       }
-    }else if(diagFps>=54){
+    }else if(diagFps>=goodFps796){
       fpsLowSince=0;
       fpsGoodSince=fpsGoodSince||now;
       if(now-fpsGoodSince>4500 && fpsProtectLevel>0){
@@ -12005,8 +12087,154 @@ function seasonCardHtml(p){
   }
   applyPatch794();
 
+  // ============================================================
+  // v7.941 — TWO-MAP QA LOCK (Rolling Stone + Sky Cliff only)
+  // No global AI/map changes. This release freezes and audits the v7.94
+  // geometry requirements for these two maps so later patches cannot silently
+  // reintroduce the Rolling Stone shortcut/stall or miss the Sky Cliff finish.
+  // ============================================================
+  function applyPatch7941(){
+    const cliff=MAP_DEFINITIONS_770.cliff_hanger;
+    if(cliff){
+      // Keep the finish exactly on the v7.94 road endpoint and retain a generous
+      // finish-safe box so units following the center spline register cleanly.
+      cliff.goal={x:66.2,y:142.0};
+      cliff.safeZones=Object.assign({},cliff.safeZones,{
+        goal:{x0:61.8,y0:137.6,x1:70.6,y1:146.4}
+      });
+      cliff.strictRoadFollow778=true;
+      cliff.roadFollowMode778='route-center-hard';
+      cliff.qaGoalLock7941=true;
+    }
+
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(roll){
+      // QA-lock the v7.94 behavior: rocks 2/3 left-gap only, no boulder stall,
+      // and no 5->3 diagonal chord through the inside of the bottom curve.
+      roll.boulderLeftOnly793=true;
+      roll.rollingNoStop793=true;
+      roll.bottomRoadFollow793=true;
+      roll.rollingCurveNoCut794=true;
+      roll.strictRoadFollow778=true;
+      roll.roadFollowMode778='route-center-hard';
+      roll.lockOptimalExecution784=true;
+      roll.qaRouteLock7941=true;
+    }
+  }
+  applyPatch7941();
+
+
+  // ============================================================
+  // v7.942 — THREE-MAP QA LOCK (Neon Drift + Star Fish + Ice Crown only)
+  // Preserve the already-approved geometry while explicitly locking the
+  // three user-facing QA requirements. No other map is modified here.
+  // ============================================================
+  function applyPatch7942(){
+    const neon=MAP_DEFINITIONS_770.s_map;
+    if(neon){
+      // Neon Drift: retain the battle-tested hand-tuned S-map spline. The opening
+      // line must not be regenerated by generic route logic, which prevents the
+      // 7->5 opening from spreading toward the lower/outside side.
+      neon.racingSpline770=S_MAP_RACING_SPLINE_770;
+      neon.globalOptimal770=S_MAP_GLOBAL_OPTIMAL_LINE_770;
+      neon.openingInsideLock7942=true;
+      neon.openingDirection7942='upper-inside-7-to-5';
+      neon.qaRouteLock7942=true;
+    }
+
+    const star=MAP_DEFINITIONS_770.star_fish;
+    if(star){
+      // Star Fish: road-edge graphics remain pass-through. Touching/crossing the
+      // one-line edge must never trigger wall collision, rollback or a stall.
+      star.edgePassThrough786=true;
+      star.wallCollision786=false;
+      star.edgeRailMode786='visual-pass-through';
+      star.starFishNoEdgeRollback895=true;
+      star.starFishNoOuterStateTrigger895=true;
+      star.edgeFlow785=true;
+      star.stallProofSpline784=true;
+      star.qaEdgeFlow7942=true;
+    }
+
+    const ice=MAP_DEFINITIONS_770.ice_ring;
+    if(ice){
+      // Ice Crown: normal driving follows the traced gray M-road only. Keep the
+      // central non-road interior forbidden so racers cannot climb too far upward
+      // or switch onto a visually adjacent path through the crown.
+      ice.strictRoadFollow778=true;
+      ice.roadFollowMode778='route-center-hard';
+      ice.hardForbidden780=true;
+      ice.edgeFlow785=true;
+      ice.stallProofSpline784=true;
+      ice.wideMRoute781=true;
+      ice.qaMRouteLock7942=true;
+    }
+  }
+  applyPatch7942();
+
+  // ============================================================
+  // v7.943 — FOUR-MAP QA LOCK (Desert Oasis + Heart + Black Hole + Space only)
+  // Preserve approved artwork/route behavior and freeze the four QA points.
+  // No intentional changes to the other five maps.
+  // ============================================================
+  function applyPatch7943(){
+    const desert=MAP_DEFINITIONS_770.desert_oasis;
+    if(desert){
+      desert.image='map_desert_oasis_899.png?v=7943-clean-start-lock';
+      desert.startArtifactClean899=true;
+      desert.mapLoadSafe791=true;
+      desert.qaStartClean7943=true;
+      desert.qaFirstCornerFlow7943=true;
+    }
+
+    const heart=MAP_DEFINITIONS_770.neon_city;
+    if(heart){
+      heart.image='map_heart_7891_clean.png?v=7943-heart-clean-lock';
+      heart.sharedGate778=true;
+      heart.courseType775='circuit';
+      heart.finishRule775='one-lap-gate';
+      heart.lapRequired775=true;
+      heart.qaSingleRedGate7943=true;
+      heart.qaNoExtraBox7943=true;
+    }
+
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(black){
+      black.blackHoleCenterOnly895=true;
+      black.blackHoleHardCenter896=true;
+      black.blackHoleExactCenter897=true;
+      black.strictRoadFollow778=true;
+      black.roadFollowMode778='route-center-hard';
+      black.qaSpiralCenter7943=true;
+    }
+
+    const space=MAP_DEFINITIONS_770.skyway;
+    if(space){
+      space.image='map_space_894.png?v=7943-four-row-clean-lock';
+      space.widths770=new Array(Math.max(1,(space.route770||[]).length-1)).fill(11.6);
+      space.special=Object.assign({},space.special,{wideRoad:true});
+      space.spaceRoadRows897=4;
+      space.spaceRoadDoubleWidth897=true;
+      space.spaceExtraGateArtRemoved794=true;
+      space.qaFourRowRoad7943=true;
+      space.qaNoSideBias7943=true;
+      const line=conservativeRacingLine778(space);
+      space.racingSpline770=line;
+      space.globalOptimal770=line;
+      space.racingLineMode772='four-row-road-clean-v7.943';
+    }
+  }
+  applyPatch7943();
+
   function v36SelfAudit(){
     const issues=[];
+    if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
+    if(!MAP_DEFINITIONS_770.neon_city?.qaSingleRedGate7943||!MAP_DEFINITIONS_770.neon_city?.sharedGate778||!MAP_DEFINITIONS_770.neon_city?.lapRequired775)issues.push("하트공용게이트7943");
+    if(!MAP_DEFINITIONS_770.double_hairpin?.qaSpiralCenter7943||!MAP_DEFINITIONS_770.double_hairpin?.blackHoleExactCenter897||MAP_DEFINITIONS_770.double_hairpin?.roadFollowMode778!=="route-center-hard")issues.push("블랙홀중앙나선7943");
+    if(!MAP_DEFINITIONS_770.skyway?.qaFourRowRoad7943||MAP_DEFINITIONS_770.skyway?.spaceRoadRows897!==4||!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스4줄7943");
+    if(!MAP_DEFINITIONS_770.s_map?.openingInsideLock7942||MAP_DEFINITIONS_770.s_map?.racingSpline770!==S_MAP_RACING_SPLINE_770)issues.push("네온드리프트시작인코스7942");
+    if(!MAP_DEFINITIONS_770.star_fish?.qaEdgeFlow7942||MAP_DEFINITIONS_770.star_fish?.wallCollision786!==false||!MAP_DEFINITIONS_770.star_fish?.edgePassThrough786||!MAP_DEFINITIONS_770.star_fish?.starFishNoEdgeRollback895)issues.push("스타피쉬끝라인7942");
+    if(!MAP_DEFINITIONS_770.ice_ring?.qaMRouteLock7942||!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780||MAP_DEFINITIONS_770.ice_ring?.roadFollowMode778!=="route-center-hard")issues.push("아이스크라운M도로7942");
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버기본130");
     if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==100||observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==100)issues.push("블랙홀스페이스옵저버100");
@@ -12055,6 +12283,8 @@ function seasonCardHtml(p){
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
+    if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
+    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
     if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-66.2,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-142.0)>.08)issues.push("스카이클리프도착794");
     if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_794.png?v=794-no-rock-rings")issues.push("롤링스톤이미지794");
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
