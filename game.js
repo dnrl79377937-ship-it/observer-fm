@@ -6492,6 +6492,22 @@ applyMapSet776();
     if(!t)return t;
     const m=currentMap770();
 
+    // v7.994 Rolling Stone: hard staged 6 -> 5-center -> 3 progression.
+    // Once a racer enters the lower sector, it must physically traverse two
+    // center-road approach points and then the 5-o'clock center gate. This is
+    // position-driven (not spline-progress-driven), so an outer diagonal line
+    // cannot bypass the gate even if projection/avoidance briefly drifts.
+    if(m.id==='industrial_zone'&&m.rollingFiveStage7994&&!p._rollingFivePassed7991){
+      const stages=m.rollingFiveStage7994;
+      if(p.y>=m.rollingFiveStageEnterY7994 && p.x<=m.rollingFiveStageExitX7994){
+        let st=Number.isFinite(p._rollingFiveStage7994)?p._rollingFiveStage7994:0;
+        while(st<stages.length-1 && Math.hypot(p.x-stages[st].x,p.y-stages[st].y)<=stages[st].r) st++;
+        p._rollingFiveStage7994=st;
+        const q=stages[Math.min(st,stages.length-1)];
+        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-five-stage7994'};
+      }
+    }
+
     // v7.991 Rolling Stone: the lower turn has a physical 5-o'clock checkpoint.
     // NORMAL / EVADE / REJOIN must all physically touch the gray-road center gate
     // before any 3-o'clock target is allowed. This prevents a diagonal sight-line
@@ -12800,6 +12816,69 @@ function seasonCardHtml(p){
     roll.qaRollingTightFiveArc7993=true;
   }
   applyPatch7993();
+
+
+  // ============================================================
+  // v7.994 — ROLLING STONE 7-O'CLOCK ROCK LOWER BLOCK + TRUE 6->5->3
+  // - close the lower/outside leak beneath the 7-o'clock (#2) boulder,
+  // - force the lower road through staged center-road waypoints,
+  // - retain flexible rock-edge grazing elsewhere without allowing body cuts.
+  // ============================================================
+  function applyPatch7994(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+
+    // #2 boulder (7 o'clock): its lower side may not be used as a shortcut into
+    // the exterior. Keep the block compact so the legitimate paved route is free.
+    roll.rollingNoGoZones793=[
+      {x1:17.2,y1:104.6,x2:33.6,y2:116.7,kind:'rock2-lower-outer-block7994'},
+      {x1:31.8,y1:98.0,x2:40.2,y2:110.8,kind:'rock2-right-block'},
+      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
+    ];
+    roll.rollingRock2LowerBlock7994=true;
+
+    // A true staged route: from the 6-o'clock lower road move right along the
+    // gray center, touch the 5-o'clock center, then and only then climb to 3.
+    roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.6};
+    roll.rollingFiveStage7994=[
+      {x:55.0,y:126.0,r:5.0},
+      {x:77.0,y:128.6,r:5.0},
+      {x:98.5,y:126.0,r:4.6}
+    ];
+    roll.rollingFiveStageEnterY7994=116.0;
+    roll.rollingFiveStageExitX7994=104.0;
+    roll.rollingHardSpline799=true;
+    roll.rollingMandatoryFive799=true;
+    roll.strictNoChord795=true;
+    roll.strictRoadFollow778=true;
+    roll.roadFollowMode778='route-center-hard';
+    roll.lockOptimalExecution784=true;
+    roll.outerSoftLimit789=true;
+
+    // Re-author the same lower arc once more, with no large external excursion.
+    const r=roll.route770.slice();
+    const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.12&&Math.abs(q[1]-119.0)<.12);
+    const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.12&&Math.abs(q[1]-88.0)<.12);
+    if(a>=0&&b>a){
+      const forcedFive=[
+        [34.0,119.0],[40.0,121.0],[46.0,123.0],[52.0,125.0],[58.0,126.8],
+        [64.0,127.8],[70.0,128.5],[77.0,128.6],[84.0,128.0],[90.0,127.2],
+        [95.0,126.5],[98.5,126.0],[102.5,123.8],[106.0,121.0],[109.0,117.5],
+        [111.8,113.6],[114.0,109.2],[115.8,104.8],[117.2,100.2],[118.3,95.8],
+        [119.2,92.0],[120.0,89.5],[121.0,88.0]
+      ];
+      roll.route770.splice(a,b-a+1,...forcedFive);
+    }
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(7.65);
+    const line=densifyLine772(roll.route770,.036);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='hard-stage-6-5-center-3-rock2-lower-block-v7.994';
+    roll.insideTune789='no-outer-diagonal-forced-five-center-v7.994';
+    roll.qaRollingRock2Lower7994=true;
+    roll.qaRollingFiveStage7994=true;
+  }
+  applyPatch7994();
 
   function v36SelfAudit(){
     const issues=[];
