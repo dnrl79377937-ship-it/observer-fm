@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.982";
+  const BUILD_ID = "v7.99";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6491,6 +6491,15 @@ applyMapSet776();
   function softLaneTarget789(p,t,mode){
     if(!t)return t;
     const m=currentMap770();
+
+    // v7.99 Rolling Stone: NORMAL driving must follow the authoritative spline
+    // with a short look-ahead. This prevents the lower 6->3 leg from sighting
+    // across the bend and skipping the mandatory 5-o'clock road.
+    if(m.id==='industrial_zone'&&m.rollingHardSpline799&&mode==='NORMAL'){
+      const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+      const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+1.05));
+      return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-hard-spline799'};
+    }
     // v7.95: edge rails stay pass-through, but an EVADE/REJOIN target may not
     // connect to another nearby road leg by a diagonal chord. When that happens,
     // fall back to a forward point on the authoritative spline at the same progress.
@@ -12462,6 +12471,68 @@ function seasonCardHtml(p){
   }
   applyPatch7982();
 
+  // ============================================================
+  // v7.99 — ROLLING STONE 5-O'CLOCK HARD GATE + SKY CLIFF FINAL ENDPOINT
+  // ============================================================
+  function applyPatch799(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(roll){
+      roll.image='map_rolling_stone_799.png?v=799-clean-no-halo-hard-five';
+      roll.rollingHaloRemoved799=true;
+      roll.rollingHardSpline799=true;
+      roll.rollingMandatoryFive799=true;
+
+      const r=roll.route770.slice();
+      const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.05&&Math.abs(q[1]-119.0)<.05);
+      const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.05&&Math.abs(q[1]-88.0)<.05);
+      if(a>=0&&b>a){
+        const viaFiveHard=[
+          [34.0,119.0],[39.0,122.0],[44.0,124.8],[49.0,127.2],[54.0,129.2],
+          [59.0,130.8],[64.0,131.8],[69.0,132.4],[74.0,132.4],[79.0,132.0],
+          [84.0,131.2],[89.0,129.9],[94.0,128.2],[98.5,126.0],[102.5,123.6],
+          [106.0,120.8],[109.0,117.6],[111.8,113.8],[114.0,109.5],[115.8,105.0],
+          [117.2,100.5],[118.2,96.0],[119.0,92.0],[120.0,89.5],[121.0,88.0]
+        ];
+        roll.route770.splice(a,b-a+1,...viaFiveHard);
+      }
+      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.10);
+      const line=densifyLine772(roll.route770,.055);
+      roll.racingSpline770=line;
+      roll.globalOptimal770=line;
+      roll.racingLineMode772='mandatory-6-5-3-hard-spline-v7.99';
+      roll.insideTune789='road-follow-no-chord-v7.99';
+      roll.strictNoChord795=true;
+      roll.strictRoadFollow778=true;
+      roll.roadFollowMode778='route-center-hard';
+      roll.qaRollingMandatoryFive799=true;
+    }
+
+    const cliff=MAP_DEFINITIONS_770.cliff_hanger;
+    if(cliff){
+      const tail=[
+        [62.325,139.278],[65.0,141.0],[68.0,143.5],[71.0,146.0],
+        [74.0,149.0],[76.5,152.0],[79.0,155.0],[81.0,157.2]
+      ];
+      const base=cliff.route770.slice();
+      while(base.length && base[base.length-1][1]>136.0) base.pop();
+      cliff.route770=base.concat(tail);
+      cliff.widths770=new Array(Math.max(1,cliff.route770.length-1)).fill(6.8);
+      cliff.goal={x:81.0,y:157.2};
+      cliff.safeZones={
+        start:{x0:18.942,y0:30.005,x1:26.542,y1:37.605},
+        goal:{x0:77.1,y0:153.3,x1:84.9,y1:161.1}
+      };
+      cliff.strictRoadFollow778=true;
+      cliff.roadFollowMode778='route-center-hard';
+      const line=conservativeRacingLine778(cliff);
+      cliff.racingSpline770=line;
+      cliff.globalOptimal770=line;
+      cliff.racingLineMode772='lower-right-final-end-v7.99';
+      cliff.qaGoalLock799=true;
+    }
+  }
+  applyPatch799();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -12522,10 +12593,11 @@ function seasonCardHtml(p){
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
     if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
-    if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-66.2,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-142.0)>.08)issues.push("스카이클리프도착794");
-    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_798.png?v=798-clean-halo-close-pass"||!MAP_DEFINITIONS_770.industrial_zone?.rollingHaloRemoved798)issues.push("롤링스톤이미지798");
+    if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-81.0,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-157.2)>.10||!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock799)issues.push("스카이클리프도착799");
+    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_799.png?v=799-clean-no-halo-hard-five"||!MAP_DEFINITIONS_770.industrial_zone?.rollingHaloRemoved799)issues.push("롤링스톤이미지799");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
+    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingHardSpline799)issues.push("롤링스톤6-5-3강제799");
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
     if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
