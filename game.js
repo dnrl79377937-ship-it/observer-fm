@@ -7128,6 +7128,45 @@ applyMapSet776();
     // removes the old visible forward snap / micro-teleport beside rocks.
     if(m.id==='industrial_zone'&&m.rollingSmoothCollision7981){
       const attemptedX=p.x,attemptedY=p.y;
+      const stepX=attemptedX-oldX,stepY=attemptedY-oldY;
+      const stepLen=Math.hypot(stepX,stepY);
+
+      // v7.993: do not freeze at the boulder boundary.  When a physical step
+      // points into a rock, preserve forward motion by sliding tangentially
+      // around the visible stone instead of repeatedly clamping to one point.
+      if(rollingEntry7991!=null && stepLen>.001 && Array.isArray(m.rollingBoulders798)){
+        let hit=null,best=Infinity;
+        for(const b of m.rollingBoulders798){
+          const d=Math.hypot(oldX-b.x,oldY-b.y)-(b.r+Math.max(0,Number(m.boulderClearance793)||0));
+          if(d<best){best=d;hit=b;}
+        }
+        if(hit){
+          let rx=oldX-hit.x,ry=oldY-hit.y,rl=Math.hypot(rx,ry)||1;
+          rx/=rl; ry/=rl;
+          // two tangents; choose the one most aligned with the racer's attempted motion
+          let tx=-ry,ty=rx;
+          if(tx*stepX+ty*stepY<0){tx=-tx;ty=-ty;}
+          const slideScale=Math.max(.55,Math.min(1.05,stepLen));
+          const sx=oldX+tx*slideScale, sy=oldY+ty*slideScale;
+          if(!inForbidden96(sx,sy,0)){
+            p.x=sx; p.y=sy;
+            const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
+            const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,20);
+            p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+Math.max(.06,stepLen*1.15)));
+            p._splineFloor754=p._splineProg720;
+            p.desiredOffset=(p.desiredOffset||0)*.55; p.routeBand=0; p.openingLineBias=0;
+            if(p._raceState720){
+              p._raceState720.mode='REJOIN';
+              p._raceState720.action='none';
+              p._raceState720.actionUntil=0;
+              p._raceState720.rejoinUntil=gameNow()+180;
+            }
+            p._rollingSlideBlocks7992=(p._rollingSlideBlocks7992||0)+1;
+            return true;
+          }
+        }
+      }
+
       let t;
       if(rollingEntry7991!=null){
         t=rollingEntry7991;
@@ -7147,12 +7186,12 @@ applyMapSet776();
       const moved=Math.hypot(p.x-oldX,p.y-oldY);
       p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+Math.max(.05,moved*1.10)));
       p._splineFloor754=p._splineProg720;
-      p.desiredOffset=(p.desiredOffset||0)*.35; p.routeBand=0; p.openingLineBias=0;
+      p.desiredOffset=(p.desiredOffset||0)*.45; p.routeBand=0; p.openingLineBias=0;
       if(p._raceState720){
         p._raceState720.mode='REJOIN';
         p._raceState720.action='none';
         p._raceState720.actionUntil=0;
-        p._raceState720.rejoinUntil=gameNow()+420;
+        p._raceState720.rejoinUntil=gameNow()+180;
       }
       p._rollingSmoothBlocks7981=(p._rollingSmoothBlocks7981||0)+1;
       return true;
@@ -10381,7 +10420,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const gmx=(zones775.goal.x0+zones775.goal.x1)*.5,gmy=(zones775.goal.y0+zones775.goal.y1)*.5;
     const shared778=!!currentMap770().sharedGate778 || Math.hypot(smx-gmx,smy-gmy)<.75;
     if(shared778){
-      miniZone775(zones775.start,"#ff3b3b");
+      if(!currentMap770().hideRuntimeSharedGate7992) miniZone775(zones775.start,"#ff3b3b");
     }else{
       miniZone775(zones775.start,"#ffd92f");
       miniZone775(zones775.goal,"#39ff6a");
@@ -10458,7 +10497,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const gcx=(zones.goal.x0+zones.goal.x1)*.5,gcy=(zones.goal.y0+zones.goal.y1)*.5;
     const sameGate778=!!currentMap770().sharedGate778 || Math.hypot(scx-gcx,scy-gcy)<.75;
     if(sameGate778){
-      drawZone(zones.start,"#ff3b3b",false);
+      if(!currentMap770().hideRuntimeSharedGate7992) drawZone(zones.start,"#ff3b3b",false);
     }else{
       drawZone(zones.start,"#ffd92f");
       drawZone(zones.goal,"#39ff6a");
@@ -12686,6 +12725,81 @@ function seasonCardHtml(p){
     }
   }
   applyPatch7991();
+
+  // ============================================================
+  // v7.993 — ROLLING STONE NO-STALL BOULDER SLIDE + SINGLE RED GATE
+  // ============================================================
+  function applyPatch7992(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    // Keep one red gate only: artwork remains visible, duplicate runtime outline is hidden.
+    roll.hideRuntimeSharedGate7992=true;
+    roll.qaSingleRedGate7992=true;
+    // No-touch remains, but the collision response now slides along the boulder instead of freezing.
+    roll.rollingNoTouch7991=true;
+    roll.rollingSmoothCollision7981=true;
+    roll.rollingBoulderSlide7992=true;
+    roll.boulderClearance793=.42;
+    roll.qaNoRockStall7992=true;
+  }
+  applyPatch7992();
+
+
+  // ============================================================
+  // v7.993 — ROLLING STONE FLEXIBLE ROCK EDGES + TIGHTER ROAD ARC
+  // - keep the visible boulder core solid, but allow tiny edge/corner grazes,
+  // - reduce the no-touch envelope so racers do not overreact around rock tips,
+  // - tighten the 6->5->3 paved arc around the actual road center,
+  // - retain the physical 5-o'clock checkpoint and no-diagonal rule.
+  // ============================================================
+  function applyPatch7993(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+
+    // The previous v7.991 radii + clearance were deliberately strict.  For v7.993
+    // shrink only the collision envelope, not the artwork: the central stone body
+    // remains solid while the extreme visual rim can be grazed naturally.
+    roll.rollingBoulders798=[
+      {x:26.75,y:30.65,r:5.88},
+      {x:24.60,y:104.10,r:6.12},
+      {x:116.50,y:72.40,r:6.12}
+    ];
+    roll.boulderClearance793=.10;
+    roll.rollingEdgeGraze7993=true;
+    roll.rollingNoTouch7991=false;
+
+    // Re-author only the lower 6->5->3 leg closer to the paved centerline.
+    // The mandatory gate stays at the 5-o'clock road center; targets beyond it
+    // remain unavailable until the racer physically reaches that gate.
+    const r=roll.route770.slice();
+    const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.08&&Math.abs(q[1]-119.0)<.08);
+    const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.08&&Math.abs(q[1]-88.0)<.08);
+    if(a>=0&&b>a){
+      const tighterFive=[
+        [34.0,119.0],[40.0,121.5],[46.0,123.8],[52.0,125.7],[58.0,127.2],
+        [64.0,128.2],[70.0,128.8],[76.0,128.7],[82.0,128.0],[88.0,127.1],
+        [93.5,126.5],[98.5,126.0],[103.0,123.9],[107.0,120.9],[110.4,117.2],
+        [113.2,113.0],[115.5,108.4],[117.2,103.5],[118.4,98.6],[119.2,94.0],
+        [120.0,90.8],[121.0,88.0]
+      ];
+      roll.route770.splice(a,b-a+1,...tighterFive);
+    }
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(7.85);
+    roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.1};
+    roll.rollingHardSpline799=true;
+    roll.strictNoChord795=true;
+    roll.strictRoadFollow778=true;
+    roll.roadFollowMode778='route-center-hard';
+    roll.outerSoftLimit789=true;
+    const line=densifyLine772(roll.route770,.042);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='flex-rock-edge-tight-6-5-3-center-v7.993';
+    roll.insideTune789='tight-road-center-no-wide-excursion-v7.993';
+    roll.qaRollingFlexibleRockEdge7993=true;
+    roll.qaRollingTightFiveArc7993=true;
+  }
+  applyPatch7993();
 
   function v36SelfAudit(){
     const issues=[];
