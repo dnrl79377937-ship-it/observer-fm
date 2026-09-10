@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.00";
+  const BUILD_ID = "v8.01";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -13143,6 +13143,52 @@ function seasonCardHtml(p){
     roll.qaRollingRock2Smaller800=true;
   }
   applyPatch800();
+
+  // ============================================================
+  // v8.01 — ROLLING STONE TRUE VISUAL ROCK2 -40% + HARD 5-O'CLOCK CENTER ARC
+  // - use the new map asset where rock #2 is visually reduced by 40%,
+  // - keep the lower 6 -> 5 -> 3 section on dense center-road checkpoints,
+  // - forbid the old wide/exterior 5-o'clock corner line.
+  // ============================================================
+  function applyPatch801(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.image='map_rolling_stone_801.png?v=801-rock2-visual40-five-center';
+    roll.rollingRock2Scale800=.60;
+    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]) roll.rollingBoulders798[1].r=3.672;
+    roll.rollingRock2CoreRadius7999=3.50;
+
+    // Dense, road-center-only progression across the entire lower bend.
+    // A racer cannot jump from 6 directly toward 3 or swing around the outer coast.
+    roll.rollingFiveStage7994=[
+      {x:55.0,y:126.0,r:3.5},
+      {x:64.0,y:128.1,r:3.4},
+      {x:74.0,y:128.1,r:3.4},
+      {x:84.0,y:127.5,r:3.4},
+      {x:93.0,y:126.2,r:3.4},
+      {x:99.0,y:125.0,r:3.2},
+      {x:105.0,y:122.0,r:3.2},
+      {x:110.0,y:118.8,r:3.2},
+      {x:114.0,y:115.3,r:3.2},
+      {x:117.0,y:111.8,r:3.2},
+      {x:119.5,y:107.5,r:3.2}
+    ];
+    roll.rollingMandatoryFiveGate7991={x:99.0,y:125.0,r:3.4};
+    roll.rollingFiveStageEnterY7994=108.0;
+    roll.rollingFiveStageExitX7994=121.0;
+    roll.rollingFiveCenterHard801=true;
+    roll.rollingOuterFiveBlocked801=true;
+    roll.rollingCenterRoadOnly800=true;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(6.0);
+    const line=densifyLine772(roll.route770,.026);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='hard-five-center-arc-rock2-visual40-v8.01';
+    roll.qaRolling801=true;
+  }
+  applyPatch801();
 
   function v36SelfAudit(){
     const issues=[];
