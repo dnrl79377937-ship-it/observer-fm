@@ -22,12 +22,15 @@
   const mapSelectIcon774 = document.getElementById("mapSelectIcon774");
 
   let MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 130;
+  const OBSERVER_COUNT = 130; // max/default observer pool
+  function observerCountForMap791(m=currentMap770()){
+    return (m?.id==="double_hairpin"||m?.id==="skyway")?100:OBSERVER_COUNT;
+  }
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.90";
+  const BUILD_ID = "v7.91";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -311,7 +314,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const ls=m.logicalSize||{w:172,h:178};
     MAP_W=Number(ls.w)||172;MAP_H=Number(ls.h)||178;
     MAP_IMAGE_SCALE_X=sz.w/MAP_W;MAP_IMAGE_SCALE_Y=sz.h/MAP_H;
-    if(m.image && !map.src.endsWith(m.image.split("?")[0]))map.src=m.image;
+    map._mapId791=m.id||"";
+    map._fallback791=m.imageFallback791||"";
+    if(m.image){
+      const wanted=m.image.split("?")[0];
+      let current="";
+      try{current=(new URL(map.src||"",document.baseURI)).pathname.split("/").pop()||"";}catch(e){}
+      if(current!==wanted)map.src=m.image;
+    }
   }
   applyMapImage770();
 
@@ -360,7 +370,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   };
 
   function engineCoreRules(){
-    return {build:BUILD_ID,observerCount:OBSERVER_COUNT,playerCount:8,
+    return {build:BUILD_ID,observerCount:observerCountForMap791(),observerCountMax:OBSERVER_COUNT,playerCount:8,
       playerHitRadius:unitChassis764().hitRadius,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
@@ -369,7 +379,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
-      mapEngine:"Active 9 Map Geometry · cleaned v7.90",
+      mapEngine:"Active 9 Map Geometry · v7.91",
       currentMap770:{id:currentMap770().id,name:currentMap770().name,en:currentMap770().en},
       mapPoolSize770:MAP_POOL_770.length,
       mapGeometryReady770:MAP_POOL_770.filter(m=>m.geometryReady).length,
@@ -876,7 +886,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const baseSpeed=avgPlayerSpeed*OBS_SPEED_RATIO;
     observerDensityZones=makeObserverDensityZones();
 
-    for(let i=0;i<OBSERVER_COUNT;i++){
+    for(let i=0;i<observerCountForMap791();i++){
       const spawn=densitySpawnPoint();
       const o={
         id:i,
@@ -1145,6 +1155,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function currentForbidden770(){return currentMap770().forbiddenZones770||[];}
 
   function inForbidden96(x,y,pad=FORBIDDEN96_PAD){
+    const m=currentMap770();
+    // v7.91 Rolling Stone: the boulder edge itself is already too close.
+    // Keep the unit center outside a small safety shell around all three rocks.
+    if(m?.boulderClearance791)pad=Math.max(pad,Number(m.boulderClearance791)||0);
     for(const z of currentForbidden770()){
       if(x>=z.x1-pad && x<=z.x2+pad && y>=z.y1-pad && y<=z.y2+pad) return true;
     }
@@ -6859,13 +6873,17 @@ applyMapSet776();
   function applyPatch7899(){
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
-      desert.image="map_desert_oasis_899.png?v=7899-clean-start-art";
+      desert.image="map_desert_oasis_899.png?v=791-clean-start-art";
+      desert.imageFallback791="map_desert_oasis_776.png?v=791-fallback";
       desert.startArtifactClean899=true;
+      desert.mapLoadSafe791=true;
     }
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
-      cliff.image="map_cliff_hanger_899.png?v=7899-clean-gate-art";
+      cliff.image="map_cliff_hanger_899.png?v=791-clean-gate-art";
+      cliff.imageFallback791="map_cliff_hanger_776.png?v=791-fallback";
       cliff.startArtifactClean899=true;
+      cliff.mapLoadSafe791=true;
     }
     // Black Hole keeps its current gameplay route; only artwork cleanup metadata.
     const black=MAP_DEFINITIONS_770.double_hairpin;
@@ -6873,7 +6891,49 @@ applyMapSet776();
   }
   applyPatch7899();
 
+  // ============================================================
+  // v7.91 — MAP LOAD / OBSERVER BALANCE / ROLLING STONE GAP FIX
+  // ============================================================
+  function applyPatch791(){
+    const desert=MAP_DEFINITIONS_770.desert_oasis;
+    if(desert){
+      desert.mapLoadSafe791=true;
+      desert.imageFallback791="map_desert_oasis_776.png?v=791-fallback";
+    }
+    const cliff=MAP_DEFINITIONS_770.cliff_hanger;
+    if(cliff){
+      cliff.mapLoadSafe791=true;
+      cliff.imageFallback791="map_cliff_hanger_776.png?v=791-fallback";
+    }
 
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(roll){
+      // Route follows only the remaining gray-road gap around each boulder.
+      // It never crosses the padded obstacle rectangles.
+      roll.route770=[[71.099,18.409],[60,18.6],[49,18.8],[38.1,20.8],[32.5,22.2],[28.8,23.0],[24.5,23.4],[20.0,24.0],[16.2,24.8],[13.1,24.9],[13.0,27.2],[11.8,31.5],[11.5,36.0],[12.5,40.8],[15.0,45.0],[19.0,48.5],[24.5,51.0],[30.0,54.0],[36.0,58.8],[41.5,64.0],[44.2,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[30.5,94.0],[30.3,99.0],[30.0,104.0],[30.5,109.5],[32.0,114.5],[35.0,118.8],[41.5,124.2],[52.5,127.3],[64,128.1],[76,128.1],[88,127.2],[99,125.0],[108,120.5],[116,113.5],[121,105],[124,96],[126.0,91.0],[127.0,86.0],[127.0,81.0],[126.5,76.0],[125.0,71.0],[122.0,66.0],[117.0,60.0],[113.0,55.0],[112.5,49.0],[114.0,43.5],[117.0,38.0],[120.2,31.0],[118.0,26.0],[113.5,22.5],[107,19.8],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
+      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(9.2);
+      roll.forbiddenZones770=[
+        {x1:14.8,y1:26.6,x2:28.6,y2:40.7},
+        {x1:12.5,y1:99.8,x2:27.4,y2:115.5},
+        {x1:107.2,y1:72.8,x2:122.7,y2:88.8}
+      ];
+      roll.hardForbidden780=true;
+      roll.boulderSolid898=true;
+      roll.boulderInsideCutDisabled898=true;
+      roll.boulderBypass789=true;
+      roll.boulderClearance791=1.4;
+      roll.boulderGapCenter791=true;
+      roll.strictRoadFollow778=true;
+      roll.roadFollowMode778="route-center-hard";
+      roll.outerSoftLimit789=true;
+      roll.insideTune789="disabled-boulder-gap-v7.91";
+      const line=densifyLine772(roll.route770,.30);
+      roll.racingSpline770=line;
+      roll.globalOptimal770=line;
+      roll.racingLineMode772="gray-road-gap-center-v7.91";
+    }
+  }
+  applyPatch791();
 
 
   function enforceHardForbidden780(p,oldX,oldY){
@@ -7292,6 +7352,9 @@ applyMapSet776();
       const localHalf789=Math.max(.55,(widths[Math.max(0,Math.min(widths.length-1,p.seg|0))]||8)*.5);
       off+=turn789.side*Math.min(.20,localHalf789*.032)*(.35+turn789.power*.65);
     }
+    // v7.91 Rolling Stone uses a prevalidated gap-center spline. Do not let a
+    // tiny personality/inside offset push the unit back toward a boulder.
+    if(currentMap770().boulderGapCenter791)off=0;
 
     let x=q.x+nx*off,y=q.y+ny*off;
     if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
@@ -9613,7 +9676,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(!rc||!frame) return;
     const rctx=rc.getContext("2d");
     rctx.clearRect(0,0,rc.width,rc.height);
-    if(map.complete) rctx.drawImage(map,0,0,rc.width,rc.height);
+    if(map.complete&&map.naturalWidth>0) rctx.drawImage(map,0,0,rc.width,rc.height);
     const sx=rc.width/MAP_W, sy=rc.height/MAP_H;
     const focus=replayFocusId>=0?replayFocusId:frame.leader;
     for(let i=0;i<frame.p.length;i++){
@@ -10008,7 +10071,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(!force&&now-lastMiniMapRender<miniInterval)return;
     lastMiniMapRender=now;
     const mc=document.getElementById("miniMap");
-    if(!mc||!map.complete)return;
+    if(!mc||!map.complete||map.naturalWidth<=0)return;
     const mx=mc.getContext("2d"),W=mc.width,H=mc.height;
     mx.clearRect(0,0,W,H);
     const MINI_CROP=miniCrop770();
@@ -10115,7 +10178,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function render(ts){
     const W=canvas.width,H=canvas.height;
     ctx.clearRect(0,0,W,H);
-    if(!map.complete) return;
+    if(!map.complete||map.naturalWidth<=0) return;
 
     const view=getView();
     ctx.imageSmoothingEnabled=true;
@@ -10908,7 +10971,7 @@ function seasonCardHtml(p){
     if(!trace) return;
 
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    if(map.complete){
+    if(map.complete&&map.naturalWidth>0){
       ctx.globalAlpha=.72;
       ctx.drawImage(map,0,0,canvas.width,canvas.height);
       ctx.globalAlpha=1;
@@ -11175,7 +11238,7 @@ function seasonCardHtml(p){
     const legend=document.getElementById("routeLegend");
     const c=prepChart(canvas); if(!c) return;
     const {ctx,w,h}=c;
-    if(map.complete){
+    if(map.complete&&map.naturalWidth>0){
       ctx.globalAlpha=.66;ctx.drawImage(map,0,0,w,h);ctx.globalAlpha=1;
     }
     const rd=roundHistory.find(r=>r.round===roundNum);
@@ -11801,7 +11864,9 @@ function seasonCardHtml(p){
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
-    if(OBSERVER_COUNT!==130)issues.push("옵저버130");
+    if(OBSERVER_COUNT!==130)issues.push("옵저버기본130");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==100||observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==100)issues.push("블랙홀스페이스옵저버100");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==130)issues.push("기타맵옵저버130");
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
@@ -11819,12 +11884,14 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.industrial_zone?.hardForbidden780||(MAP_DEFINITIONS_770.industrial_zone.forbiddenZones770||[]).length!==3)issues.push("롤링스톤바위780");
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderBypass789)issues.push("롤링스톤우회789");
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderSolid898||!MAP_DEFINITIONS_770.industrial_zone?.boulderInsideCutDisabled898)issues.push("롤링스톤바위고체898");
+    {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],line=r?.racingSpline770||[];
+      if(c<1.35||!r?.boulderGapCenter791||line.some(q=>z.some(a=>q[0]>=a.x1-c&&q[0]<=a.x2+c&&q[1]>=a.y1-c&&q[1]<=a.y2+c)))issues.push("롤링스톤돌간격791");}
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
     if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
     if(!["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록777");
     if(MAP_POOL_770.some(m=>!m.logicalSize||!m.miniCrop||!m.route770?.length))issues.push("맵geometry777");
-    if(MAP_POOL_770.some(m=>!m.outerSoftLimit789||!m.insideTune789))issues.push("전역인코스789");
+    if(MAP_POOL_770.some(m=>(m.id!=="double_hairpin"&&!m.outerSoftLimit789)||!m.insideTune789))issues.push("전역인코스789");
     if(!MAP_DEFINITIONS_770.skyway?.spaceRoadRowsAdded788||MAP_DEFINITIONS_770.skyway.spaceRoadRowsAdded788!==2)issues.push("스페이스폭788");
     if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.start?.x||0)-20.007,(MAP_DEFINITIONS_770.double_hairpin?.start?.y||0)-149.930)>.05)issues.push("블랙홀시작7892");
     if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.goal?.x||0)-78.738,(MAP_DEFINITIONS_770.double_hairpin?.goal?.y||0)-95.661)>.05)issues.push("블랙홀도착7892");
@@ -11853,8 +11920,10 @@ function seasonCardHtml(p){
     getRules:()=>clonePlain(engineCoreRules()),
     getLastResult:()=>lastMasterResult?clonePlain(lastMasterResult):null,
     getCurrentState:()=>({build:BUILD_ID,running,paused,currentRound,simClock,
-      mapId:currentMap770().id,mapName:currentMap770().name,
+      mapId:currentMap770().id,mapName:currentMap770().name,observerCount:observers.length,
       teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},finished:players.filter(p=>p.done).length}),
+    getMapImageStatus791:()=>({complete:!!map.complete,naturalWidth:map.naturalWidth||0,src:map.src||"",fallback:map._fallback791||""}),
+    testLateMapLoadSafety791:()=>{const before={running,round:currentRound,mapId:currentMap770().id};map.dispatchEvent(new Event("load"));return {before,after:{running,round:currentRound,mapId:currentMap770().id}};},
     startCurrent:start,resetMatch:reset,
     runStatLab739,
     getStatProfiles739:()=>players.map(p=>({name:p.name,stats:{...p.stats},skill:{...driverSkill739(p)}})),
@@ -11924,21 +11993,33 @@ function seasonCardHtml(p){
       backtrackPrevented:p._backtrackPrevented754||0,
       topOffsetFlipPrevented:p._topOffsetFlipPrevented754||0,
       splineRepairs770:p._splineRepair770||0,stallProofRecoveries784:p._stallProofRecoveries784||0,
-      outerSoftRecoveries789:p._outerSoftRecoveries789||0,
+      outerSoftRecoveries789:p._outerSoftRecoveries789||0,hardObstacleBlocks780:p._hardObstacleBlocks780||0,
       events:(p._teleportEvents754||[]).map(x=>({...x})),
       splineProgress:p._splineProg720||0,mode:p._raceState720?.mode||"NORMAL",
       action:p._raceState720?.action||"none",x:p.x,y:p.y
     }))
   };
 
+  // v7.91 MAP LOAD SAFETY:
+  // Selecting a map already resets the round synchronously.  A late PNG load must
+  // never reset an already-started race (large Desert/Sky Cliff assets exposed it).
   map.addEventListener("load",()=>{
-    reset();
+    if(!players.length)reset();
     syncMapSelect774();
     lastMiniMapRender=0;
     renderMiniMap(true);
+    if(players.length)render(0);
   });
-  if(map.complete){
-    reset();
+  map.addEventListener("error",()=>{
+    const fb=map._fallback791||"";
+    if(!fb)return;
+    const fbFile=fb.split("?")[0];
+    let current="";
+    try{current=(new URL(map.src||"",document.baseURI)).pathname.split("/").pop()||"";}catch(e){}
+    if(current!==fbFile)map.src=fb;
+  });
+  if(map.complete&&map.naturalWidth>0){
+    if(!players.length)reset();
     syncMapSelect774();
     lastMiniMapRender=0;
     renderMiniMap(true);
