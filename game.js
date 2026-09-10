@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.997";
+  const BUILD_ID = "v7.999";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1173,7 +1173,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         // can be grazed without entering the collision/slide loop.  The lower
         // outside shortcut is still blocked independently by rollingNoGoZones793.
         const edgeFlex=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(rockPad,.03):rockPad;
-        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
         if(Math.hypot(x-b.x,y-b.y)<=rr+edgeFlex)return true;
       }
     }else{
@@ -6430,7 +6430,7 @@ applyMapSet776();
     if(m.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
       for(let bi=0;bi<m.rollingBoulders798.length;bi++){
         const b=m.rollingBoulders798[bi];
-        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
         const pp=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(Math.max(0,pad),.03):Math.max(0,pad);
         if(Math.hypot(x-b.x,y-b.y)<=rr+pp)return true;
       }
@@ -6510,10 +6510,18 @@ applyMapSet776();
       const stages=m.rollingFiveStage7994;
       if(p.y>=m.rollingFiveStageEnterY7994 && p.x<=m.rollingFiveStageExitX7994){
         let st=Number.isFinite(p._rollingFiveStage7994)?p._rollingFiveStage7994:0;
-        while(st<stages.length-1 && Math.hypot(p.x-stages[st].x,p.y-stages[st].y)<=stages[st].r) st++;
+        // v7.998: advance every reached stage, INCLUDING the final 5-o'clock gate.
+        // v7.994-v7.997 stopped advancing at stages.length-1, so a racer that
+        // physically reached the final gate kept receiving the same target forever.
+        while(st<stages.length && Math.hypot(p.x-stages[st].x,p.y-stages[st].y)<=stages[st].r) st++;
         p._rollingFiveStage7994=st;
-        const q=stages[Math.min(st,stages.length-1)];
-        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-five-stage7994'};
+        if(st>=stages.length){
+          p._rollingFivePassed7991=true;
+          p._rollingFiveReleased7998=true;
+        }else{
+          const q=stages[st];
+          return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-five-stage7994'};
+        }
       }
     }
 
@@ -7127,7 +7135,7 @@ applyMapSet776();
     const n=Math.max(8,Math.ceil(dist/.10));
     const clearance=Math.max(0,Number(m.boulderClearance793)||0);
     const inside=(x,y)=>m.rollingBoulders798.some((b,bi)=>{
-      const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+      const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
       const cc=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(clearance,.03):clearance;
       return Math.hypot(x-b.x,y-b.y)<=rr+cc;
     });
@@ -7167,7 +7175,7 @@ applyMapSet776();
         let hit=null,hitIndex=-1,best=Infinity;
         for(let bi=0;bi<m.rollingBoulders798.length;bi++){
           const b=m.rollingBoulders798[bi];
-          const effR=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+          const effR=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
           const effC=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(Math.max(0,Number(m.boulderClearance793)||0),.03):Math.max(0,Number(m.boulderClearance793)||0);
           const d=Math.hypot(oldX-b.x,oldY-b.y)-(effR+effC);
           if(d<best){best=d;hit=b;hitIndex=bi;}
@@ -12998,6 +13006,59 @@ function seasonCardHtml(p){
     roll.qaRollingRock2LeftCorridor7997=true;
   }
   applyPatch7997();
+
+  // ============================================================
+  // v7.998 — ROLLING STONE 5-O'CLOCK FINAL-STAGE RELEASE FIX
+  // - reaching the final staged 5-o'clock waypoint now marks the gate passed,
+  // - prevents the old infinite same-target loop / apparent stop at 5 o'clock,
+  // - preserves rock #2 left corridor and mandatory 6->5->3 route.
+  // ============================================================
+  function applyPatch7998(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.rollingFiveFinalRelease7998=true;
+    roll.qaRollingFiveNoStall7998=true;
+    roll.racingLineMode772='rock2-left-corridor-five-release-v7.998';
+  }
+  applyPatch7998();
+
+  // ============================================================
+  // v7.999 — ROLLING STONE ROCK #2 FIRST-ROCK-STYLE SMOOTH PASS
+  // - remove the overlapping lower/right hard box that could deadlock the racer,
+  // - use a nearly full-size solid core so only the extreme visible rim is grazeable,
+  // - keep a far-right exterior guard without touching the legal tangent corridor,
+  // - reuse the same dual-tangent sliding behavior as rock #1.
+  // ============================================================
+  function applyPatch7999(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+
+    // Visual radius is 6.12.  A 5.82 physical core leaves only ~0.30 world units
+    // of forgiving rim, so racers may shave the tip but cannot drive through the body.
+    roll.rollingRock2CoreRadius7999=5.82;
+    roll.rollingRock2EdgeFlex7996=true;
+    roll.boulderClearance793=.08;
+
+    // Do NOT place a blocker under the stone itself.  The solid circular core handles
+    // the body.  Keep only a far-right exterior guard, separated from the collision
+    // tangent so the lower-right corner cannot become a zero-motion trap.
+    roll.rollingNoGoZones793=[
+      {x1:35.0,y1:98.0,x2:40.2,y2:111.8,kind:'rock2-far-right-exterior7999'},
+      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
+    ];
+    roll.rollingRock2LowerBlock7994=false;
+    roll.rollingRock2LeftCorridor7997=true;
+    roll.rollingRock2NoStall7995=true;
+    roll.rollingDualTangentEscape7995=true;
+    roll.rollingSmoothCollision7981=true;
+    roll.rollingNoTouch7991=false;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.rollingHardSpline799=true;
+    roll.racingLineMode772='rock2-smooth-solid-core-flex-rim-v7.999';
+    roll.qaRollingRock2Smooth7999=true;
+  }
+  applyPatch7999();
 
   function v36SelfAudit(){
     const issues=[];
