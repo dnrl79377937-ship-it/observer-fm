@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.999";
+  const BUILD_ID = "v8.00";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6541,6 +6541,19 @@ applyMapSet776();
       }
     }
 
+    // v8.00 Rolling Stone: keep every steering mode inside the central road corridor.
+    // The authoritative spline already contains the legal narrow bypass around each
+    // boulder, so NORMAL / EVADE / REJOIN all use that same road-shaped path instead
+    // of drifting toward the wide outer shoulder.
+    if(m.id==='industrial_zone'&&m.rollingCenterRoadOnly800){
+      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
+      const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+      const nearRock=Array.isArray(m.rollingBoulders798)&&m.rollingBoulders798.some(b=>Math.hypot(p.x-b.x,p.y-b.y)<=b.r+7.0);
+      const look=nearRock?(mode==='EVADE'?.62:.82):(mode==='NORMAL'?1.00:.78);
+      const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
+      return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-center-road800'};
+    }
+
     // v7.99 Rolling Stone: NORMAL driving must follow the authoritative spline
     // with a short look-ahead. This prevents the lower 6->3 leg from sighting
     // across the bend and skipping the mandatory 5-o'clock road.
@@ -6611,6 +6624,21 @@ applyMapSet776();
     // a state change. Avoidance can continue through the edge and normal spline
     // recovery will happen from ordinary race-state logic, without a freeze loop.
     if(m.id==='star_fish')return false;
+    // v8.00 Rolling Stone: unlike the other maps, do not permit a wide exterior skim.
+    // Stay close to the route center, with a little extra room only while passing a boulder.
+    if(m.id==='industrial_zone'&&m.rollingCenterRoadOnly800){
+      const info=mapRouteInfo789(m,p.x,p.y);
+      const nearRock=Array.isArray(m.rollingBoulders798)&&m.rollingBoulders798.some(b=>Math.hypot(p.x-b.x,p.y-b.y)<=b.r+7.0);
+      const cap=nearRock?Math.min(3.6,(info?.half||8)*.48):Math.min(2.15,(info?.half||8)*.28);
+      if(info&&Math.abs(info.lat)<=cap)return false;
+      const st=ensureRaceState720(p,now);
+      if(st.mode!=='REJOIN'){
+        st.mode='REJOIN';st.since=now;st.target=null;st.action='none';st.actionUntil=0;
+        st.rejoinUntil=now+420+driverExecution720(p).recovery*180;
+      }
+      p._rollingCenterRecoveries800=(p._rollingCenterRecoveries800||0)+1;
+      return true;
+    }
     // One road-edge line plus a small exterior skim remains freely traversable.
     // Only a genuinely large exterior excursion requests a natural REJOIN.
     if(courseContainsPoint(p.x,p.y,1.20))return false;
@@ -13060,6 +13088,62 @@ function seasonCardHtml(p){
   }
   applyPatch7999();
 
+  // ============================================================
+  // v8.00 — ROLLING STONE CENTRAL-ROAD ONLY + ROCK #2 40% SMALLER
+  // - outside/wide routes are no longer valid AI targets,
+  // - the normal road center is authoritative everywhere,
+  // - boulder sections still use the narrow bypass already authored in route770,
+  // - rock #2 physical size is reduced by 40% (60% of the previous radius).
+  // ============================================================
+  function applyPatch800(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.rollingCenterRoadOnly800=true;
+    roll.rollingOuterRoutesDisabled800=true;
+    roll.rollingBoulderNarrowBypass800=true;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.rollingHardSpline799=true;
+    roll.roadFollowMode778='route-center-hard';
+    roll.lockOptimalExecution784=true;
+    roll.outerSoftLimit789=true;
+    roll.insideTune789='center-road-only-except-boulder-bypass-v8.00';
+
+    // Rock #2: 40% smaller than v7.999. The extreme rim remains forgiving,
+    // while the shrunken core stays solid and the authored bypass runs beside it.
+    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
+      roll.rollingBoulders798[1].r=3.672;
+    }
+    roll.rollingRock2CoreRadius7999=3.50;
+    roll.boulderClearance793=.06;
+    roll.rollingRock2Scale800=.60;
+
+    // Keep only the remote rock #3 guard; central-road steering now prevents the
+    // old rock #2 outer excursion without a blocker that can create a deadlock.
+    roll.rollingNoGoZones793=[
+      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
+    ];
+
+    // Tighten the lower 6 -> 5 -> 3 stages around the actual road center.
+    roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.2};
+    roll.rollingFiveStage7994=[
+      {x:55.0,y:126.0,r:4.4},
+      {x:77.0,y:128.6,r:4.4},
+      {x:98.5,y:126.0,r:4.2}
+    ];
+    roll.rollingFiveStageEnterY7994=114.5;
+    roll.rollingFiveStageExitX7994=105.0;
+
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(6.8);
+    const line=densifyLine772(roll.route770,.032);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='central-road-only-boulder-bypass-v8.00';
+    roll.qaRollingCenterRoad800=true;
+    roll.qaRollingRock2Smaller800=true;
+  }
+  applyPatch800();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -13093,7 +13177,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderSolid898||!MAP_DEFINITIONS_770.industrial_zone?.boulderInsideCutDisabled898)issues.push("롤링스톤바위고체898");
     {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance793 ?? r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],ng=r?.rollingNoGoZones793||[],line=r?.racingSpline770||[];
       if(c>.30||!r?.boulderGapCenter791||!Array.isArray(r?.rollingBoulders798)||r.rollingBoulders798.length!==3)issues.push("롤링스톤근접바위798");
-      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length!==2||Math.abs((r?.boulderVisualScale793||0)-.85)>.001||!r?.rollingCurveNoCut794||!r?.rollingClosePass798||!r?.qaRollingFullAudit798)issues.push("롤링스톤경로798");
+      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length<1||Math.abs((r?.boulderVisualScale793||0)-.85)>.001||!r?.rollingCurveNoCut794||!r?.rollingClosePass798||!r?.qaRollingFullAudit798)issues.push("롤링스톤경로798");
       if(line.some(q=>ng.some(a=>q[0]>=a.x1&&q[0]<=a.x2&&q[1]>=a.y1&&q[1]<=a.y2)))issues.push("롤링스톤우측금지793");}
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
@@ -13125,6 +13209,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingHardSpline799)issues.push("롤링스톤6-5-3강제799");
+    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingCenterRoad800||!MAP_DEFINITIONS_770.industrial_zone?.rollingCenterRoadOnly800||Math.abs((MAP_DEFINITIONS_770.industrial_zone?.rollingBoulders798?.[1]?.r||0)-3.672)>.01)issues.push("롤링스톤중앙길-바위2축소800");
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
     if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
