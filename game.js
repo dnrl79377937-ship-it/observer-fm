@@ -24,13 +24,15 @@
   let MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 130; // max/default observer pool
   function observerCountForMap791(m=currentMap770()){
-    return (m?.id==="double_hairpin"||m?.id==="skyway")?100:OBSERVER_COUNT;
+    if(m?.id==="double_hairpin") return 70;
+    if(m?.id==="skyway") return 100;
+    return OBSERVER_COUNT;
   }
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.96";
+  const BUILD_ID = "v7.982";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1164,8 +1166,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // racers cannot use the forbidden right/outside passage around rocks 2/3.
     const rockPad=m?.boulderClearance793!=null?Math.max(pad,Number(m.boulderClearance793)||0):
       (m?.boulderClearance791?Math.max(pad,Number(m.boulderClearance791)||0):pad);
-    for(const z of currentForbidden770()){
-      if(x>=z.x1-rockPad && x<=z.x2+rockPad && y>=z.y1-rockPad && y<=z.y2+rockPad) return true;
+    if(m?.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
+      for(const b of m.rollingBoulders798){
+        if(Math.hypot(x-b.x,y-b.y)<=b.r+rockPad)return true;
+      }
+    }else{
+      for(const z of currentForbidden770()){
+        if(x>=z.x1-rockPad && x<=z.x2+rockPad && y>=z.y1-rockPad && y<=z.y2+rockPad) return true;
+      }
     }
     const noGo=m?.rollingNoGoZones793||[];
     const noGoPad=Math.max(.08,Math.min(.28,pad));
@@ -6410,6 +6418,18 @@ applyMapSet776();
 
   function mapForbiddenPoint789(m,x,y,pad=.10){
     if(!m?.hardForbidden780)return false;
+    // v7.98 Rolling Stone: use true circular boulder bodies instead of oversized
+    // axis-aligned rectangles. This lets racers pass naturally right up to the
+    // visible rock while still treating the rock itself as solid.
+    if(m.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
+      for(const b of m.rollingBoulders798){
+        if(Math.hypot(x-b.x,y-b.y)<=b.r+Math.max(0,pad))return true;
+      }
+      for(const z of (m.rollingNoGoZones793||[])){
+        if(x>=z.x1-pad&&x<=z.x2+pad&&y>=z.y1-pad&&y<=z.y2+pad)return true;
+      }
+      return false;
+    }
     for(const z of (m.forbiddenZones770||[])){
       if(x>=z.x1-pad&&x<=z.x2+pad&&y>=z.y1-pad&&y<=z.y2+pad)return true;
     }
@@ -6479,7 +6499,9 @@ applyMapSet776();
       const forbiddenChord=mapForbiddenPoint789(m,t.x,t.y,.04);
       if(!sameLeg || forbiddenChord){
         const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-        const look=mode==='EVADE'?2.20:2.70;
+        const look=m.id==='industrial_zone'&&m.rollingShortRejoin7981
+          ? (mode==='EVADE'?.78:1.05)
+          : (mode==='EVADE'?2.20:2.70);
         const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
         p._noChordGuards795=(p._noChordGuards795||0)+1;
         return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-no-chord795'};
@@ -7048,9 +7070,38 @@ applyMapSet776();
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
-    // v7.93 Rolling Stone: never sit in the old rollback loop beside a boulder.
-    // Preserve the travelled step as monotonic spline progress and place the unit
-    // back on the legal left-gap/road-center route at the same forward distance.
+    // v7.981 Rolling Stone: obstacle contact must never relocate the racer.
+    // Clamp only the attempted physical step to the last safe point, then let the
+    // steering/rejoin logic route around the boulder on subsequent frames. This
+    // removes the old visible forward snap / micro-teleport beside rocks.
+    if(m.id==='industrial_zone'&&m.rollingSmoothCollision7981){
+      const attemptedX=p.x,attemptedY=p.y;
+      let lo=0,hi=1;
+      for(let k=0;k<12;k++){
+        const mid=(lo+hi)*.5;
+        const x=oldX+(attemptedX-oldX)*mid,y=oldY+(attemptedY-oldY)*mid;
+        if(inForbidden96(x,y,0))hi=mid;else lo=mid;
+      }
+      const t=Math.max(0,lo-.015);
+      p.x=oldX+(attemptedX-oldX)*t;
+      p.y=oldY+(attemptedY-oldY)*t;
+      const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
+      const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,20);
+      const moved=Math.hypot(p.x-oldX,p.y-oldY);
+      p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+Math.max(.05,moved*1.10)));
+      p._splineFloor754=p._splineProg720;
+      p.desiredOffset=(p.desiredOffset||0)*.35; p.routeBand=0; p.openingLineBias=0;
+      if(p._raceState720){
+        p._raceState720.mode='REJOIN';
+        p._raceState720.action='none';
+        p._raceState720.actionUntil=0;
+        p._raceState720.rejoinUntil=gameNow()+420;
+      }
+      p._rollingSmoothBlocks7981=(p._rollingSmoothBlocks7981||0)+1;
+      return true;
+    }
+
+    // Legacy Rolling Stone guide retained as fallback for old map definitions.
     if(m.rollingNoStop793){
       const moved=Math.max(.02,Math.hypot(p.x-oldX,p.y-oldY));
       let prog=Math.max(
@@ -7448,7 +7499,7 @@ applyMapSet776();
     const miss=(1-line739)*.58;
     const variance739=(1-ex.consistency)*.13;
     const stable=.88+variance739*Math.sin(progress*.035+(p.index||0)*.73);
-    const maxExecOff778=currentMap770().strictRoadFollow778?0:.70;
+    const maxExecOff778=currentMap770().blackHoleSmartSpiral797 ? .46 : (currentMap770().strictRoadFollow778?0:.70);
     let off=wideSide*Math.min(maxExecOff778,Math.max(0,miss*stable));
 
     // v7.31 local smoothing only:
@@ -12226,18 +12277,204 @@ function seasonCardHtml(p){
   }
   applyPatch7943();
 
+  // ============================================================
+  // v7.97 — BLACK HOLE SMART SPIRAL AI + OBSERVER 70
+  // Keep adjacent spiral rings protected, but remove the old absolute
+  // centerline lock so racers can use small legal lane offsets and real
+  // observer-avoidance choices inside the current gray-road ribbon.
+  // ============================================================
+  function applyPatch797(){
+    const black=MAP_DEFINITIONS_770.double_hairpin;
+    if(!black)return;
+    black.blackHoleSmartSpiral797=true;
+    black.blackHoleExactCenter897=false;
+    black.blackHoleHardCenter896=false;
+    black.blackHoleCenterOnly895=true;
+    black.strictNoChord795=true;
+    black.strictRoadFollow778=true;
+    black.roadFollowMode778='route-center-hard';
+    black.qaSmartSpiral797=true;
+    black.observerCount797=70;
+  }
+  applyPatch797();
+
+  // ============================================================
+  // v7.98 — ROLLING STONE FULL ROUTE / BOULDER RE-AUDIT
+  // - remove the remaining circular halo-style rock artwork,
+  // - replace oversized rectangular collision envelopes with tight circular bodies,
+  // - delay avoidance until racers are close to each visible boulder,
+  // - keep rocks 2/3 left-gap only, no stall, and no 5->3 diagonal chord.
+  // ============================================================
+  function applyPatch798(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.image='map_rolling_stone_798.png?v=798-clean-halo-close-pass';
+    roll.rollingBoulders798=[
+      {x:26.75,y:30.65,r:5.35},
+      {x:24.60,y:104.10,r:5.75},
+      {x:116.50,y:72.40,r:5.75}
+    ];
+    // Route approaches each rock first, then makes the minimum legal detour.
+    roll.route770=[[71.099,18.409],[60.0,18.55],[49.0,18.8],[38.2,20.5],[34.0,22.0],[31.6,23.4],[29.8,24.1],[25.0,24.3],[22.0,25.8],[20.6,28.7],[20.5,32.0],[21.8,35.2],[24.8,37.0],[29.5,41.8],[34.7,49.5],[40.5,57.5],[44.3,64.0],[45.0,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[30.0,94.0],[28.6,96.8],[24.6,97.9],[20.3,99.2],[18.3,102.5],[18.4,106.3],[20.6,109.3],[24.0,111.0],[28.6,114.0],[34.0,119.0],[42.0,124.8],[52.0,129.5],[62.0,132.5],[72.0,134.0],[82.0,134.2],[92.0,133.0],[101.0,130.0],[109.0,125.2],[115.0,119.0],[119.5,111.8],[122.0,103.5],[123.5,95.0],[122.7,87.0],[120.2,81.8],[116.0,79.2],[111.5,78.0],[109.8,75.0],[110.0,71.0],[111.2,67.8],[108.2,63.5],[107.0,59.2],[109.2,55.0],[108.8,49.6],[110.1,44.5],[112.8,39.3],[116.1,34.2],[118.5,29.8],[117.0,25.7],[112.8,22.6],[106.5,19.9],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.6);
+    // Keep legacy boxes only for diagnostics; runtime collision uses rollingBoulders798.
+    roll.forbiddenZones770=[
+      {x1:21.1,y1:24.9,x2:32.4,y2:36.4},
+      {x1:18.3,y1:98.0,x2:30.9,y2:110.2},
+      {x1:110.2,y1:66.2,x2:122.8,y2:78.6}
+    ];
+    // Right/outside side of rocks 2/3 remains prohibited. The old oversized
+    // bottom-right rectangle is removed; strict same-road no-chord handles 5->3.
+    roll.rollingNoGoZones793=[
+      {x1:31.0,y1:97.0,x2:43.0,y2:112.2},
+      {x1:122.3,y1:65.0,x2:135.0,y2:80.0}
+    ];
+    roll.boulderClearance793=.18;
+    roll.boulderVisualScale793=.85;
+    roll.boulderLeftOnly793=true;
+    roll.bottomRoadFollow793=true;
+    roll.rollingNoStop793=true;
+    roll.boulderGapCenter791=true;
+    roll.lockOptimalExecution784=true;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.roadFollowMode778='route-center-hard';
+    roll.outerSoftLimit789=true;
+    roll.insideTune789='tight-boulder-close-pass-v7.98';
+    const line=densifyLine772(roll.route770,.14);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='tight-circular-boulder-left-gap-v7.98';
+    roll.rollingCurveNoCut794=true;
+    roll.rollingClosePass798=true;
+    roll.rollingHaloRemoved798=true;
+    roll.qaRollingFullAudit798=true;
+  }
+  applyPatch798();
+
+  // ============================================================
+  // v7.981 — ROLLING STONE CONTINUITY / 6->5->3 ROUTE HOTFIX
+  // - eliminate obstacle correction snaps that looked like teleporting,
+  // - shorten no-chord/rejoin lookahead to remove micro-stutter,
+  // - force the bottom section to travel through a real 5-o'clock arc before
+  //   climbing toward 3 o'clock; no outside excursion + diagonal climb.
+  // ============================================================
+  function applyPatch7981(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.rollingSmoothCollision7981=true;
+    roll.rollingShortRejoin7981=true;
+    roll.rollingBottomViaFive7981=true;
+    roll.rollingNoTeleport7981=true;
+    roll.rollingNoStutter7981=true;
+
+    // Replace only the lower 6->5->3 leg. The rest of v7.98's close-pass route
+    // and the left-only rock 2/3 rules remain untouched.
+    const a=roll.route770.findIndex(q=>Math.abs(q[0]-34.0)<.01&&Math.abs(q[1]-119.0)<.01);
+    const b=roll.route770.findIndex(q=>Math.abs(q[0]-123.5)<.01&&Math.abs(q[1]-95.0)<.01);
+    if(a>=0&&b>a){
+      const viaFive=[
+        [34.0,119.0],[41.5,124.0],[50.0,128.0],[59.0,130.8],
+        [68.0,132.0],[77.0,132.0],[86.0,130.9],[94.0,128.6],
+        [101.0,125.2],[106.5,121.2],[111.0,116.2],[114.5,110.5],
+        [117.0,104.2],[118.8,98.0],[120.0,93.0]
+      ];
+      roll.route770.splice(a,b-a+1,...viaFive);
+    }
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.6);
+    // Tighten the right/outside planning blocks without touching the visible road.
+    roll.rollingNoGoZones793=[
+      {x1:31.8,y1:98.0,x2:41.2,y2:111.2},
+      {x1:123.0,y1:66.0,x2:132.5,y2:79.2}
+    ];
+    const line=densifyLine772(roll.route770,.10);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='continuous-close-pass-via-5oclock-v7.981';
+    roll.qaRollingContinuity7981=true;
+  }
+  applyPatch7981();
+
+  // ============================================================
+  // v7.982 — ROLLING STONE 3->1->12 ROAD-FOLLOW + FULL ARC TIGHTENING
+  // - after rock #3, force a real 3->2->1->12 progression on the paved right arc,
+  // - add intermediate waypoints so NORMAL AI cannot sight a far upper target and chord inward,
+  // - tighten other sparse outer arcs without changing the close-pass boulder rules,
+  // - preserve v7.981 no-teleport / short-rejoin continuity behavior.
+  // ============================================================
+  function applyPatch7982(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+
+    // Re-author the full circuit with denser, road-shaped arcs.  The route keeps
+    // the same macro order, but removes large waypoint gaps that allowed the AI
+    // to look across bends and choose an over-inside or over-outside chord.
+    roll.route770=[
+      [71.099,18.409],[63.0,18.48],[55.0,18.62],[47.0,19.0],[40.0,20.1],
+      [35.0,21.7],[31.6,23.4],[29.8,24.1],[25.0,24.3],[22.0,25.8],
+      [20.6,28.7],[20.5,32.0],[21.8,35.2],[24.8,37.0],[28.5,40.7],
+      [32.0,45.0],[35.5,50.0],[39.0,55.0],[42.0,60.0],[44.3,64.0],
+      [45.0,68.0],[44.3,71.5],[43.0,74.5],[41.8,77.5],[40.5,80.0],
+      [38.2,82.5],[36.2,84.5],[34.2,87.0],[32.5,89.0],[31.0,91.5],
+      [30.0,94.0],[28.6,96.8],[24.6,97.9],[20.3,99.2],[18.3,102.5],
+      [18.4,106.3],[20.6,109.3],[24.0,111.0],[28.6,114.0],[34.0,119.0],
+      [41.5,124.0],[50.0,128.0],[59.0,130.8],[68.0,132.0],[77.0,132.0],
+      [86.0,130.9],[94.0,128.6],[101.0,125.2],[106.5,121.2],[111.0,116.2],
+      [114.5,110.5],[117.0,104.2],[118.8,98.0],[120.0,93.0],[121.0,88.0],
+      [120.8,84.0],[119.6,81.2],[116.0,79.2],[112.8,78.5],[110.5,76.8],
+      // rock #3 left-gap exit -> real 3 o'clock to 1 o'clock road arc
+      [109.8,74.0],[110.2,70.0],[111.0,66.0],[112.0,62.0],[112.3,58.0],
+      [112.1,54.0],[112.4,50.0],[113.2,46.0],[114.4,42.0],[116.0,38.0],
+      [117.8,34.0],[119.0,30.5],[119.2,28.0],[117.8,25.5],[115.0,23.2],
+      [111.0,21.2],[106.5,19.9],[100.5,19.1],[94.5,18.7],[88.5,18.52],
+      [82.5,18.45],[76.5,18.42],[71.099,18.409]
+    ];
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.25);
+
+    // Preserve true obstacle bodies and left-only rock #2/#3 rules.
+    roll.boulderLeftOnly793=true;
+    roll.bottomRoadFollow793=true;
+    roll.rollingBottomViaFive7981=true;
+    roll.rollingSmoothCollision7981=true;
+    roll.rollingShortRejoin7981=true;
+    roll.rollingNoTeleport7981=true;
+    roll.rollingNoStutter7981=true;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.lockOptimalExecution784=true;
+    roll.outerSoftLimit789=true;
+
+    // Slightly tighter planning blocks: prevent the two known outside excursions
+    // while keeping every visible gray-road edge legal to drive on.
+    roll.rollingNoGoZones793=[
+      {x1:31.8,y1:98.0,x2:40.2,y2:110.8},
+      {x1:123.0,y1:65.0,x2:131.0,y2:79.0}
+    ];
+
+    const line=densifyLine772(roll.route770,.075);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='road-arc-3to1to12-full-tight-v7.982';
+    roll.insideTune789='dense-road-arc-no-far-chord-v7.982';
+    roll.rollingThreeToOneToTwelve7982=true;
+    roll.rollingFullArcTight7982=true;
+    roll.qaRollingRoadArc7982=true;
+  }
+  applyPatch7982();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
     if(!MAP_DEFINITIONS_770.neon_city?.qaSingleRedGate7943||!MAP_DEFINITIONS_770.neon_city?.sharedGate778||!MAP_DEFINITIONS_770.neon_city?.lapRequired775)issues.push("하트공용게이트7943");
-    if(!MAP_DEFINITIONS_770.double_hairpin?.qaSpiralCenter7943||!MAP_DEFINITIONS_770.double_hairpin?.blackHoleExactCenter897||MAP_DEFINITIONS_770.double_hairpin?.roadFollowMode778!=="route-center-hard")issues.push("블랙홀중앙나선7943");
+    if(!MAP_DEFINITIONS_770.double_hairpin?.qaSpiralCenter7943||!MAP_DEFINITIONS_770.double_hairpin?.qaSmartSpiral797||MAP_DEFINITIONS_770.double_hairpin?.blackHoleExactCenter897||MAP_DEFINITIONS_770.double_hairpin?.blackHoleHardCenter896||MAP_DEFINITIONS_770.double_hairpin?.roadFollowMode778!=="route-center-hard")issues.push("블랙홀스마트나선797");
     if(!MAP_DEFINITIONS_770.skyway?.qaFourRowRoad7943||MAP_DEFINITIONS_770.skyway?.spaceRoadRows897!==4||!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스4줄7943");
     if(!MAP_DEFINITIONS_770.s_map?.openingInsideLock7942||MAP_DEFINITIONS_770.s_map?.racingSpline770!==S_MAP_RACING_SPLINE_770)issues.push("네온드리프트시작인코스7942");
     if(!MAP_DEFINITIONS_770.star_fish?.qaEdgeFlow7942||MAP_DEFINITIONS_770.star_fish?.wallCollision786!==false||!MAP_DEFINITIONS_770.star_fish?.edgePassThrough786||!MAP_DEFINITIONS_770.star_fish?.starFishNoEdgeRollback895)issues.push("스타피쉬끝라인7942");
     if(!MAP_DEFINITIONS_770.ice_ring?.qaMRouteLock7942||!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780||MAP_DEFINITIONS_770.ice_ring?.roadFollowMode778!=="route-center-hard")issues.push("아이스크라운M도로7942");
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버기본130");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==100||observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==100)issues.push("블랙홀스페이스옵저버100");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==70)issues.push("블랙홀옵저버70");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==100)issues.push("스페이스옵저버100");
     if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==130)issues.push("기타맵옵저버130");
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
@@ -12257,8 +12494,8 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderBypass789)issues.push("롤링스톤우회789");
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderSolid898||!MAP_DEFINITIONS_770.industrial_zone?.boulderInsideCutDisabled898)issues.push("롤링스톤바위고체898");
     {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance793 ?? r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],ng=r?.rollingNoGoZones793||[],line=r?.racingSpline770||[];
-      if(c<.78||!r?.boulderGapCenter791||line.some(q=>z.some(a=>q[0]>=a.x1-c&&q[0]<=a.x2+c&&q[1]>=a.y1-c&&q[1]<=a.y2+c)))issues.push("롤링스톤돌간격793");
-      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length<2||Math.abs((r?.boulderVisualScale793||0)-.85)>.001||!r?.rollingCurveNoCut794)issues.push("롤링스톤경로793");
+      if(c>.30||!r?.boulderGapCenter791||!Array.isArray(r?.rollingBoulders798)||r.rollingBoulders798.length!==3)issues.push("롤링스톤근접바위798");
+      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length!==2||Math.abs((r?.boulderVisualScale793||0)-.85)>.001||!r?.rollingCurveNoCut794||!r?.rollingClosePass798||!r?.qaRollingFullAudit798)issues.push("롤링스톤경로798");
       if(line.some(q=>ng.some(a=>q[0]>=a.x1&&q[0]<=a.x2&&q[1]>=a.y1&&q[1]<=a.y2)))issues.push("롤링스톤우측금지793");}
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
@@ -12286,7 +12523,9 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
     if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-66.2,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-142.0)>.08)issues.push("스카이클리프도착794");
-    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_794.png?v=794-no-rock-rings")issues.push("롤링스톤이미지794");
+    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_798.png?v=798-clean-halo-close-pass"||!MAP_DEFINITIONS_770.industrial_zone?.rollingHaloRemoved798)issues.push("롤링스톤이미지798");
+    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
+    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
     if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
