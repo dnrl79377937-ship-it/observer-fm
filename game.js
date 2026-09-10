@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.99";
+  const BUILD_ID = "v7.991";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6492,6 +6492,22 @@ applyMapSet776();
     if(!t)return t;
     const m=currentMap770();
 
+    // v7.991 Rolling Stone: the lower turn has a physical 5-o'clock checkpoint.
+    // NORMAL / EVADE / REJOIN must all physically touch the gray-road center gate
+    // before any 3-o'clock target is allowed. This prevents a diagonal sight-line
+    // from bypassing the 5-o'clock bend even if local progress projection is noisy.
+    if(m.id==='industrial_zone'&&m.rollingMandatoryFiveGate7991){
+      const g=m.rollingMandatoryFiveGate7991;
+      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(!p._rollingFivePassed7991){
+        const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+        const gp=nearestSplineProgress720(g.x,g.y);
+        if(prog>=gp-20.0){
+          return {...t,x:g.x,y:g.y,kind:(t.kind||'race720')+'-rolling-five-gate7991'};
+        }
+      }
+    }
+
     // v7.99 Rolling Stone: NORMAL driving must follow the authoritative spline
     // with a short look-ahead. This prevents the lower 6->3 leg from sighting
     // across the bend and skipping the mandatory 5-o'clock road.
@@ -7076,22 +7092,54 @@ applyMapSet776();
   applyPatch795();
 
 
+  // v7.991 Rolling Stone: prevent high-speed tunneling through a boulder.
+  // The previous endpoint-only check could miss a rock if one frame entered and
+  // exited the circular body. Sample the whole physical step and return the first
+  // entry fraction so collision is identical from above, below, left, or right.
+  function rollingBoulderEntry7991(m,x1,y1,x2,y2){
+    if(m?.id!=='industrial_zone'||!m.rollingSolidBoulders7991||!Array.isArray(m.rollingBoulders798))return null;
+    const dist=Math.hypot(x2-x1,y2-y1);
+    const n=Math.max(8,Math.ceil(dist/.10));
+    const clearance=Math.max(0,Number(m.boulderClearance793)||0);
+    const inside=(x,y)=>m.rollingBoulders798.some(b=>Math.hypot(x-b.x,y-b.y)<=b.r+clearance);
+    let prev=0;
+    for(let i=1;i<=n;i++){
+      const t=i/n,x=x1+(x2-x1)*t,y=y1+(y2-y1)*t;
+      if(inside(x,y)){
+        let lo=prev,hi=t;
+        for(let k=0;k<12;k++){
+          const mid=(lo+hi)*.5,mx=x1+(x2-x1)*mid,my=y1+(y2-y1)*mid;
+          if(inside(mx,my))hi=mid;else lo=mid;
+        }
+        return Math.max(0,lo-.006);
+      }
+      prev=t;
+    }
+    return null;
+  }
+
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
-    if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
-    // v7.981 Rolling Stone: obstacle contact must never relocate the racer.
+    const rollingEntry7991=rollingBoulderEntry7991(m,oldX,oldY,p.x,p.y);
+    if(!m.hardForbidden780 || (!inForbidden96(p.x,p.y,0)&&rollingEntry7991==null))return false;
+    // v7.981/v7.991 Rolling Stone: obstacle contact must never relocate the racer.
     // Clamp only the attempted physical step to the last safe point, then let the
     // steering/rejoin logic route around the boulder on subsequent frames. This
     // removes the old visible forward snap / micro-teleport beside rocks.
     if(m.id==='industrial_zone'&&m.rollingSmoothCollision7981){
       const attemptedX=p.x,attemptedY=p.y;
-      let lo=0,hi=1;
-      for(let k=0;k<12;k++){
-        const mid=(lo+hi)*.5;
-        const x=oldX+(attemptedX-oldX)*mid,y=oldY+(attemptedY-oldY)*mid;
-        if(inForbidden96(x,y,0))hi=mid;else lo=mid;
+      let t;
+      if(rollingEntry7991!=null){
+        t=rollingEntry7991;
+      }else{
+        let lo=0,hi=1;
+        for(let k=0;k<12;k++){
+          const mid=(lo+hi)*.5;
+          const x=oldX+(attemptedX-oldX)*mid,y=oldY+(attemptedY-oldY)*mid;
+          if(inForbidden96(x,y,0))hi=mid;else lo=mid;
+        }
+        t=Math.max(0,lo-.015);
       }
-      const t=Math.max(0,lo-.015);
       p.x=oldX+(attemptedX-oldX)*t;
       p.y=oldY+(attemptedY-oldY)*t;
       const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
@@ -7563,6 +7611,19 @@ applyMapSet776();
     let prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+distance);
 
+    // v7.991 Rolling Stone mandatory 5-o'clock center-road gate.
+    // Spline progress itself cannot move past the gate until the rendered racer
+    // has actually reached it, so 6->3 can never be resolved as a diagonal skip.
+    const gateMap7991=currentMap770();
+    if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
+      const g=gateMap7991.rollingMandatoryFiveGate7991;
+      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(!p._rollingFivePassed7991){
+        const gp=nearestSplineProgress720(g.x,g.y);
+        prog=Math.min(prog,gp);
+      }
+    }
+
     const raw=splinePointAt720(prog);
     const q=executedSplinePoint720(p,prog);
     let off=Number(q.executionOffset720)||0;
@@ -7611,7 +7672,17 @@ applyMapSet776();
     const moved=Math.hypot(p.x-fromX,p.y-fromY);
     const maxForward=old+Math.max(.18,moved*1.55+.12);
     const floor=Math.max(Number(p._splineFloor754)||0,old);
-    const next=Math.max(floor,Math.min(projected,maxForward));
+    let next=Math.max(floor,Math.min(projected,maxForward));
+    // v7.991: EVADE/REJOIN progress is also checkpoint-gated on Rolling Stone.
+    const gateMap7991=currentMap770();
+    if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
+      const g=gateMap7991.rollingMandatoryFiveGate7991;
+      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(!p._rollingFivePassed7991){
+        const gp=nearestSplineProgress720(g.x,g.y);
+        next=Math.min(next,gp);
+      }
+    }
     p._splineProg720=Math.min(RACING_SPLINE_SEGS_720.total,next);
     p._splineFloor754=Math.max(floor,p._splineProg720);
   }
@@ -12532,6 +12603,89 @@ function seasonCardHtml(p){
     }
   }
   applyPatch799();
+
+  // ============================================================
+  // v7.991 — ROLLING SOLID ROCKS / TRUE FIVE GATE + SKY CLIFF FINAL ARC
+  // ============================================================
+  function applyPatch7991(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(roll){
+      roll.image='map_rolling_stone_7991.png?v=7991-clean-red-outline-solid-rocks';
+      // Match collision to the full visible stone body and add a small no-touch margin.
+      roll.rollingBoulders798=[
+        {x:26.75,y:30.65,r:6.25},
+        {x:24.60,y:104.10,r:6.55},
+        {x:116.50,y:72.40,r:6.55}
+      ];
+      roll.boulderClearance793=.58;
+      roll.hardForbidden780=true;
+      roll.rollingSolidBoulders7991=true;
+      roll.rollingNoTouch7991=true;
+
+      // Real physical checkpoint on the center of the 5-o'clock gray road.
+      // Every steering mode and spline progress must touch this before 3 o'clock.
+      roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.6};
+      roll.rollingMandatoryFive799=true;
+      roll.rollingHardSpline799=true;
+      roll.strictNoChord795=true;
+      roll.strictRoadFollow778=true;
+      roll.lockOptimalExecution784=true;
+      roll.qaRollingSolidFive7991=true;
+
+      // Keep the lower paved arc explicit and centered around the mandatory gate.
+      const r=roll.route770.slice();
+      const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.05&&Math.abs(q[1]-119.0)<.05);
+      const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.05&&Math.abs(q[1]-88.0)<.05);
+      if(a>=0&&b>a){
+        const viaFiveCenter=[
+          [34.0,119.0],[39.0,122.0],[44.0,124.8],[49.0,127.2],[54.0,129.2],
+          [59.0,130.8],[64.0,131.8],[69.0,132.4],[74.0,132.4],[79.0,132.0],
+          [84.0,131.2],[89.0,129.9],[94.0,128.2],[98.5,126.0],[102.5,123.6],
+          [106.0,120.8],[109.0,117.6],[111.8,113.8],[114.0,109.5],[115.8,105.0],
+          [117.2,100.5],[118.2,96.0],[119.0,92.0],[120.0,89.5],[121.0,88.0]
+        ];
+        roll.route770.splice(a,b-a+1,...viaFiveCenter);
+      }
+      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.0);
+      const line=densifyLine772(roll.route770,.045);
+      roll.racingSpline770=line;
+      roll.globalOptimal770=line;
+      roll.racingLineMode772='solid-rocks-mandatory-five-center-v7.991';
+    }
+
+    const cliff=MAP_DEFINITIONS_770.cliff_hanger;
+    if(cliff){
+      // v7.99 accidentally removed the old paved 7->6 approach before appending
+      // the new goal tail, creating one large diagonal chord. Restore that entire
+      // road-shaped arc, then continue smoothly to the lower-right finish.
+      const anchor=cliff.route770.findIndex(q=>Math.abs(q[0]-36.878)<.08&&Math.abs(q[1]-131.902)<.08);
+      if(anchor>=0){
+        const finalRoadArc=[
+          [36.878,131.902],[37.37,136.819],[40.689,140.507],[45.36,142.351],
+          [50.278,142.105],[52.736,137.802],[57.407,139.646],[62.325,139.278],
+          [64.0,139.8],[66.0,140.8],[68.0,142.0],[70.0,143.4],[72.0,145.2],
+          [74.0,147.4],[76.0,149.8],[78.0,152.4],[79.7,154.8],[81.0,157.2]
+        ];
+        cliff.route770.splice(anchor,cliff.route770.length-anchor,...finalRoadArc);
+      }
+      cliff.widths770=new Array(Math.max(1,cliff.route770.length-1)).fill(6.55);
+      cliff.goal={x:81.0,y:157.2};
+      cliff.safeZones={
+        start:{x0:18.942,y0:30.005,x1:26.542,y1:37.605},
+        goal:{x0:77.1,y0:153.3,x1:84.9,y1:161.1}
+      };
+      cliff.strictRoadFollow778=true;
+      cliff.roadFollowMode778='route-center-hard';
+      cliff.lockOptimalExecution784=true;
+      const line=densifyLine772(cliff.route770,.055);
+      cliff.racingSpline770=line;
+      cliff.globalOptimal770=line;
+      cliff.racingLineMode772='restored-7to6-road-center-v7.991';
+      cliff.cliffFinalCenter7991=true;
+      cliff.qaFinalRoad7991=true;
+    }
+  }
+  applyPatch7991();
 
   function v36SelfAudit(){
     const issues=[];
