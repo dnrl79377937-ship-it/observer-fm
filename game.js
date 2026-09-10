@@ -7160,11 +7160,18 @@ applyMapSet776();
           let rx=oldX-hit.x,ry=oldY-hit.y,rl=Math.hypot(rx,ry)||1;
           rx/=rl; ry/=rl;
           // two tangents; choose the one most aligned with the racer's attempted motion
-          let tx=-ry,ty=rx;
-          if(tx*stepX+ty*stepY<0){tx=-tx;ty=-ty;}
+          // v7.995: evaluate BOTH tangential escape directions.  v7.994's
+          // rock-2 lower outside block can invalidate the first tangent; choosing
+          // only that one left the racer clamped on the boulder edge.  Pick the
+          // legal tangent with the best forward alignment instead.
           const slideScale=Math.max(.55,Math.min(1.05,stepLen));
-          const sx=oldX+tx*slideScale, sy=oldY+ty*slideScale;
-          if(!inForbidden96(sx,sy,0)){
+          const tangents=[[-ry,rx],[ry,-rx]]
+            .map(([tx,ty])=>({tx,ty,align:tx*stepX+ty*stepY}))
+            .sort((a,b)=>b.align-a.align);
+          let slid=false;
+          for(const cand of tangents){
+            const sx=oldX+cand.tx*slideScale, sy=oldY+cand.ty*slideScale;
+            if(inForbidden96(sx,sy,0))continue;
             p.x=sx; p.y=sy;
             const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
             const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,20);
@@ -7175,11 +7182,14 @@ applyMapSet776();
               p._raceState720.mode='REJOIN';
               p._raceState720.action='none';
               p._raceState720.actionUntil=0;
-              p._raceState720.rejoinUntil=gameNow()+180;
+              p._raceState720.rejoinUntil=gameNow()+120;
             }
             p._rollingSlideBlocks7992=(p._rollingSlideBlocks7992||0)+1;
-            return true;
+            p._rollingDualTangent7995=(p._rollingDualTangent7995||0)+1;
+            slid=true;
+            break;
           }
+          if(slid)return true;
         }
       }
 
@@ -12879,6 +12889,21 @@ function seasonCardHtml(p){
     roll.qaRollingFiveStage7994=true;
   }
   applyPatch7994();
+
+
+  // ============================================================
+  // v7.995 — ROLLING STONE ROCK #2 NO-STALL DUAL-TANGENT ESCAPE
+  // ============================================================
+  function applyPatch7995(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.rollingRock2NoStall7995=true;
+    roll.rollingDualTangentEscape7995=true;
+    roll.rollingNoTouch7991=false;
+    roll.rollingSmoothCollision7981=true;
+    roll.qaRollingRock2NoStall7995=true;
+  }
+  applyPatch7995();
 
   function v36SelfAudit(){
     const issues=[];
