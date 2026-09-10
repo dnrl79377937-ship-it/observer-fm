@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.996";
+  const BUILD_ID = "v7.997";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7164,10 +7164,13 @@ applyMapSet776();
       // points into a rock, preserve forward motion by sliding tangentially
       // around the visible stone instead of repeatedly clamping to one point.
       if(rollingEntry7991!=null && stepLen>.001 && Array.isArray(m.rollingBoulders798)){
-        let hit=null,best=Infinity;
-        for(const b of m.rollingBoulders798){
-          const d=Math.hypot(oldX-b.x,oldY-b.y)-(b.r+Math.max(0,Number(m.boulderClearance793)||0));
-          if(d<best){best=d;hit=b;}
+        let hit=null,hitIndex=-1,best=Infinity;
+        for(let bi=0;bi<m.rollingBoulders798.length;bi++){
+          const b=m.rollingBoulders798[bi];
+          const effR=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,5.42):b.r;
+          const effC=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(Math.max(0,Number(m.boulderClearance793)||0),.03):Math.max(0,Number(m.boulderClearance793)||0);
+          const d=Math.hypot(oldX-b.x,oldY-b.y)-(effR+effC);
+          if(d<best){best=d;hit=b;hitIndex=bi;}
         }
         if(hit){
           let rx=oldX-hit.x,ry=oldY-hit.y,rl=Math.hypot(rx,ry)||1;
@@ -7203,6 +7206,32 @@ applyMapSet776();
             break;
           }
           if(slid)return true;
+
+          // v7.997: rock #2 left-side no-stall fallback. If both tangents are
+          // rejected by an outside/no-go boundary, advance a short distance toward
+          // the authoritative forward spline instead of clamping at the same rock
+          // edge forever. This preserves the legal 9-o'clock paved bypass.
+          if(hitIndex===1 && m.rollingRock2LeftCorridor7997){
+            const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
+            const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,oldProg+.72));
+            let vx=q.x-oldX,vy=q.y-oldY,vl=Math.hypot(vx,vy)||1;
+            vx/=vl;vy/=vl;
+            const step=Math.max(.22,Math.min(.62,stepLen*.82));
+            const sx=oldX+vx*step,sy=oldY+vy*step;
+            if(!inForbidden96(sx,sy,0)){
+              p.x=sx;p.y=sy;
+              const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,16);
+              p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+.9));
+              p._splineFloor754=p._splineProg720;
+              p.desiredOffset=(p.desiredOffset||0)*.35;p.routeBand=0;p.openingLineBias=0;
+              if(p._raceState720){
+                p._raceState720.mode='REJOIN';p._raceState720.action='none';
+                p._raceState720.actionUntil=0;p._raceState720.rejoinUntil=gameNow()+90;
+              }
+              p._rollingRock2ForwardEscape7997=(p._rollingRock2ForwardEscape7997||0)+1;
+              return true;
+            }
+          }
         }
       }
 
@@ -12938,6 +12967,37 @@ function seasonCardHtml(p){
     roll.qaRollingRock2EdgeFlex7996=true;
   }
   applyPatch7996();
+
+  // ============================================================
+  // v7.997 — ROLLING STONE ROCK #2 LEFT-CORRIDOR FULL RE-AUDIT
+  // - v7.994's lower/outside rectangle overlapped the legal 9-o'clock road,
+  //   causing rock collision + no-go rejection to loop at the same position.
+  // - move that block to the true lower-right exterior only, leaving the paved
+  //   left-side bypass completely open.
+  // - add a forward-spline escape as a final no-stall fallback at rock #2.
+  // ============================================================
+  function applyPatch7997(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.rollingNoGoZones793=[
+      {x1:29.4,y1:106.8,x2:39.6,y2:116.6,kind:'rock2-lower-right-outer-only7997'},
+      {x1:32.0,y1:97.0,x2:40.2,y2:110.6,kind:'rock2-right-block7997'},
+      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
+    ];
+    roll.rollingRock2LowerBlock7994=true;
+    roll.rollingRock2LeftCorridor7997=true;
+    roll.rollingRock2NoStall7995=true;
+    roll.rollingRock2EdgeFlex7996=true;
+    roll.rollingSmoothCollision7981=true;
+    roll.rollingDualTangentEscape7995=true;
+    roll.rollingNoTouch7991=false;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.rollingHardSpline799=true;
+    roll.racingLineMode772='rock2-left-corridor-no-stall-v7.997';
+    roll.qaRollingRock2LeftCorridor7997=true;
+  }
+  applyPatch7997();
 
   function v36SelfAudit(){
     const issues=[];
