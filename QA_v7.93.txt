@@ -1,0 +1,15 @@
+Observer Avoid FM v7.93 QA
+
+Rolling Stone fixes:
+- Boulder approach rollback/freeze loop removed.
+- Rock 2 right/outside route blocked; left narrow gap only.
+- Rock 3 right/outside route blocked; left narrow gap only.
+- 6->3 o'clock bottom section follows the visible road; no diagonal chord.
+- Three boulders visually reduced to 85% (15% smaller).
+- Boulder hit zones re-aligned to the reduced artwork.
+
+Validation:
+- BUILD_ID: v7.93
+- node --check: PASS
+- selfAudit(): PASS / issues=[]
+- Isolated no-observer browser run: full lap completed, teleport=0, splineRepair=0, hardObstacleRollback=0.

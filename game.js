@@ -30,7 +30,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.91";
+  const BUILD_ID = "v7.93";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -379,7 +379,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
-      mapEngine:"Active 9 Map Geometry · v7.91",
+      mapEngine:"Active 9 Map Geometry · v7.93",
       currentMap770:{id:currentMap770().id,name:currentMap770().name,en:currentMap770().en},
       mapPoolSize770:MAP_POOL_770.length,
       mapGeometryReady770:MAP_POOL_770.filter(m=>m.geometryReady).length,
@@ -1156,11 +1156,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function inForbidden96(x,y,pad=FORBIDDEN96_PAD){
     const m=currentMap770();
-    // v7.91 Rolling Stone: the boulder edge itself is already too close.
-    // Keep the unit center outside a small safety shell around all three rocks.
-    if(m?.boulderClearance791)pad=Math.max(pad,Number(m.boulderClearance791)||0);
+    // v7.93 Rolling Stone: rock hit-zones are aligned to the visibly shrunken
+    // boulders.  The two explicit route-side blocks are checked separately so
+    // racers cannot use the forbidden right/outside passage around rocks 2/3.
+    const rockPad=m?.boulderClearance793!=null?Math.max(pad,Number(m.boulderClearance793)||0):
+      (m?.boulderClearance791?Math.max(pad,Number(m.boulderClearance791)||0):pad);
     for(const z of currentForbidden770()){
-      if(x>=z.x1-pad && x<=z.x2+pad && y>=z.y1-pad && y<=z.y2+pad) return true;
+      if(x>=z.x1-rockPad && x<=z.x2+rockPad && y>=z.y1-rockPad && y<=z.y2+rockPad) return true;
+    }
+    const noGo=m?.rollingNoGoZones793||[];
+    const noGoPad=Math.max(.08,Math.min(.28,pad));
+    for(const z of noGo){
+      if(x>=z.x1-noGoPad && x<=z.x2+noGoPad && y>=z.y1-noGoPad && y<=z.y2+noGoPad) return true;
     }
     return false;
   }
@@ -6935,11 +6942,81 @@ applyMapSet776();
   }
   applyPatch791();
 
+  // ============================================================
+  // v7.93 — ROLLING STONE SAFE LEFT-GAP ROUTE + NO-STALL BOULDERS
+  // 1) Rocks 2/3: right/outside passage is forbidden; use left narrow gap only.
+  // 2) Bottom 6->3 section follows the visible road curve; no diagonal chord.
+  // 3) Boulder artwork/hit zones are reduced about 15% and re-aligned.
+  // 4) An accidental obstacle entry is guided forward on the legal spline instead
+  //    of rolling back to the previous point, eliminating the visible freeze loop.
+  // ============================================================
+  function applyPatch793(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.image="map_rolling_stone_793.png?v=793-rocks15-left-gap";
+    roll.route770=[[71.099,18.409],[60.0,18.6],[49.0,18.8],[38.1,20.8],[32.5,22.2],[28.8,22.8],[24.0,23.3],[19.0,24.0],[15.5,26.5],[13.0,30.5],[12.0,35.0],[12.8,40.5],[15.0,45.0],[19.0,48.5],[24.5,51.0],[30.0,54.0],[36.0,58.8],[41.5,64.0],[44.2,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[29.8,93.3],[17.0,96.0],[14.0,99.5],[12.8,104.5],[13.0,109.5],[14.2,112.2],[18.8,114.2],[25.0,118.0],[33.2,122.5],[42.0,126.8],[52.0,130.8],[62.0,133.5],[72.0,135.0],[82.0,135.4],[92.0,134.0],[101.0,131.0],[109.0,126.0],[115.0,119.5],[119.5,112.0],[122.0,104.0],[123.8,96.0],[122.0,90.0],[116.0,85.0],[109.0,81.0],[106.5,78.0],[106.0,73.0],[107.0,68.0],[109.0,64.0],[112.0,60.0],[111.0,54.0],[110.5,49.0],[112.0,44.0],[115.0,39.0],[118.0,34.0],[120.2,30.0],[118.0,26.0],[113.5,22.5],[107.0,19.8],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(9.2);
+    // 15%-smaller visual rocks, aligned to the actual three boulder centers.
+    roll.forbiddenZones770=[
+      {x1:21.1,y1:24.9,x2:32.4,y2:36.4},
+      {x1:18.3,y1:98.0,x2:30.9,y2:110.2},
+      {x1:110.2,y1:66.2,x2:122.8,y2:78.6}
+    ];
+    // Rock 2/3 right/outside lanes are intentionally non-drivable. The only
+    // legal bypass is the narrow left-side gray road traced by route770 above.
+    roll.rollingNoGoZones793=[
+      {x1:31.8,y1:96.0,x2:45.0,y2:113.5},
+      {x1:123.8,y1:65.0,x2:137.5,y2:80.0}
+    ];
+    roll.boulderClearance793=.82;
+    roll.boulderVisualScale793=.85;
+    roll.boulderLeftOnly793=true;
+    roll.bottomRoadFollow793=true;
+    roll.rollingNoStop793=true;
+    roll.boulderGapCenter791=true;
+    roll.strictRoadFollow778=true;
+    roll.roadFollowMode778="route-center-hard";
+    roll.outerSoftLimit789=true;
+    roll.insideTune789="disabled-boulder-left-gap-v7.93";
+    const line=densifyLine772(roll.route770,.24);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772="left-gap-road-center-no-chord-v7.93";
+  }
+  applyPatch793();
+
 
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
     if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
-    // Reject only the current simulation step. This is not a long-distance snap.
+    // v7.93 Rolling Stone: never sit in the old rollback loop beside a boulder.
+    // Preserve the travelled step as monotonic spline progress and place the unit
+    // back on the legal left-gap/road-center route at the same forward distance.
+    if(m.rollingNoStop793){
+      const moved=Math.max(.02,Math.hypot(p.x-oldX,p.y-oldY));
+      let prog=Math.max(
+        Number.isFinite(p._splineProg720)?p._splineProg720:0,
+        nearestSplineProgress720(oldX,oldY)
+      );
+      prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+Math.min(.72,moved));
+      let q=splinePointAt720(prog);
+      for(let k=0;k<24 && inForbidden96(q.x,q.y,0);k++){
+        prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+.18);
+        q=splinePointAt720(prog);
+      }
+      p.x=q.x; p.y=q.y;
+      p._splineProg720=prog;
+      p._splineFloor754=Math.max(Number(p._splineFloor754)||0,prog);
+      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
+      if(p._raceState720){
+        p._raceState720.mode="REJOIN";
+        p._raceState720.action="none";
+        p._raceState720.actionUntil=0;
+      }
+      p._hardObstacleGuides793=(p._hardObstacleGuides793||0)+1;
+      return true;
+    }
+    // Other hard obstacles keep the existing single-step rollback semantics.
     p.x=oldX; p.y=oldY;
     p.desiredOffset=(p.desiredOffset||0)*.20;
     if(p._raceState720){
@@ -11884,8 +11961,10 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.industrial_zone?.hardForbidden780||(MAP_DEFINITIONS_770.industrial_zone.forbiddenZones770||[]).length!==3)issues.push("롤링스톤바위780");
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderBypass789)issues.push("롤링스톤우회789");
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderSolid898||!MAP_DEFINITIONS_770.industrial_zone?.boulderInsideCutDisabled898)issues.push("롤링스톤바위고체898");
-    {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],line=r?.racingSpline770||[];
-      if(c<1.35||!r?.boulderGapCenter791||line.some(q=>z.some(a=>q[0]>=a.x1-c&&q[0]<=a.x2+c&&q[1]>=a.y1-c&&q[1]<=a.y2+c)))issues.push("롤링스톤돌간격791");}
+    {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance793 ?? r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],ng=r?.rollingNoGoZones793||[],line=r?.racingSpline770||[];
+      if(c<.78||!r?.boulderGapCenter791||line.some(q=>z.some(a=>q[0]>=a.x1-c&&q[0]<=a.x2+c&&q[1]>=a.y1-c&&q[1]<=a.y2+c)))issues.push("롤링스톤돌간격793");
+      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length!==2||Math.abs((r?.boulderVisualScale793||0)-.85)>.001)issues.push("롤링스톤경로793");
+      if(line.some(q=>ng.some(a=>q[0]>=a.x1&&q[0]<=a.x2&&q[1]>=a.y1&&q[1]<=a.y2)))issues.push("롤링스톤우측금지793");}
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
     if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
