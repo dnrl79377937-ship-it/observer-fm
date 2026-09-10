@@ -1,0 +1,13 @@
+Observer Avoid FM v7.94 QA
+
+Requested fixes:
+- Sky Cliff: move the green finish gate slightly right/down to the visible road end.
+- Rolling Stone: remove the circular rings around the 3 rocks.
+- Rolling Stone: prevent the 5->3 o'clock diagonal cut and keep the route on the road curve.
+- Space: remove the unused extra gate rectangle artwork.
+
+Validation:
+- BUILD_ID: v7.94
+- node --check: PASS
+- selfAudit(): PASS / issues=[]
+- Asset refs: map_cliff_hanger_899.png, map_rolling_stone_794.png, map_space_894.png

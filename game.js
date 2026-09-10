@@ -30,7 +30,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v7.93";
+  const BUILD_ID = "v7.94";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -379,7 +379,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
-      mapEngine:"Active 9 Map Geometry · v7.93",
+      mapEngine:"Active 9 Map Geometry · v7.94",
       currentMap770:{id:currentMap770().id,name:currentMap770().name,en:currentMap770().en},
       mapPoolSize770:MAP_POOL_770.length,
       mapGeometryReady770:MAP_POOL_770.filter(m=>m.geometryReady).length,
@@ -11938,6 +11938,73 @@ function seasonCardHtml(p){
     if(e.target.id==="playerModal") e.currentTarget.classList.add("hidden");
   });
 
+
+  // ============================================================
+  // v7.94 — Sky Cliff goal alignment / Rolling Stone cleanup / Space gate-art cleanup
+  // 1) Sky Cliff: move the green finish gate slightly right/down so it sits on the visible road end.
+  // 2) Rolling Stone: remove circular glow rings from the three rocks and harden the 5->3 road-follow curve.
+  // 3) Space: remove the extra embedded gate rectangle artwork so only the live overlay gate remains.
+  // ============================================================
+  function applyPatch794(){
+    const cliff=MAP_DEFINITIONS_770.cliff_hanger;
+    if(cliff){
+      if(Array.isArray(cliff.route770) && cliff.route770.length>=2){
+        cliff.route770[cliff.route770.length-2]=[60.9,140.2];
+        cliff.route770[cliff.route770.length-1]=[66.2,142.0];
+      }
+      cliff.goal={x:66.2,y:142.0};
+      cliff.safeZones=Object.assign({},cliff.safeZones,{
+        goal:{x0:61.8,y0:137.6,x1:70.6,y1:146.4}
+      });
+      cliff.strictRoadFollow778=true;
+      cliff.roadFollowMode778='route-center-hard';
+      const line=densifyLine772(cliff.route770,.22);
+      cliff.racingSpline770=line;
+      cliff.globalOptimal770=line;
+      cliff.racingLineMode772='goal-endpoint-aligned-v7.94';
+    }
+
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(roll){
+      roll.image='map_rolling_stone_794.png?v=794-no-rock-rings';
+      roll.route770=[[71.099,18.409],[60.0,18.6],[49.0,18.8],[38.1,20.8],[32.5,22.2],[28.8,22.8],[24.0,23.3],[19.0,24.0],[15.5,26.5],[13.0,30.5],[12.0,35.0],[12.8,40.5],[15.0,45.0],[19.0,48.5],[24.5,51.0],[30.0,54.0],[36.0,58.8],[41.5,64.0],[44.2,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[29.8,93.3],[17.0,96.0],[14.0,99.5],[12.8,104.5],[13.0,109.5],[14.2,112.2],[18.8,114.2],[25.0,118.0],[33.2,122.5],[42.0,126.8],[52.0,130.8],[62.0,133.5],[72.0,135.0],[82.0,135.4],[90.0,134.9],[97.8,133.8],[105.0,131.4],[111.5,127.4],[117.0,121.8],[121.0,115.0],[123.5,107.5],[124.6,99.8],[124.2,92.2],[122.5,85.8],[119.2,80.5],[114.6,76.0],[109.6,72.4],[106.7,68.8],[106.3,64.0],[107.4,59.2],[109.2,55.0],[108.8,49.6],[110.1,44.5],[112.8,39.3],[116.1,34.2],[118.5,29.8],[117.0,25.7],[112.8,22.6],[106.5,19.9],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
+      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(7.8);
+      roll.forbiddenZones770=[
+        {x1:21.1,y1:24.9,x2:32.4,y2:36.4},
+        {x1:18.3,y1:98.0,x2:30.9,y2:110.2},
+        {x1:110.2,y1:66.2,x2:122.8,y2:78.6}
+      ];
+      roll.rollingNoGoZones793=[
+        {x1:31.8,y1:96.0,x2:45.0,y2:113.5},
+        {x1:123.8,y1:65.0,x2:137.5,y2:80.0},
+        {x1:90.0,y1:101.0,x2:112.0,y2:128.0}
+      ];
+      roll.boulderClearance793=.88;
+      roll.boulderVisualScale793=.85;
+      roll.boulderLeftOnly793=true;
+      roll.bottomRoadFollow793=true;
+      roll.rollingNoStop793=true;
+      roll.boulderGapCenter791=true;
+      roll.lockOptimalExecution784=true;
+      roll.strictRoadFollow778=true;
+      roll.roadFollowMode778='route-center-hard';
+      roll.outerSoftLimit789=true;
+      roll.insideTune789='disabled-boulder-left-gap-plus-bottom-curve-v7.94';
+      const line=densifyLine772(roll.route770,.18);
+      roll.racingSpline770=line;
+      roll.globalOptimal770=line;
+      roll.racingLineMode772='left-gap-road-center-no-rings-v7.94';
+      roll.rollingCurveNoCut794=true;
+    }
+
+    const space=MAP_DEFINITIONS_770.skyway;
+    if(space){
+      space.image='map_space_894.png?v=794-extra-box-removed';
+      space.spaceExtraGateArtRemoved794=true;
+    }
+  }
+  applyPatch794();
+
   function v36SelfAudit(){
     const issues=[];
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
@@ -11963,7 +12030,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.industrial_zone?.boulderSolid898||!MAP_DEFINITIONS_770.industrial_zone?.boulderInsideCutDisabled898)issues.push("롤링스톤바위고체898");
     {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance793 ?? r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],ng=r?.rollingNoGoZones793||[],line=r?.racingSpline770||[];
       if(c<.78||!r?.boulderGapCenter791||line.some(q=>z.some(a=>q[0]>=a.x1-c&&q[0]<=a.x2+c&&q[1]>=a.y1-c&&q[1]<=a.y2+c)))issues.push("롤링스톤돌간격793");
-      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length!==2||Math.abs((r?.boulderVisualScale793||0)-.85)>.001)issues.push("롤링스톤경로793");
+      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length<2||Math.abs((r?.boulderVisualScale793||0)-.85)>.001||!r?.rollingCurveNoCut794)issues.push("롤링스톤경로793");
       if(line.some(q=>ng.some(a=>q[0]>=a.x1&&q[0]<=a.x2&&q[1]>=a.y1&&q[1]<=a.y2)))issues.push("롤링스톤우측금지793");}
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
@@ -11988,6 +12055,9 @@ function seasonCardHtml(p){
     if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
     if(ROUND_POINTS.length!==12)issues.push("점수12");
     if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
+    if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-66.2,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-142.0)>.08)issues.push("스카이클리프도착794");
+    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_794.png?v=794-no-rock-rings")issues.push("롤링스톤이미지794");
+    if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
     if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
   }
