@@ -13190,6 +13190,69 @@ function seasonCardHtml(p){
   }
   applyPatch801();
 
+
+  // ============================================================
+  // v8.04 — ROLLING STONE CLEAN ROCK2 + MANDATORY LOWER-RIGHT BOX GATE
+  // - use the clean map asset without the oversized ring artifact,
+  // - keep rock #2 visually/physically smaller,
+  // - after passing 6 o'clock, racers must enter the lower-right 5 o'clock box
+  //   before rejoining the climb toward 3 o'clock.
+  // ============================================================
+  function applyPatch804(){
+    const roll=MAP_DEFINITIONS_770.industrial_zone;
+    if(!roll)return;
+    roll.image='map_rolling_stone_804.png?v=804-clean-rock2-box-gate';
+    roll.rollingCenterRoadOnly800=true;
+    roll.rollingOuterRoutesDisabled800=true;
+    roll.rollingBoulderNarrowBypass800=true;
+    roll.strictRoadFollow778=true;
+    roll.strictNoChord795=true;
+    roll.rollingHardSpline799=true;
+    roll.roadFollowMode778='route-center-hard';
+    roll.lockOptimalExecution784=true;
+    roll.outerSoftLimit789=true;
+    roll.insideTune789='center-road-only-rock2-clean-box-gate-v8.04';
+
+    // Rock #2: slightly smaller again so the lower road stays visibly clear.
+    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
+      roll.rollingBoulders798[1].r=3.25;
+    }
+    roll.rollingRock2CoreRadius7999=3.05;
+    roll.boulderClearance793=.06;
+    roll.rollingRock2Scale800=.58;
+
+    // Preserve only the remote rock #3 safety guard.
+    roll.rollingNoGoZones793=[
+      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
+    ];
+
+    // HARD RULE: bottom section must pass through the lower-right 5 o'clock box
+    // before the car is allowed to climb toward 3 o'clock.
+    roll.rollingMandatoryFiveGate7991={x:109.5,y:128.5,r:4.4};
+    roll.rollingFiveStage7994=[
+      {x:55.0,y:126.0,r:3.7},
+      {x:67.0,y:128.0,r:3.6},
+      {x:79.0,y:129.2,r:3.6},
+      {x:90.5,y:129.5,r:3.6},
+      {x:100.0,y:129.0,r:3.6},
+      {x:109.5,y:128.5,r:4.4},
+      {x:116.5,y:126.0,r:3.4},
+      {x:121.0,y:121.0,r:3.3},
+      {x:123.2,y:115.8,r:3.1},
+      {x:123.5,y:109.5,r:3.0}
+    ];
+    roll.rollingFiveStageEnterY7994=116.0;
+    roll.rollingFiveStageExitX7994=124.5;
+
+    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(5.8);
+    const line=densifyLine772(roll.route770,.024);
+    roll.racingSpline770=line;
+    roll.globalOptimal770=line;
+    roll.racingLineMode772='mandatory-lower-right-box-gate-v8.04';
+    roll.qaRolling804=true;
+  }
+  applyPatch804();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
