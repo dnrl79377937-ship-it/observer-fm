@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.041";
+  const BUILD_ID = "v8.042";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6501,6 +6501,10 @@ applyMapSet776();
     if(!t)return t;
     const m=currentMap770();
 
+    // v8.042: absolute lower-right checkpoint lock before any other steering logic.
+    t=rollingFiveHardTarget8042(p,t);
+    if(t?.kind&&String(t.kind).includes('HARD-FIVE-BOX-8042')) return t;
+
     // v7.994 Rolling Stone: hard staged 6 -> 5-center -> 3 progression.
     // Once a racer enters the lower sector, it must physically traverse two
     // center-road approach points and then the 5-o'clock center gate. This is
@@ -6531,7 +6535,7 @@ applyMapSet776();
     // from bypassing the 5-o'clock bend even if local progress projection is noisy.
     if(m.id==='industrial_zone'&&m.rollingMandatoryFiveGate7991){
       const g=m.rollingMandatoryFiveGate7991;
-      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(rollingFiveBoxContains8042(m,p.x,p.y) || Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
       if(!p._rollingFivePassed7991){
         const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
         const gp=nearestSplineProgress720(g.x,g.y);
@@ -7760,9 +7764,11 @@ applyMapSet776();
     const gateMap7991=currentMap770();
     if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
       const g=gateMap7991.rollingMandatoryFiveGate7991;
-      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(rollingFiveBoxContains8042(gateMap7991,p.x,p.y) || Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
       if(!p._rollingFivePassed7991){
-        const gp=nearestSplineProgress720(g.x,g.y);
+        const b=gateMap7991.rollingFiveBox8042;
+        const gx=b?(b.x0+b.x1)*.5:g.x, gy=b?(b.y0+b.y1)*.5:g.y;
+        const gp=nearestSplineProgress720(gx,gy);
         prog=Math.min(prog,gp);
       }
     }
@@ -7820,9 +7826,11 @@ applyMapSet776();
     const gateMap7991=currentMap770();
     if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
       const g=gateMap7991.rollingMandatoryFiveGate7991;
-      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(rollingFiveBoxContains8042(gateMap7991,p.x,p.y) || Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
       if(!p._rollingFivePassed7991){
-        const gp=nearestSplineProgress720(g.x,g.y);
+        const b=gateMap7991.rollingFiveBox8042;
+        const gx=b?(b.x0+b.x1)*.5:g.x, gy=b?(b.y0+b.y1)*.5:g.y;
+        const gp=nearestSplineProgress720(gx,gy);
         next=Math.min(next,gp);
       }
     }
@@ -13202,7 +13210,7 @@ function seasonCardHtml(p){
     const roll=MAP_DEFINITIONS_770.industrial_zone;
     if(!roll)return;
 
-    roll.image='map_rolling_stone_8041.png?v=8041-clean-rock2-hard-five-box';
+    roll.image='map_rolling_stone_8042.png?v=8042-nohalo-hard-five-box';
 
     // Rock #2 (7~9 o'clock side): smaller visual-compatible physics.
     if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
@@ -13238,7 +13246,7 @@ function seasonCardHtml(p){
       {x:106.0,y:128.6,r:3.8},
       {x:116.0,y:126.2,r:5.2}
     ];
-    roll.rollingMandatoryFiveGate7991={x:116.0,y:126.2,r:5.2};
+    roll.rollingMandatoryFiveGate7991={x:116.5,y:128.0,r:5.5};
     roll.rollingFiveStageEnterY7994=112.0;
     roll.rollingFiveStageExitX7994=136.0;
     roll.rollingFiveCenterHard801=true;
@@ -13248,17 +13256,51 @@ function seasonCardHtml(p){
 
     // Store the rectangular checkpoint used by QA/debugging.
     // The circular gate above is fully contained in this region.
-    roll.rollingFiveBox8041={x0:109.0,y0:120.0,x1:124.0,y1:133.0};
-    roll.qaRollingRock2Clean8041=true;
-    roll.qaRollingFiveBox8041=true;
+    roll.rollingFiveBox8042={x0:108.0,y0:121.0,x1:125.0,y1:134.0};
+    roll.qaRollingRock2Clean8042=true;
+    roll.qaRollingFiveBox8042=true;
 
     roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(5.8);
     const line=densifyLine772(roll.route770,.024);
     roll.racingSpline770=line;
     roll.globalOptimal770=line;
-    roll.racingLineMode772='hard-6-five-box-3-v8.041';
+    roll.racingLineMode772='absolute-hard-6-five-box-3-v8.042';
   }
   applyPatch8041();
+
+
+  // ============================================================
+  // v8.042 — ABSOLUTE 5 O'CLOCK BOX LOCK
+  // The racer must PHYSICALLY enter the lower-right checkpoint rectangle.
+  // Until then, every steering mode is forced toward the box center and
+  // spline progress is forbidden to advance beyond the box entry point.
+  // ============================================================
+  function rollingFiveBoxContains8042(m,x,y){
+    const b=m?.rollingFiveBox8042;
+    return !!b && x>=b.x0 && x<=b.x1 && y>=b.y0 && y<=b.y1;
+  }
+
+  function rollingFiveHardTarget8042(p,t){
+    const m=currentMap770();
+    if(m.id!=='industrial_zone'||!m.rollingFiveBox8042||p._rollingFivePassed7991)return t;
+
+    if(rollingFiveBoxContains8042(m,p.x,p.y)){
+      p._rollingFivePassed7991=true;
+      p._rollingFiveReleased7998=true;
+      p._rollingFiveBoxPassed8042=true;
+      return t;
+    }
+
+    // As soon as the racer reaches the lower sector, ignore all NORMAL/EVADE/
+    // REJOIN lateral targets and drive directly along the bottom road into box.
+    if(p.y>=108.0){
+      const b=m.rollingFiveBox8042;
+      const cx=(b.x0+b.x1)*.5, cy=(b.y0+b.y1)*.5;
+      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
+      return {...t,x:cx,y:cy,kind:(t?.kind||'race720')+'-HARD-FIVE-BOX-8042'};
+    }
+    return t;
+  }
 
   function v36SelfAudit(){
     const issues=[];
@@ -13321,7 +13363,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
     if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-81.0,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-157.2)>.10||!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock799)issues.push("스카이클리프도착799");
-    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_8041.png?v=8041-clean-rock2-hard-five-box"||!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRock2Clean8041)issues.push("롤링스톤이미지8041");
+    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_8042.png?v=8042-nohalo-hard-five-box"||!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRock2Clean8042)issues.push("롤링스톤이미지8042");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingHardSpline799)issues.push("롤링스톤6-5-3강제799");
