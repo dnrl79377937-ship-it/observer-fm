@@ -5684,13 +5684,13 @@ function applyMapSet776(){
   const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"];
   const meta={
     s_map:{slot:1,name:"네온 드리프트",en:"Neon Drift",theme:"Blue Neon S Course",tags:["기본","S자","네온"],image:"map_v672_equal_medium_start_goal.png?v=776-neon-drift"},
-    star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_791.png?v=792-clean"},
+    star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_791.png?v=802-theme-tile"},
     ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_776.png?v=793-ice-crown-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
-    desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_776.png?v=792-desert-clean",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
-    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_776.png?v=793-heart-clean",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
-    double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=792-blackhole-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
-    skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_776.png?v=776-space",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
-    cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_776.png?v=792-sky-cliff-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
+    desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_776.png?v=802-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_776.png?v=802-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=802-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_776.png?v=802-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
+    cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_776.png?v=802-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     industrial_zone:{slot:9,name:"롤링 스톤",en:"Rolling Stone",theme:"Ancient Ruins Obstacle",tags:["장애물","낙석","회피"],image:"map_rolling_stone_776.png?v=776-rolling-stone",special:{shortcuts:false,obstacles:true,wideRoad:false,multiRoute:false,verticality:false}}
   };
   for(const id of keep){
@@ -5727,7 +5727,7 @@ applyMapSet776();
       m.globalOptimal770=line;
     };
     set777("star_fish",{
-      image:"map_star_fish_791.png?v=792-clean-geometry",imageSize:{w:1254,h:1254},
+      image:"map_star_fish_791.png?v=802-theme-tile",imageSize:{w:1254,h:1254},
       logicalSize:{w:172,h:172},
       route770:[[86.0,28.6],[101.322,45.0],[132.213,48.2],[147.04,61.9],[130.977,77.8],[122.328,100.0],[101.322,95.1],[86.0,111.8],[70.678,95.1],[49.92,100.0],[40.776,77.8],[24.218,61.9],[40.034,48.2],[70.678,45.0],[86.0,28.6]],widths770:[7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6,7.6],
       start:{x:86.0,y:28.6},goal:{x:86.0,y:28.6},
@@ -5745,7 +5745,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.792"
     });
     set777("desert_oasis",{
-      image:"map_desert_oasis_776.png?v=792-desert-geometry",imageSize:{w:1122,h:1402},
+      image:"map_desert_oasis_776.png?v=802-theme-tile",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[18.409,60.942],[17.775,82.525],[19.044,105.378],[29.836,130.77],[54.594,138.388],[82.525,138.388],[106.648,132.04],[118.074,114.265],[121.248,88.873],[121.248,63.481],[116.805,41.897],[101.569,26.662],[78.716,21.583],[59.672,26.662],[45.706,36.184],[27.932,38.088],[20.314,45.071],[18.409,60.942]],widths770:[17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0],
       start:{x:18.409,y:60.942},goal:{x:18.409,y:60.942},
@@ -5754,7 +5754,7 @@ applyMapSet776();
       lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
     });
     set777("neon_city",{
-      image:"map_heart_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
+      image:"map_heart_776.png?v=802-theme-tile",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[71.099,131.405],[57.133,119.979],[43.167,107.917],[31.106,93.317],[23.488,76.177],[22.853,54.593],[29.836,38.088],[43.167,29.201],[57.133,31.106],[71.099,43.802],[85.064,31.106],[99.03,29.201],[112.361,38.088],[119.344,54.593],[118.709,76.177],[111.091,93.317],[99.03,107.917],[85.064,119.979],[71.099,131.405]],widths770:[16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5],
       start:{x:71.099,y:131.405},goal:{x:71.099,y:131.405},
@@ -5763,7 +5763,7 @@ applyMapSet776();
       lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
     });
     set777("double_hairpin",{
-      image:"map_black_hole_776.png?v=792-blackhole-geometry",imageSize:{w:1122,h:1402},
+      image:"map_black_hole_776.png?v=802-theme-tile",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[32.721,128.013],[25.467,120.68],[19.564,112.346],[15.142,103.251],[12.292,93.653],[11.057,83.819],[11.439,74.017],[13.394,64.507],[16.838,55.537],[21.648,47.337],[27.666,40.108],[34.707,34.024],[42.561,29.223],[50.998,25.806],[59.782,23.834],[68.669,23.328],[77.42,24.268],[85.802,26.597],[93.6,30.222],[100.618,35.014],[106.687,40.818],[111.666,47.454],[115.447,54.725],[117.958,62.421],[119.162,70.323],[119.061,78.216],[117.688,85.886],[115.114,93.134],[111.438,99.775],[106.788,105.647],[101.315,110.611],[95.188,114.559],[88.591,117.411],[81.713,119.12],[74.749,119.673],[67.889,119.086],[61.315,117.409],[55.196,114.718],[49.686,111.116],[44.915,106.728],[40.989,101.696],[37.99,96.178],[35.969,90.337],[34.951,84.343],[34.931,78.363],[35.878,72.561],[37.732,67.088],[40.412,62.084],[43.818,57.667],[47.83,53.939],[52.317,50.977],[57.138,48.836],[62.149,47.542],[67.205,47.101],[72.164,47.492],[76.893,48.671],[81.271,50.575],[85.19,53.121],[88.56,56.213],[91.311,59.74],[93.392,63.586],[94.774,67.63],[95.45,71.748],[95.433,75.82],[94.757,79.735],[93.471,83.389],[91.643,86.69],[89.351,89.561],[86.686,91.943],[83.745,93.791],[80.627,95.083],[77.433,95.81]],widths770:[15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5],
       start:{x:32.721,y:128.013},goal:{x:77.433,y:95.81},
@@ -5772,7 +5772,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.77"
     });
     set777("skyway",{
-      image:"map_space_776.png?v=793-wider-corridor",imageSize:{w:724,h:2172},
+      image:"map_space_776.png?v=802-theme-tile",imageSize:{w:724,h:2172},
       logicalSize:{w:59.333,h:178},
       route770:[[29.666,167.182],[29.666,152.431],[29.666,135.221],[29.666,118.011],[29.666,100.801],[29.666,83.591],[29.666,66.381],[29.666,49.171],[29.666,31.961],[29.666,12.703]],widths770:[5.8,5.8,5.8,5.8,5.8,5.8,5.8,5.8,5.8],
       start:{x:29.666,y:167.182},goal:{x:29.666,y:12.703},
@@ -5781,7 +5781,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.77"
     });
     set777("cliff_hanger",{
-      image:"map_cliff_hanger_776.png?v=792-sky-cliff-geometry",imageSize:{w:1086,h:1448},
+      image:"map_cliff_hanger_776.png?v=802-theme-tile",imageSize:{w:1086,h:1448},
       logicalSize:{w:133.5,h:178},
       route770:[[27.044,14.137],[36.878,14.137],[47.942,18.439],[57.776,26.43],[68.84,35.035],[84.82,40.566],[102.03,45.483],[116.167,52.859],[121.084,63.923],[120.47,79.903],[117.396,94.655],[110.635,106.948],[100.801,114.323],[88.508,115.552],[79.903,107.562],[70.684,95.884],[61.464,84.82],[51.63,81.133],[41.181,83.591],[31.347,89.738],[25.2,98.343],[25.2,108.177],[30.732,116.167],[39.337,121.084],[40.566,129.075],[36.878,135.221],[42.41,139.523],[54.703,139.523]],widths770:[6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4],
       start:{x:27.044,y:14.137},goal:{x:54.703,y:139.523},
@@ -5925,7 +5925,7 @@ applyMapSet776();
 
     const space=MAP_DEFINITIONS_770.skyway;
     if(space){
-      space.image="map_space_776.png?v=793-wider-corridor";
+      space.image="map_space_776.png?v=802-theme-tile";
       space.widths770=[7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0];
       space.safeZones={
         start:{x0:25.766,y0:163.932,x1:33.566,y1:170.432},
@@ -6287,13 +6287,13 @@ applyMapSet776();
 
     const heart=MAP_DEFINITIONS_770.neon_city;
     if(heart){
-      heart.image="map_heart_7891_clean.png?v=7893-heart-runtime-fix";
+      heart.image="map_heart_7891_clean.png?v=802-theme-tile";
       heart.artworkRestored787=true;
     }
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_black_hole_787.png?v=792-clean-runtime";
+      black.image="map_black_hole_787.png?v=802-theme-tile";
       const oldRoute=(black.route770||[]).map(q=>[q[0],q[1]]);
       if(oldRoute.length>=2){
         black.route770=oldRoute.reverse();
@@ -6332,7 +6332,7 @@ applyMapSet776();
     if(black){
       // v7.87 had yellow/green roles reversed. Restore the opposite gate roles.
       // Start at the outer-left gate; finish at the inner-right gate.
-      black.image="map_black_hole_776.png?v=792-correct-gates";
+      black.image="map_black_hole_776.png?v=802-theme-tile";
       let r=(black.route770||[]).map(q=>[q[0],q[1]]);
       // v7.87 reversed the original route. Put it back to outer -> inner.
       if(black.blackHoleReverse787 && r.length>=2) r=r.reverse();
@@ -6364,7 +6364,7 @@ applyMapSet776();
       space.widths770=(space.widths770||[]).map(w=>w+1.0);
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRowsAdded788=2;
-      space.image="map_space_788.png?v=788-plus-two-rows";
+      space.image="map_space_788.png?v=802-theme-tile";
       const line=conservativeRacingLine778(space);
       space.racingSpline770=line;
       space.globalOptimal770=line;
@@ -6700,7 +6700,7 @@ applyMapSet776();
   function applyPatch7892(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(!black)return;
-    black.image="map_black_hole_776.png?v=792-single-yellow-spiral";
+    black.image="map_black_hole_776.png?v=802-theme-tile";
     black.route770=[[20.007,149.93],[21.187,149.973],[23.44,150.037],[26.821,150.132],[31.328,150.259],[36.136,150.354],[41.247,150.418],[46.658,150.449],[52.372,150.449],[58.006,150.251],[63.56,149.854],[69.035,149.259],[74.431,148.466],[79.589,147.394],[84.509,146.045],[89.191,144.419],[93.634,142.514],[97.84,140.372],[101.807,137.991],[105.537,135.373],[109.028,132.516],[112.321,129.263],[115.416,125.613],[118.312,121.566],[121.01,117.122],[123.431,112.44],[125.573,107.521],[127.438,102.363],[129.025,96.967],[130.215,91.571],[131.009,86.175],[131.405,80.779],[131.405,75.383],[130.969,70.027],[130.096,64.711],[128.787,59.434],[127.041,54.197],[124.859,49.317],[122.24,44.794],[119.185,40.628],[115.694,36.819],[111.885,33.486],[107.759,30.629],[103.315,28.249],[98.554,26.345],[93.634,24.797],[88.556,23.607],[83.319,22.774],[77.923,22.298],[72.606,22.258],[67.369,22.655],[62.211,23.488],[57.133,24.757],[52.292,26.345],[47.69,28.249],[43.326,30.471],[39.199,33.01],[35.391,35.787],[31.899,38.803],[28.725,42.056],[25.868,45.547],[23.329,49.198],[21.107,53.006],[19.203,56.974],[17.616,61.1],[16.307,65.226],[15.275,69.353],[14.521,73.479],[14.045,77.605],[13.886,81.731],[14.045,85.858],[14.521,89.984],[15.315,94.11],[16.346,97.998],[17.616,101.649],[19.124,105.061],[20.869,108.235],[22.774,111.091],[24.837,113.631],[27.059,115.852],[29.439,117.757],[32.256,119.463],[35.51,120.97],[39.199,122.28],[43.326,123.391],[47.69,124.303],[52.292,125.017],[57.133,125.533],[62.211,125.851],[67.131,125.89],[71.892,125.652],[76.494,125.136],[80.938,124.343],[85.223,123.192],[89.349,121.685],[93.317,119.82],[97.126,117.598],[100.577,115.059],[103.672,112.202],[106.41,109.028],[108.79,105.537],[110.853,101.807],[112.599,97.84],[114.027,93.634],[115.138,89.19],[115.813,84.905],[116.051,80.779],[115.853,76.812],[115.218,73.003],[114.186,69.392],[112.758,65.98],[110.933,62.767],[108.711,59.751],[106.172,57.053],[103.315,54.673],[100.141,52.61],[96.65,50.864],[93.079,49.396],[89.429,48.206],[85.699,47.293],[81.89,46.658],[78.081,46.301],[74.273,46.222],[70.464,46.42],[66.655,46.896],[63.084,47.69],[59.751,48.801],[56.657,50.229],[53.8,51.975],[51.181,53.919],[48.801,56.061],[46.658,58.402],[44.754,60.942],[43.088,63.639],[41.659,66.496],[40.469,69.511],[39.517,72.685],[38.882,75.82],[38.565,78.914],[38.565,81.97],[38.882,84.985],[39.517,87.921],[40.469,90.777],[41.739,93.555],[43.326,96.253],[45.27,98.752],[47.571,101.053],[50.229,103.156],[53.245,105.061],[56.339,106.687],[59.513,108.036],[62.767,109.108],[66.099,109.901],[69.392,110.417],[72.646,110.655],[75.86,110.615],[79.034,110.298],[82.009,109.742],[84.787,108.949],[87.366,107.917],[89.746,106.648],[91.928,105.18],[93.912,103.513],[95.697,101.649],[97.284,99.585],[98.673,97.403],[99.863,95.102],[100.855,92.682],[101.649,90.143],[102.164,87.603],[102.403,85.064],[102.363,82.525],[102.045,79.986],[101.49,77.526],[100.696,75.145],[99.665,72.844],[98.395,70.622],[96.967,68.559],[95.38,66.655],[93.634,64.909],[91.73,63.322],[89.706,61.933],[87.564,60.743],[85.302,59.751],[82.922,58.958],[80.541,58.442],[78.161,58.204],[75.78,58.244],[73.4,58.561],[71.138,59.116],[68.996,59.91],[66.972,60.942],[65.068,62.211],[63.401,63.639],[61.973,65.226],[60.783,66.972],[59.831,68.877],[59.077,70.821],[58.521,72.804],[58.164,74.828],[58.006,76.891],[58.085,78.914],[58.402,80.898],[58.958,82.842],[59.751,84.747],[60.783,86.493],[62.053,88.08],[63.56,89.508],[65.306,90.777],[67.052,91.888],[68.797,92.841],[70.543,93.634],[72.289,94.269],[73.836,94.769],[75.185,95.134],[76.336,95.364],[77.288,95.459],[78.002,95.531],[78.478,95.578],[78.738,95.661]];
     black.widths770=[13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5];
     black.start={x:20.007,y:149.93};
@@ -6749,7 +6749,7 @@ applyMapSet776();
     const heart=MAP_DEFINITIONS_770.neon_city;
     if(heart){
       const p=[71.099,126.205];
-      heart.image="map_heart_7891_clean.png?v=7893-heart-runtime-fix";
+      heart.image="map_heart_7891_clean.png?v=802-theme-tile";
       heart.start={x:p[0],y:p[1]};
       heart.goal={x:p[0],y:p[1]};
       if(Array.isArray(heart.route770) && heart.route770.length>=2){
@@ -6808,7 +6808,7 @@ applyMapSet776();
   function applyPatch7894(){
     const star=MAP_DEFINITIONS_770.star_fish;
     if(star){
-      star.image="map_star_fish_791.png?v=792-approved-art";
+      star.image="map_star_fish_791.png?v=802-theme-tile";
       star.widths770=new Array(Math.max(1,(star.route770||[]).length-1)).fill(9.6);
       star.strictRoadFollow778=true;
       star.roadFollowMode778="route-center-hard";
@@ -6839,14 +6839,14 @@ applyMapSet776();
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_black_hole_776.png?v=792-single-yellow-clean";
+      black.image="map_black_hole_776.png?v=802-theme-tile";
       black.leftDuplicateGateRemoved892=true;
       black.blackHoleSingleYellow894=true;
     }
 
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
-      desert.image="map_desert_oasis_776.png?v=7894-start-mosaic-clean";
+      desert.image="map_desert_oasis_776.png?v=802-theme-tile";
       desert.desertStartClean894=true;
     }
   }
@@ -6915,7 +6915,7 @@ applyMapSet776();
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRowsAdded896=2;
       space.spaceRoadTotalExtra896=4;
-      space.image="map_space_896.png?v=7896-plus-two-visible-rows";
+      space.image="map_space_896.png?v=802-theme-tile";
       const line=conservativeRacingLine778(space);
       space.racingSpline770=line;
       space.globalOptimal770=line;
@@ -6958,7 +6958,7 @@ applyMapSet776();
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRows897=4;
       space.spaceRoadDoubleWidth897=true;
-      space.image="map_space_897.png?v=7897-four-gray-rows";
+      space.image="map_space_897.png?v=802-theme-tile";
       const line=conservativeRacingLine778(space);
       space.racingSpline770=line;
       space.globalOptimal770=line;
@@ -7005,15 +7005,15 @@ applyMapSet776();
   function applyPatch7899(){
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
-      desert.image="map_desert_oasis_899.png?v=792-clean-start-art";
-      desert.imageFallback791="map_desert_oasis_776.png?v=792-fallback";
+      desert.image="map_desert_oasis_899.png?v=802-theme-tile";
+      desert.imageFallback791="map_desert_oasis_776.png?v=802-theme-tile";
       desert.startArtifactClean899=true;
       desert.mapLoadSafe791=true;
     }
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
-      cliff.image="map_cliff_hanger_899.png?v=792-clean-gate-art";
-      cliff.imageFallback791="map_cliff_hanger_776.png?v=792-fallback";
+      cliff.image="map_cliff_hanger_899.png?v=802-theme-tile";
+      cliff.imageFallback791="map_cliff_hanger_776.png?v=802-theme-tile";
       cliff.startArtifactClean899=true;
       cliff.mapLoadSafe791=true;
     }
@@ -7030,12 +7030,12 @@ applyMapSet776();
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
       desert.mapLoadSafe791=true;
-      desert.imageFallback791="map_desert_oasis_776.png?v=792-fallback";
+      desert.imageFallback791="map_desert_oasis_776.png?v=802-theme-tile";
     }
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
       cliff.mapLoadSafe791=true;
-      cliff.imageFallback791="map_cliff_hanger_776.png?v=792-fallback";
+      cliff.imageFallback791="map_cliff_hanger_776.png?v=802-theme-tile";
     }
 
     const roll=MAP_DEFINITIONS_770.industrial_zone;
@@ -12355,7 +12355,7 @@ function seasonCardHtml(p){
 
     const space=MAP_DEFINITIONS_770.skyway;
     if(space){
-      space.image='map_space_894.png?v=794-extra-box-removed';
+      space.image='map_space_894.png?v=802-theme-tile';
       space.spaceExtraGateArtRemoved794=true;
     }
   }
@@ -12454,7 +12454,7 @@ function seasonCardHtml(p){
   function applyPatch7943(){
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
-      desert.image='map_desert_oasis_899.png?v=7943-clean-start-lock';
+      desert.image='map_desert_oasis_899.png?v=802-theme-tile';
       desert.startArtifactClean899=true;
       desert.mapLoadSafe791=true;
       desert.qaStartClean7943=true;
@@ -12463,7 +12463,7 @@ function seasonCardHtml(p){
 
     const heart=MAP_DEFINITIONS_770.neon_city;
     if(heart){
-      heart.image='map_heart_7891_clean.png?v=7943-heart-clean-lock';
+      heart.image='map_heart_7891_clean.png?v=802-theme-tile';
       heart.sharedGate778=true;
       heart.courseType775='circuit';
       heart.finishRule775='one-lap-gate';
@@ -12484,7 +12484,7 @@ function seasonCardHtml(p){
 
     const space=MAP_DEFINITIONS_770.skyway;
     if(space){
-      space.image='map_space_894.png?v=7943-four-row-clean-lock';
+      space.image='map_space_894.png?v=802-theme-tile';
       space.widths770=new Array(Math.max(1,(space.route770||[]).length-1)).fill(11.6);
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRows897=4;
