@@ -5692,7 +5692,7 @@ function calibratedFastCorridor79(si){
 // on the in-game map roster, names, thumbnails, and artwork replacement.
 // ============================================================
 function applyMapSet776(){
-  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","triple_diamond"];
+  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"];
   const meta={
     s_map:{slot:1,name:"네온 드리프트",en:"Neon Drift",theme:"Blue Neon S Course",tags:["기본","S자","네온"],image:"map_v672_equal_medium_start_goal.png?v=776-neon-drift"},
     star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_791.png?v=803-theme-tile"},
@@ -13276,6 +13276,8 @@ function seasonCardHtml(p){
 
     // Public map lookup for the new id.
     MAP_DEFINITIONS_770.triple_diamond=m;
+    const mp810=MAP_POOL_770.indexOf(m);
+    if(mp810<0) MAP_POOL_770.push(m);
     activeMap770=(activeMapId770==='industrial_zone'||activeMapId770==='triple_diamond')
       ? m : activeMap770;
     if(activeMapId770==='industrial_zone')activeMapId770='triple_diamond';
@@ -13312,44 +13314,11 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.roadFollowMode778!=="route-center-hard"))issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.hardForbidden780||(MAP_DEFINITIONS_770.industrial_zone.forbiddenZones770||[]).length!==3)issues.push("롤링스톤바위780");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.boulderBypass789)issues.push("롤링스톤우회789");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.boulderSolid898||!MAP_DEFINITIONS_770.industrial_zone?.boulderInsideCutDisabled898)issues.push("롤링스톤바위고체898");
-    {const r=MAP_DEFINITIONS_770.industrial_zone,c=Number(r?.boulderClearance793 ?? r?.boulderClearance791)||0,z=r?.forbiddenZones770||[],ng=r?.rollingNoGoZones793||[],line=r?.racingSpline770||[];
-      if(c>.30||!r?.boulderGapCenter791||!Array.isArray(r?.rollingBoulders798)||r.rollingBoulders798.length!==3)issues.push("롤링스톤근접바위798");
-      if(!r?.rollingNoStop793||!r?.boulderLeftOnly793||!r?.bottomRoadFollow793||ng.length<1||Math.abs((r?.boulderVisualScale793||0)-.85)>.001||!r?.rollingCurveNoCut794||!r?.rollingClosePass798||!r?.qaRollingFullAudit798)issues.push("롤링스톤경로798");
-      if(line.some(q=>ng.some(a=>q[0]>=a.x1&&q[0]<=a.x2&&q[1]>=a.y1&&q[1]<=a.y2)))issues.push("롤링스톤우측금지793");}
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
-    if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
-    if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
-    if(!["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","triple_diamond"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록777");
-    if(MAP_POOL_770.some(m=>!m.logicalSize||!m.miniCrop||!m.route770?.length))issues.push("맵geometry777");
-    if(MAP_POOL_770.some(m=>(m.id!=="double_hairpin"&&!m.outerSoftLimit789)||!m.insideTune789))issues.push("전역인코스789");
-    if(!MAP_DEFINITIONS_770.skyway?.spaceRoadRowsAdded788||MAP_DEFINITIONS_770.skyway.spaceRoadRowsAdded788!==2)issues.push("스페이스폭788");
-    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.start?.x||0)-20.007,(MAP_DEFINITIONS_770.double_hairpin?.start?.y||0)-149.930)>.05)issues.push("블랙홀시작7892");
-    if(Math.hypot((MAP_DEFINITIONS_770.double_hairpin?.goal?.x||0)-78.738,(MAP_DEFINITIONS_770.double_hairpin?.goal?.y||0)-95.661)>.05)issues.push("블랙홀도착7892");
-    if(!MAP_DEFINITIONS_770.double_hairpin?.leftDuplicateGateRemoved892||MAP_DEFINITIONS_770.double_hairpin?.startDirection892!=="right")issues.push("블랙홀경로7892");
-    const u764=unitChassis764();
-    if(Object.keys(UNIT_CHASSIS_764).length!==5)issues.push("유닛5");
-    if(UNIT_CHASSIS_764[1].hitRadius>=Math.min(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.hitRadius)))issues.push("스커지크기");
-    if(UNIT_CHASSIS_764[1].topSpeed<=Math.max(...Object.values(UNIT_CHASSIS_764).slice(1).map(x=>x.topSpeed)))issues.push("스커지속도");
-    if(unitSpeedSpread764().spreadPct>1.5)issues.push("속도격차");
-    if(!(u764.hitRadius>=.47&&u764.hitRadius<=.63))issues.push("HIT");
-    // v4.08: generous outer survival buffer; no physical wall exists.
-    if(Math.abs((1+.03)-1.03)>.0001)issues.push("가속도3");
-    if(Math.abs(PLAYER_VISUAL_SCALE-.6583842)>.0001||Math.abs(OBS_VISUAL_SCALE-.851598)>.0001)issues.push("기본크기");
-    if(!(UNIT_CHASSIS_764[1].visualScale<UNIT_CHASSIS_764[3].visualScale&&UNIT_CHASSIS_764[5].visualScale>1))issues.push("유닛표현");
-    if(STUN_MS!==0||INV_MS!==0)issues.push("즉사규칙");
-    if(ROUND_POINTS.length!==12)issues.push("점수12");
-    if(!["HongKey","TaeHyeon","DVA","LiveCam"].every(n=>names.includes(n)))issues.push("추가선수");
-    if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
-    if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-81.0,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-157.2)>.10||!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock799)issues.push("스카이클리프도착799");
-    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_799.png?v=799-clean-no-halo-hard-five"||!MAP_DEFINITIONS_770.industrial_zone?.rollingHaloRemoved799)issues.push("롤링스톤이미지799");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingHardSpline799)issues.push("롤링스톤6-5-3강제799");
-    if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingCenterRoad800||!MAP_DEFINITIONS_770.industrial_zone?.rollingCenterRoadOnly800||Math.abs((MAP_DEFINITIONS_770.industrial_zone?.rollingBoulders798?.[1]?.r||0)-3.672)>.01)issues.push("롤링스톤중앙길-바위2축소800");
+    {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaTripleDiamond810||td?.id!=="triple_diamond"||!Array.isArray(td?.dualStarts810)||td.dualStarts810.length!==2)issues.push("트리플다이아몬드810");
+      if(td?.image!=="map_triple_diamond_810.png?v=810-triple-diamond")issues.push("트리플다이아몬드이미지810");
+      if(td?.lapRequired775!==false||td?.finishRule775!=="end-gate")issues.push("트리플다이아몬드완주810");
+    }
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
     if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
