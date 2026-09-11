@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.042";
+  const BUILD_ID = "v8.10";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -557,6 +557,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     // Do not reshuffle a hidden route advantage between test runs.
     const spawn770=mapStart770();
     return activeSourceIndexes.map((src,i)=>{
+      const map810=currentMap770();
+      const spawnI=(map810.id==='triple_diamond'&&Array.isArray(map810.dualStarts810))
+        ? map810.dualStarts810[i%2]
+        : spawn770;
       const laneSig=laneSignatures[i];
       const name=names[src];
       const pf=profiles[src];
@@ -632,7 +636,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         extremeInsideCooldown:900+Math.random()*1200, extremeInsideSide:0,
         skimDodgeCooldown:0,
         liveRatingHistory:[],lastRatingSampleAt:0,
-        x:spawn770.x, y:spawn770.y,
+        x:spawnI.x, y:spawnI.y,
         steerX:1, steerY:0,
         seg:0,
         // Pace creates small but meaningful differences, not runaway gaps.
@@ -647,7 +651,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         ) * 1.566903319,
         desiredOffset:(i-3.5)*0.40,
         stunUntil:0, invUntil:0, collisionLockUntil:0,
-        hitFxUntil:0, visualAngle:0, prevX:spawn770.x, prevY:spawn770.y, simPrevX:spawn770.x, simPrevY:spawn770.y,
+        hitFxUntil:0, visualAngle:0, prevX:spawnI.x, prevY:spawnI.y, simPrevX:spawnI.x, simPrevY:spawnI.y,
         // v4.69: brief tolerance for borderline upper-left corner exits.
         outsideGrace69Since:0,
         sectorIndex:0, sectorStartMs:0, sectorTimes:[],
@@ -666,8 +670,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         modeStart:0,
         lastProgress:0,
         lastAdvanceAt:0,
-        lastX:spawn770.x,
-        lastY:spawn770.y,
+        lastX:spawnI.x,
+        lastY:spawnI.y,
         avoidDecisionUntil:0,
         avoidWillDodge:true,
         avoidThreatId:-1,
@@ -4503,7 +4507,10 @@ function calibratedFastCorridor79(si){
 
 
   function forceStartCenter625(p){
-    const sp=mapStart770(),sx=sp.x,sy=sp.y;
+    const m810=currentMap770();
+    const sp=(m810.id==='triple_diamond'&&Array.isArray(m810.dualStarts810))
+      ? m810.dualStarts810[(p.index||0)%2]
+      : mapStart770(),sx=sp.x,sy=sp.y;
     p.x=sx; p.y=sy;
     p.prevX=sx; p.prevY=sy;
     p.simPrevX=sx; p.simPrevY=sy;
@@ -4669,7 +4676,11 @@ function calibratedFastCorridor79(si){
   function sanitizeRaceState666(p){
     if(!p) return false;
     if(!Number.isFinite(p.x)||!Number.isFinite(p.y)){
-      const sp770=mapStart770();p.x=sp770.x;p.y=sp770.y;p.seg=0;
+      const m810=currentMap770();
+      const sp770=(m810.id==='triple_diamond'&&Array.isArray(m810.dualStarts810))
+        ? m810.dualStarts810[(p.index||0)%2]
+        : mapStart770();
+      p.x=sp770.x;p.y=sp770.y;p.seg=0;
       p.prevX=p.x;p.prevY=p.y;p.simPrevX=p.x;p.simPrevY=p.y;
       p._lastLegal636={x:p.x,y:p.y};p._lastLegal619={x:p.x,y:p.y};
     }
@@ -5681,7 +5692,7 @@ function calibratedFastCorridor79(si){
 // on the in-game map roster, names, thumbnails, and artwork replacement.
 // ============================================================
 function applyMapSet776(){
-  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"];
+  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","triple_diamond"];
   const meta={
     s_map:{slot:1,name:"네온 드리프트",en:"Neon Drift",theme:"Blue Neon S Course",tags:["기본","S자","네온"],image:"map_v672_equal_medium_start_goal.png?v=776-neon-drift"},
     star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_791.png?v=803-theme-tile"},
@@ -6501,10 +6512,6 @@ applyMapSet776();
     if(!t)return t;
     const m=currentMap770();
 
-    // v8.042: absolute lower-right checkpoint lock before any other steering logic.
-    t=rollingFiveHardTarget8042(p,t);
-    if(t?.kind&&String(t.kind).includes('HARD-FIVE-BOX-8042')) return t;
-
     // v7.994 Rolling Stone: hard staged 6 -> 5-center -> 3 progression.
     // Once a racer enters the lower sector, it must physically traverse two
     // center-road approach points and then the 5-o'clock center gate. This is
@@ -6535,7 +6542,7 @@ applyMapSet776();
     // from bypassing the 5-o'clock bend even if local progress projection is noisy.
     if(m.id==='industrial_zone'&&m.rollingMandatoryFiveGate7991){
       const g=m.rollingMandatoryFiveGate7991;
-      if(rollingFiveBoxContains8042(m,p.x,p.y) || Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
       if(!p._rollingFivePassed7991){
         const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
         const gp=nearestSplineProgress720(g.x,g.y);
@@ -7764,11 +7771,9 @@ applyMapSet776();
     const gateMap7991=currentMap770();
     if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
       const g=gateMap7991.rollingMandatoryFiveGate7991;
-      if(rollingFiveBoxContains8042(gateMap7991,p.x,p.y) || Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
       if(!p._rollingFivePassed7991){
-        const b=gateMap7991.rollingFiveBox8042;
-        const gx=b?(b.x0+b.x1)*.5:g.x, gy=b?(b.y0+b.y1)*.5:g.y;
-        const gp=nearestSplineProgress720(gx,gy);
+        const gp=nearestSplineProgress720(g.x,g.y);
         prog=Math.min(prog,gp);
       }
     }
@@ -7826,11 +7831,9 @@ applyMapSet776();
     const gateMap7991=currentMap770();
     if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
       const g=gateMap7991.rollingMandatoryFiveGate7991;
-      if(rollingFiveBoxContains8042(gateMap7991,p.x,p.y) || Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
+      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
       if(!p._rollingFivePassed7991){
-        const b=gateMap7991.rollingFiveBox8042;
-        const gx=b?(b.x0+b.x1)*.5:g.x, gy=b?(b.y0+b.y1)*.5:g.y;
-        const gp=nearestSplineProgress720(gx,gy);
+        const gp=nearestSplineProgress720(g.x,g.y);
         next=Math.min(next,gp);
       }
     }
@@ -13198,109 +13201,88 @@ function seasonCardHtml(p){
   }
   applyPatch801();
 
+
   // ============================================================
-  // v8.041 — ROLLING STONE CLEAN ROCK2 + HARD 5 O'CLOCK BOX GATE
-  // - starts from the v8.03 codebase (broken v8.04 discarded),
-  // - keeps the existing map layout and red finish rectangle,
-  // - visually shrinks rock #2 and removes its oversized ring/halo,
-  // - after the 6 o'clock sector, every driving mode must enter the
-  //   lower-right 5 o'clock checkpoint region before 3 o'clock opens.
+  // v8.10 — TRIPLE DIAMOND replaces Rolling Stone
+  // Active Rolling Stone behavior is fully retired on Map 09.
+  // Two nearby yellow starts share the camera; one green finish sits at the top.
   // ============================================================
-  function applyPatch8041(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
+  function applyPatch810(){
+    const m=MAP_DEFINITIONS_770.industrial_zone;
+    if(!m)return;
 
-    roll.image='map_rolling_stone_8042.png?v=8042-nohalo-hard-five-box';
+    // Rename/re-key the active map while retaining an internal compatibility alias
+    // so older audit code cannot crash during startup.
+    m.id='triple_diamond';
+    m.slot=9;
+    m.name='트리플 다이아몬드';
+    m.en='Triple Diamond';
+    m.theme='Heaven vs Hell Triple Diamond';
+    m.tags=['트리플다이아','2스타트','천국vs지옥'];
+    m.image='map_triple_diamond_810.png?v=810-triple-diamond';
+    m.imageSize={w:1232,h:1232};
+    m.logicalSize={w:178,h:178};
+    m.miniCrop={x:0,y:0,w:178,h:178};
 
-    // Rock #2 (7~9 o'clock side): smaller visual-compatible physics.
-    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
-      roll.rollingBoulders798[1].r=3.30;
-    }
-    roll.rollingRock2CoreRadius7999=3.08;
-    roll.boulderClearance793=.05;
-    roll.rollingRock2Scale800=.57;
-    roll.rollingRock2EdgeFlex7996=true;
-    roll.rollingRock2NoStall7995=true;
-    roll.rollingDualTangentEscape7995=true;
-    roll.rollingSmoothCollision7981=true;
-
-    // Keep the legal narrow pass beside rocks; do not reopen outer shortcuts.
-    roll.rollingCenterRoadOnly800=true;
-    roll.rollingOuterRoutesDisabled800=true;
-    roll.rollingBoulderNarrowBypass800=true;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.rollingHardSpline799=true;
-    roll.roadFollowMode778='route-center-hard';
-    roll.lockOptimalExecution784=true;
-    roll.outerSoftLimit789=true;
-
-    // HARD 6 -> 5 -> 3 lock.
-    // The final stage sits inside the user-marked lower-right 5 o'clock box.
-    // Enter the lower sector early enough that a diagonal 6 -> 3 line can never form.
-    roll.rollingFiveStage7994=[
-      {x:52.0,y:126.8,r:4.0},
-      {x:66.0,y:128.2,r:3.8},
-      {x:80.0,y:129.0,r:3.8},
-      {x:94.0,y:129.1,r:3.8},
-      {x:106.0,y:128.6,r:3.8},
-      {x:116.0,y:126.2,r:5.2}
+    // START 1 / START 2 are close enough for one camera frame.
+    m.dualStarts810=[
+      {x:80.0,y:165.0},
+      {x:98.0,y:165.0}
     ];
-    roll.rollingMandatoryFiveGate7991={x:116.5,y:128.0,r:5.5};
-    roll.rollingFiveStageEnterY7994=112.0;
-    roll.rollingFiveStageExitX7994=136.0;
-    roll.rollingFiveCenterHard801=true;
-    roll.rollingOuterFiveBlocked801=true;
-    roll.rollingMandatoryFive799=true;
-    roll.rollingBottomViaFive7981=true;
+    m.start={x:89.0,y:165.0};
+    m.goal={x:89.0,y:10.5};
+    m.safeZones={
+      start:{x0:74.0,y0:157.0,x1:104.0,y1:172.0},
+      goal:{x0:83.0,y0:4.5,x1:95.0,y1:16.5}
+    };
 
-    // Store the rectangular checkpoint used by QA/debugging.
-    // The circular gate above is fully contained in this region.
-    roll.rollingFiveBox8042={x0:108.0,y0:121.0,x1:125.0,y1:134.0};
-    roll.qaRollingRock2Clean8042=true;
-    roll.qaRollingFiveBox8042=true;
+    // Stable first-pass centerline. The three diamonds remain visually symmetric;
+    // route-choice AI can be expanded in later v8.1x patches without legacy rock code.
+    m.route770=[
+      [89.0,165.0],
+      [61.0,150.0],[47.0,135.0],[61.0,120.0],[89.0,105.0],
+      [117.0,90.0],[131.0,75.0],[117.0,60.0],[89.0,45.0],
+      [61.0,32.0],[47.0,22.0],[66.0,14.5],[89.0,10.5]
+    ];
+    m.widths770=new Array(m.route770.length-1).fill(10.5);
+    const line=densifyLine772(m.route770,.030);
+    m.racingSpline770=line;
+    m.globalOptimal770=line;
+    m.racingLineMode772='triple-diamond-v8.10';
+    m.strictRoadFollow778=true;
+    m.roadFollowMode778='route-center-hard';
+    m.geometryReady=true;
+    m.approvedImageShape772=true;
+    m.outerSoftLimit789=true;
+    m.insideTune789='triple-diamond-balanced';
 
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(5.8);
-    const line=densifyLine772(roll.route770,.024);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='absolute-hard-6-five-box-3-v8.042';
-  }
-  applyPatch8041();
+    // Point-to-point: two starts -> one finish.
+    m.courseType775='point-to-point';
+    m.finishRule775='end-gate';
+    m.lapRequired775=false;
+    m.lapArmFraction775=0;
+    m.sharedGate778=false;
 
-
-  // ============================================================
-  // v8.042 — ABSOLUTE 5 O'CLOCK BOX LOCK
-  // The racer must PHYSICALLY enter the lower-right checkpoint rectangle.
-  // Until then, every steering mode is forced toward the box center and
-  // spline progress is forbidden to advance beyond the box entry point.
-  // ============================================================
-  function rollingFiveBoxContains8042(m,x,y){
-    const b=m?.rollingFiveBox8042;
-    return !!b && x>=b.x0 && x<=b.x1 && y>=b.y0 && y<=b.y1;
-  }
-
-  function rollingFiveHardTarget8042(p,t){
-    const m=currentMap770();
-    if(m.id!=='industrial_zone'||!m.rollingFiveBox8042||p._rollingFivePassed7991)return t;
-
-    if(rollingFiveBoxContains8042(m,p.x,p.y)){
-      p._rollingFivePassed7991=true;
-      p._rollingFiveReleased7998=true;
-      p._rollingFiveBoxPassed8042=true;
-      return t;
+    // Remove every active Rolling Stone/boulder property from this map.
+    for(const k of Object.keys(m)){
+      if(/^rolling/i.test(k)||/^boulder/i.test(k)||/rock2/i.test(k)||/rock3/i.test(k)){
+        delete m[k];
+      }
     }
+    delete m.forbiddenZones770;
+    delete m.hardForbidden780;
+    delete m.boulderSolid898;
+    delete m.boulderInsideCutDisabled898;
 
-    // As soon as the racer reaches the lower sector, ignore all NORMAL/EVADE/
-    // REJOIN lateral targets and drive directly along the bottom road into box.
-    if(p.y>=108.0){
-      const b=m.rollingFiveBox8042;
-      const cx=(b.x0+b.x1)*.5, cy=(b.y0+b.y1)*.5;
-      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
-      return {...t,x:cx,y:cy,kind:(t?.kind||'race720')+'-HARD-FIVE-BOX-8042'};
-    }
-    return t;
+    // Public map lookup for the new id.
+    MAP_DEFINITIONS_770.triple_diamond=m;
+    activeMap770=(activeMapId770==='industrial_zone'||activeMapId770==='triple_diamond')
+      ? m : activeMap770;
+    if(activeMapId770==='industrial_zone')activeMapId770='triple_diamond';
+
+    m.qaTripleDiamond810=true;
   }
+  applyPatch810();
 
   function v36SelfAudit(){
     const issues=[];
@@ -13340,7 +13322,7 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.approvedImageShape772))issues.push("확정맵이미지");
     if(!currentMap770().geometryReady||route.length<2||RACING_SPLINE_720.length<2)issues.push("맵지오메트리");
     if(MAP_POOL_770.length!==9)issues.push("9맵구성777");
-    if(!["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록777");
+    if(!["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","triple_diamond"].every(id=>MAP_DEFINITIONS_770[id]))issues.push("맵목록777");
     if(MAP_POOL_770.some(m=>!m.logicalSize||!m.miniCrop||!m.route770?.length))issues.push("맵geometry777");
     if(MAP_POOL_770.some(m=>(m.id!=="double_hairpin"&&!m.outerSoftLimit789)||!m.insideTune789))issues.push("전역인코스789");
     if(!MAP_DEFINITIONS_770.skyway?.spaceRoadRowsAdded788||MAP_DEFINITIONS_770.skyway.spaceRoadRowsAdded788!==2)issues.push("스페이스폭788");
@@ -13363,7 +13345,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
     if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-81.0,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-157.2)>.10||!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock799)issues.push("스카이클리프도착799");
-    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_8042.png?v=8042-nohalo-hard-five-box"||!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRock2Clean8042)issues.push("롤링스톤이미지8042");
+    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_799.png?v=799-clean-no-halo-hard-five"||!MAP_DEFINITIONS_770.industrial_zone?.rollingHaloRemoved799)issues.push("롤링스톤이미지799");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingHardSpline799)issues.push("롤링스톤6-5-3강제799");
