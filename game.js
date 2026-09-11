@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.03";
+  const BUILD_ID = "v8.041";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -13190,18 +13190,33 @@ function seasonCardHtml(p){
   }
   applyPatch801();
 
-
   // ============================================================
-  // v8.04 — ROLLING STONE CLEAN ROCK2 + MANDATORY LOWER-RIGHT BOX GATE
-  // - use the clean map asset without the oversized ring artifact,
-  // - keep rock #2 visually/physically smaller,
-  // - after passing 6 o'clock, racers must enter the lower-right 5 o'clock box
-  //   before rejoining the climb toward 3 o'clock.
+  // v8.041 — ROLLING STONE CLEAN ROCK2 + HARD 5 O'CLOCK BOX GATE
+  // - starts from the v8.03 codebase (broken v8.04 discarded),
+  // - keeps the existing map layout and red finish rectangle,
+  // - visually shrinks rock #2 and removes its oversized ring/halo,
+  // - after the 6 o'clock sector, every driving mode must enter the
+  //   lower-right 5 o'clock checkpoint region before 3 o'clock opens.
   // ============================================================
-  function applyPatch804(){
+  function applyPatch8041(){
     const roll=MAP_DEFINITIONS_770.industrial_zone;
     if(!roll)return;
-    roll.image='map_rolling_stone_804.png?v=804-clean-rock2-box-gate';
+
+    roll.image='map_rolling_stone_8041.png?v=8041-clean-rock2-hard-five-box';
+
+    // Rock #2 (7~9 o'clock side): smaller visual-compatible physics.
+    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
+      roll.rollingBoulders798[1].r=3.30;
+    }
+    roll.rollingRock2CoreRadius7999=3.08;
+    roll.boulderClearance793=.05;
+    roll.rollingRock2Scale800=.57;
+    roll.rollingRock2EdgeFlex7996=true;
+    roll.rollingRock2NoStall7995=true;
+    roll.rollingDualTangentEscape7995=true;
+    roll.rollingSmoothCollision7981=true;
+
+    // Keep the legal narrow pass beside rocks; do not reopen outer shortcuts.
     roll.rollingCenterRoadOnly800=true;
     roll.rollingOuterRoutesDisabled800=true;
     roll.rollingBoulderNarrowBypass800=true;
@@ -13211,47 +13226,39 @@ function seasonCardHtml(p){
     roll.roadFollowMode778='route-center-hard';
     roll.lockOptimalExecution784=true;
     roll.outerSoftLimit789=true;
-    roll.insideTune789='center-road-only-rock2-clean-box-gate-v8.04';
 
-    // Rock #2: slightly smaller again so the lower road stays visibly clear.
-    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
-      roll.rollingBoulders798[1].r=3.25;
-    }
-    roll.rollingRock2CoreRadius7999=3.05;
-    roll.boulderClearance793=.06;
-    roll.rollingRock2Scale800=.58;
-
-    // Preserve only the remote rock #3 safety guard.
-    roll.rollingNoGoZones793=[
-      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
-    ];
-
-    // HARD RULE: bottom section must pass through the lower-right 5 o'clock box
-    // before the car is allowed to climb toward 3 o'clock.
-    roll.rollingMandatoryFiveGate7991={x:109.5,y:128.5,r:4.4};
+    // HARD 6 -> 5 -> 3 lock.
+    // The final stage sits inside the user-marked lower-right 5 o'clock box.
+    // Enter the lower sector early enough that a diagonal 6 -> 3 line can never form.
     roll.rollingFiveStage7994=[
-      {x:55.0,y:126.0,r:3.7},
-      {x:67.0,y:128.0,r:3.6},
-      {x:79.0,y:129.2,r:3.6},
-      {x:90.5,y:129.5,r:3.6},
-      {x:100.0,y:129.0,r:3.6},
-      {x:109.5,y:128.5,r:4.4},
-      {x:116.5,y:126.0,r:3.4},
-      {x:121.0,y:121.0,r:3.3},
-      {x:123.2,y:115.8,r:3.1},
-      {x:123.5,y:109.5,r:3.0}
+      {x:52.0,y:126.8,r:4.0},
+      {x:66.0,y:128.2,r:3.8},
+      {x:80.0,y:129.0,r:3.8},
+      {x:94.0,y:129.1,r:3.8},
+      {x:106.0,y:128.6,r:3.8},
+      {x:116.0,y:126.2,r:5.2}
     ];
-    roll.rollingFiveStageEnterY7994=116.0;
-    roll.rollingFiveStageExitX7994=124.5;
+    roll.rollingMandatoryFiveGate7991={x:116.0,y:126.2,r:5.2};
+    roll.rollingFiveStageEnterY7994=112.0;
+    roll.rollingFiveStageExitX7994=136.0;
+    roll.rollingFiveCenterHard801=true;
+    roll.rollingOuterFiveBlocked801=true;
+    roll.rollingMandatoryFive799=true;
+    roll.rollingBottomViaFive7981=true;
+
+    // Store the rectangular checkpoint used by QA/debugging.
+    // The circular gate above is fully contained in this region.
+    roll.rollingFiveBox8041={x0:109.0,y0:120.0,x1:124.0,y1:133.0};
+    roll.qaRollingRock2Clean8041=true;
+    roll.qaRollingFiveBox8041=true;
 
     roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(5.8);
     const line=densifyLine772(roll.route770,.024);
     roll.racingSpline770=line;
     roll.globalOptimal770=line;
-    roll.racingLineMode772='mandatory-lower-right-box-gate-v8.04';
-    roll.qaRolling804=true;
+    roll.racingLineMode772='hard-6-five-box-3-v8.041';
   }
-  applyPatch804();
+  applyPatch8041();
 
   function v36SelfAudit(){
     const issues=[];
@@ -13314,7 +13321,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock7941)issues.push("스카이클리프QA7941");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRouteLock7941)issues.push("롤링스톤QA7941");
     if(Math.hypot((MAP_DEFINITIONS_770.cliff_hanger?.goal?.x||0)-81.0,(MAP_DEFINITIONS_770.cliff_hanger?.goal?.y||0)-157.2)>.10||!MAP_DEFINITIONS_770.cliff_hanger?.qaGoalLock799)issues.push("스카이클리프도착799");
-    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_799.png?v=799-clean-no-halo-hard-five"||!MAP_DEFINITIONS_770.industrial_zone?.rollingHaloRemoved799)issues.push("롤링스톤이미지799");
+    if(MAP_DEFINITIONS_770.industrial_zone?.image!=="map_rolling_stone_8041.png?v=8041-clean-rock2-hard-five-box"||!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRock2Clean8041)issues.push("롤링스톤이미지8041");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingContinuity7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingBottomViaFive7981||!MAP_DEFINITIONS_770.industrial_zone?.rollingNoTeleport7981)issues.push("롤링스톤연속주행7981");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingRoadArc7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingThreeToOneToTwelve7982||!MAP_DEFINITIONS_770.industrial_zone?.rollingFullArcTight7982)issues.push("롤링스톤3-1-12도로7982");
     if(!MAP_DEFINITIONS_770.industrial_zone?.qaRollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingMandatoryFive799||!MAP_DEFINITIONS_770.industrial_zone?.rollingHardSpline799)issues.push("롤링스톤6-5-3강제799");
