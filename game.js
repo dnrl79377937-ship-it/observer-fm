@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.172";
+  const BUILD_ID = "v8.18";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -6521,17 +6521,12 @@ applyMapSet776();
     const m=currentMap770();
     if(m.id==='triple_diamond'){
       destinyPath813(p);
-      const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
-      const look=mode==='NORMAL'?1.9:(mode==='EVADE'?2.1:2.4);
+      const prog=Math.max(0,Number(p._dgProg813)||0);
+      const look=mode==='EVADE'?2.25:2.05;
       const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+look));
-
-      // Any tactical target outside the selected branch corridor is rejected before movement.
-      if(!mapRoadSegment789(m,[p.x,p.y],[t.x,t.y],-.20) ||
-         !genericCourseMask771(m,t.x,t.y,-.05)){
-        p._noChordGuards795=(p._noChordGuards795||0)+1;
-        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-destiny-hard8171'};
-      }
-      return t;
+      // Route authority is always the racer's chosen personal branch.
+      // Observer AI may change lateral offset, never choose another road leg.
+      return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-destiny818'};
     }
 
     // v7.95: edge rails stay pass-through, but an EVADE/REJOIN target may not
@@ -7334,34 +7329,27 @@ applyMapSet776();
     destinyPath813(p);
     const ss=p._dgSegs813||[];
     if(!ss.length)return 0;
+    const total=Math.max(0,ss.total||0);
 
-    const old=Number.isFinite(hint)?Math.max(0,hint):0;
-    const total=ss.total||0;
+    // v8.18: once a racer owns a personal Destiny path, progress is monotonic.
+    // Re-projecting by geometric "nearest" caused adjacent diamond legs to steal
+    // authority near crossings and could send racers downward or onto the outer route.
+    if(Number.isFinite(hint)){
+      return Math.max(0,Math.min(total,hint));
+    }
 
-    // Only inspect a forward-local window around current progress so another branch
-    // cannot become the "nearest" path after the split.
-    const backLimit=Math.max(0,old-5.0);
-    const fwdLimit=Math.min(total,old+18.0);
-
-    let bestD=Infinity,bestP=old;
+    // Only used for first initialization/recovery when no progress exists.
+    let bestD=Infinity,bestP=0;
     for(const s of ss){
-      const segEnd=s.start+s.L;
-      if(segEnd<backLimit||s.start>fwdLimit)continue;
       const den=s.L*s.L||1;
       const t=Math.max(0,Math.min(1,((x-s.a[0])*s.dx+(y-s.a[1])*s.dy)/den));
       const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t;
       const d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
-      const pr=s.start+s.L*t;
-      if(d<bestD){
-        bestD=d;
-        bestP=pr;
-      }
+      if(d<bestD){bestD=d;bestP=s.start+s.L*t;}
     }
-
-    // Never permit a large backward snap and never jump far forward onto another loop.
-    bestP=Math.max(old-1.25,Math.min(old+10.0,bestP));
     return Math.max(0,Math.min(total,bestP));
   }
+
 
   function destinyPoint813(p,progress){
     destinyPath813(p);
@@ -7372,83 +7360,98 @@ applyMapSet776();
     const t=Math.max(0,Math.min(1,(pr-s.start)/s.L));
     return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy};
   }
-  function advanceDestinyPath815(p,distance){
-    if(!p||!(distance>0))return false;
+
+  function advanceDestinySafe818(p,distance,targetOff=0,mode="NORMAL"){
+    if(!p||currentMap770().id!=='triple_diamond')return false;
     destinyPath813(p);
     const total=Math.max(0,p._dgSegs813?.total||0);
     if(!total)return false;
 
-    const old=Math.max(0,Number(p._dgProg813)||0);
-    const projected=destinyNearest813(p,p.x,p.y,old);
-    const base=Math.max(old,projected);
-    const next=Math.min(total,base+distance);
-    const q=destinyPoint813(p,next);
+    // No accidental backward travel on this map. Explicit back-control is converted
+    // to a brief forward hold, preventing "fork -> suddenly downward" behavior.
+    const step=Math.max(0,Number(distance)||0);
+    const old=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
+    const next=Math.min(total,old+step);
 
-    // v8.17 path lock: position is always written back to the selected branch centerline.
-    p.x=q.x;
-    p.y=q.y;
+    const q=destinyPoint813(p,next);
+    const nx=-q.uy,ny=q.ux;
+
+    // Allow natural inside/avoidance movement but keep it well inside road bounds.
+    // Edge ends retain a little flexibility without ever reaching exterior terrain.
+    const maxLane=mode==="EVADE"?2.85:mode==="REJOIN"?2.15:2.55;
+    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
+    const prev=Number(p._dgLaneOff818)||0;
+    const blend=mode==="EVADE"?.34:.22;
+    let lane=prev+(wanted-prev)*blend;
+
+    let x=q.x+nx*lane,y=q.y+ny*lane;
+    const m=currentMap770();
+
+    // If an offset point is not legal road, shrink toward the personal centerline.
+    // This prevents wall-edge stalls instead of correcting them after the fact.
+    if(!genericCourseMask771(m,x,y,-.15)){
+      let ok=false;
+      for(const f of [.72,.48,.25,0]){
+        const test=lane*f;
+        const tx=q.x+nx*test,ty=q.y+ny*test;
+        if(genericCourseMask771(m,tx,ty,-.15)){
+          lane=test;x=tx;y=ty;ok=true;break;
+        }
+      }
+      if(!ok){lane=0;x=q.x;y=q.y;}
+    }
+
+    p.x=x;p.y=y;
     p._dgPrevProg815=old;
     p._dgProg813=next;
+    p._dgLaneOff818=lane;
+    p._lineOffset720=lane;
 
     const frac=next/Math.max(1,total);
     p._splineProg720=frac*Math.max(1,RACING_SPLINE_SEGS_720.total||1);
     p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
     p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
-    p._lineOffset720=0;
     return true;
+  }
+  function advanceDestinyPath815(p,distance){
+    return advanceDestinySafe818(p,distance,p?.desiredOffset||0,p?._raceState720?.mode||"NORMAL");
   }
   function enforceDestinyRoad817(p){
     if(!p||currentMap770().id!=='triple_diamond')return;
     destinyPath813(p);
-    const old=Math.max(0,Number(p._dgProg813)||0);
-    const prog=destinyNearest813(p,p.x,p.y,old);
+    const total=Math.max(1,p._dgSegs813?.total||1);
+    const prog=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
     const q=destinyPoint813(p,prog);
-    const ss=p._dgSegs813||[];
-    if(!ss.length)return;
+    const nx=-q.uy,ny=q.ux;
 
-    let seg=ss[ss.length-1];
-    for(const s of ss){
-      if(prog<=s.start+s.L){seg=s;break;}
+    let lane=Number(p._dgLaneOff818);
+    if(!Number.isFinite(lane))lane=Number(p._lineOffset720)||0;
+    lane=Math.max(-2.85,Math.min(2.85,lane));
+
+    let x=q.x+nx*lane,y=q.y+ny*lane;
+    if(!genericCourseMask771(currentMap770(),x,y,-.15)){
+      lane=0;x=q.x;y=q.y;
     }
 
-    const nx=-seg.uy, ny=seg.ux;
-    const dx=p.x-q.x,dy=p.y-q.y;
-    const lateral=dx*nx+dy*ny;
-
-    // Normal legal road width. A very small edge allowance remains so racers can
-    // skim the outermost road edge naturally without entering exterior terrain.
-    const baseHalf=4.55;
-    const edgeFlex=0.70;
-    const limit=baseHalf+edgeFlex;
-    const clamped=Math.max(-limit,Math.min(limit,lateral));
-
-    const cx=q.x+nx*clamped;
-    const cy=q.y+ny*clamped;
-    const outside=Math.abs(lateral)>limit || !genericCourseMask771(currentMap770(),p.x,p.y,-.05);
-
-    if(outside){
-      // Same-frame hard boundary: the rendered racer never occupies the exterior.
-      p.x=cx;p.y=cy;
-      p._dgProg813=Math.max(old,prog);
-      p._lineOffset720=clamped;
-      p._destinyHardBoundary8171=(p._destinyHardBoundary8171||0)+1;
-    }
+    // Never touch speed/state here. Old hard-boundary correction could fight the
+    // steering state every frame at an edge and look like a stop/freeze.
+    p.x=x;p.y=y;
+    p._dgLaneOff818=lane;
+    p._lineOffset720=lane;
   }
-
-
   function syncDestinyProgress813(p){
     if(currentMap770().id!=='triple_diamond')return;
     destinyPath813(p);
     enforceDestinyRoad817(p);
-    p._dgPrevProg815=Number(p._dgProg813)||0;
-    const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
-    p._dgProg813=Math.max(p._dgProg813||0,prog);
     const total=Math.max(1,p._dgSegs813?.total||1);
-    const frac=Math.max(0,Math.min(1,p._dgProg813/total));
+    const prog=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
+    p._dgPrevProg815=prog;
+    const frac=prog/total;
     p._splineProg720=frac*Math.max(1,RACING_SPLINE_SEGS_720.total||1);
     p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
     p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
   }
+
 
 
   function nearestSplineProgress720(x,y){
@@ -8094,13 +8097,9 @@ applyMapSet776();
   function rejoinTarget720(p,now){
     if(currentMap770().id==='triple_diamond'){
       destinyPath813(p);
-      enforceDestinyRoad817(p);
-      const old=Math.max(0,Number(p._dgProg813)||0);
-      const projected=destinyNearest813(p,p.x,p.y,old);
-      const prog=Math.max(old,projected);
-      p._dgProg813=prog;
-      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+2.4));
-      return {x:q.x,y:q.y,kind:"race720-rejoin-destiny817"};
+      const prog=Math.max(0,Number(p._dgProg813)||0);
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+2.0));
+      return {x:q.x,y:q.y,kind:"race720-rejoin-destiny818"};
     }
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     const prog=Math.max(old,Number(p._splineFloor754)||0);
@@ -8108,6 +8107,7 @@ applyMapSet776();
     const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
     return {x:q.x,y:q.y,kind:"race720-rejoin"};
   }
+
 
 
   function syncNormalEntryOffset759(p){
@@ -8184,13 +8184,9 @@ applyMapSet776();
   function normalTarget720(p){
     if(currentMap770().id==='triple_diamond'){
       destinyPath813(p);
-      enforceDestinyRoad817(p);
-      const old=Math.max(0,Number(p._dgProg813)||0);
-      const projected=destinyNearest813(p,p.x,p.y,old);
-      const prog=Math.max(old,projected);
-      p._dgProg813=prog;
-      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+1.9));
-      return {x:q.x,y:q.y,kind:"race720-normal-destiny817"};
+      const prog=Math.max(0,Number(p._dgProg813)||0);
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+2.15));
+      return {x:q.x,y:q.y,kind:"race720-normal-destiny818"};
     }
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     const prog=Math.max(old,Number(p._splineFloor754)||0);
@@ -8198,6 +8194,7 @@ applyMapSet776();
     const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
     return {x:q.x,y:q.y,kind:"race720-normal"};
   }
+
 
 
   function strictLocalRoadTarget778(p,si,target){
@@ -9239,7 +9236,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     const preMoveX719=p.x, preMoveY719=p.y;
-    if(currentMap770().blackHoleExactCenter897){
+    if(currentMap770().id==='triple_diamond'){
+      // v8.18: every Destiny mode moves on the already-selected personal road.
+      // AI avoidance only changes a bounded lane offset; it cannot cross to another leg.
+      advanceDestinySafe818(p,Math.max(0,move),targetOff,st723.mode);
+    }else if(currentMap770().blackHoleExactCenter897){
       // v7.897: absolute center authority. Variant controls cannot create lateral
       // movement. Negative/back-control movement is converted to a centerline hold,
       // never an off-center displacement.
@@ -9271,7 +9272,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v7.54 invariant: no non-backcon control may relocate a racer farther than
     // a physically plausible simulation step. This is a last-line guard, not wall rollback.
-    if(engineAuthority719){
+    if(engineAuthority719 && currentMap770().id!=='triple_diamond'){
       const act754=p._raceState720?.action||"none";
       noTeleportGuard754(p,preMoveX719,preMoveY719,move,act754);
     }
@@ -12634,7 +12635,7 @@ function seasonCardHtml(p){
         left:[J2,[76,57],[64,53],[55,47],[51,40],[54,33],[64,27],[76,22],M2],
         right:[J2,[102,57],[114,53],[123,47],[127,40],[124,33],[114,27],[102,22],M2]
       },
-      shared2:[M2,[89.05,14.0],[89.08,9.5],G]
+      shared2:[M2,[89.05,15.0],[89.02,10.5],[89.0,5.8]]
     };
     m.destinyRoads813=[
       ...m.destinyTopology815.startRoads,
@@ -12746,6 +12747,25 @@ function seasonCardHtml(p){
   }
   applyPatch8172();
 
+
+  function applyPatch818(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.monotonicPersonalProgress818=true;
+    m.allModesPersonalPath818=true;
+    m.noEdgeStall818=true;
+    m.noAdjacentLegSnap818=true;
+    m.noBackwardFork818=true;
+    m.innerLineBounded818=true;
+    m.destinyMaxLaneNormal818=2.55;
+    m.destinyMaxLaneEvade818=2.85;
+    m.roadFollowMode778='personal-path-authority';
+    m.racingLineMode772='destiny-monotonic-personal-path-v8.18';
+    m.qaDestiny818=true;
+  }
+  applyPatch818();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -12772,9 +12792,10 @@ function seasonCardHtml(p){
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="branch-hard-boundary")issues.push("하드경로778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="personal-path-authority")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny818||!td?.monotonicPersonalProgress818||!td?.allModesPersonalPath818||!td?.noEdgeStall818||!td?.noAdjacentLegSnap818||!td?.noBackwardFork818)issues.push("데스티니818");
       if(!td?.qaDestiny8172||!td?.runtimeRoadMaskFixed8172||!td?.cameraHorizontalLock8172||!td?.cameraVerticalLeaderFollow8172)issues.push("데스티니8172");
       if(!td?.qaDestiny8171||td.routeChoiceProbability813!==.50||td.routeChoiceCount815!==2||!td.branch2Independent8171||!td.exteriorNeverLegal8171)issues.push("데스티니8171");
       if(!td?.qaDestinyPath817||!td?.branchChoiceLocked817||!td?.personalPathHardLock817||!td?.outerRoadEscapeBlocked817||!td?.finalGoalTopCenter817)issues.push("데스티니경로817");
