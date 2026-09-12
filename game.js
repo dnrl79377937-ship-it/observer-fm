@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.18";
+  const BUILD_ID = "v8.181";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -7278,7 +7278,7 @@ applyMapSet776();
     const m=currentMap770();
     if(m.id!=='triple_diamond')return null;
 
-    if(!Array.isArray(p._dgChoices813) || p._dgChoices813.length!==2){
+    if(!Array.isArray(p._dgChoices813)||p._dgChoices813.length!==2){
       p._dgChoices813=[
         Math.random()<(m.routeChoiceProbability813??.5)?-1:1,
         Math.random()<(m.routeChoiceProbability813??.5)?-1:1
@@ -7287,44 +7287,50 @@ applyMapSet776();
 
     const topo=m.destinyTopology815;
     if(!topo)return null;
-
     const si=(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813===1)?1:0;
     const signature=`${si}:${p._dgChoices813[0]}:${p._dgChoices813[1]}`;
-    if(Array.isArray(p._dgPath813)&&p._dgPath813.length>4&&p._dgPathSig817===signature){
+
+    if(p._dgPathSig817===signature&&Array.isArray(p._dgPath813)&&p._dgSegs813?.length){
       return p._dgPath813;
     }
 
-    const pts=[];
-    const add=(arr,skipFirst=false)=>{
-      if(!Array.isArray(arr))return;
-      arr.forEach((q,i)=>{if(skipFirst&&i===0)return;pts.push([q[0],q[1]]);});
-    };
+    m._destinyPathCache8181=m._destinyPathCache8181||Object.create(null);
+    let cached=m._destinyPathCache8181[signature];
 
-    add(topo.startRoads[si]);
-    add(topo.shared0,true);
+    if(!cached){
+      const pts=[];
+      const add=(arr,skipFirst=false)=>{
+        if(!Array.isArray(arr))return;
+        arr.forEach((q,i)=>{if(skipFirst&&i===0)return;pts.push([q[0],q[1]]);});
+      };
 
-    // branch 1 is locked once chosen
-    add(p._dgChoices813[0]<0?topo.branch1.left:topo.branch1.right,true);
-    add(topo.shared1,true);
+      add(topo.startRoads[si]);
+      add(topo.shared0,true);
+      add(p._dgChoices813[0]<0?topo.branch1.left:topo.branch1.right,true);
+      add(topo.shared1,true);
+      add(p._dgChoices813[1]<0?topo.branch2.left:topo.branch2.right,true);
+      add(topo.shared2,true);
 
-    // branch 2 is also independently chosen once and locked
-    add(p._dgChoices813[1]<0?topo.branch2.left:topo.branch2.right,true);
-    add(topo.shared2,true);
-
-    const dense=densifyLine772(pts,.24);
-    const segs813=[];let total=0;
-    for(let i=0;i<dense.length-1;i++){
-      const a=dense[i],b=dense[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
-      segs813.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
-      total+=L;
+      // v8.181: 0.62 is visually smooth enough and far cheaper than the old 0.24.
+      const dense=densifyLine772(pts,.62);
+      const segs813=[];let total=0;
+      for(let i=0;i<dense.length-1;i++){
+        const a=dense[i],b=dense[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
+        segs813.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
+        total+=L;
+      }
+      segs813.total=total;
+      cached={path:dense,segs:segs813,total};
+      m._destinyPathCache8181[signature]=cached;
     }
-    segs813.total=total;
-    p._dgPath813=dense;
-    p._dgSegs813=segs813;
+
+    p._dgPath813=cached.path;
+    p._dgSegs813=cached.segs;
     p._dgPathSig817=signature;
-    p._dgProg813=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
-    return dense;
+    p._dgProg813=Math.max(0,Math.min(cached.total,Number(p._dgProg813)||0));
+    return p._dgPath813;
   }
+
   function destinyNearest813(p,x,y,hint=NaN){
     destinyPath813(p);
     const ss=p._dgSegs813||[];
@@ -7349,59 +7355,47 @@ applyMapSet776();
     }
     return Math.max(0,Math.min(total,bestP));
   }
-
-
   function destinyPoint813(p,progress){
     destinyPath813(p);
-    const ss=p._dgSegs813||[];if(!ss.length)return {x:p.x,y:p.y,ux:0,uy:-1};
+    const ss=p._dgSegs813||[];
+    if(!ss.length)return {x:p.x,y:p.y,ux:0,uy:-1};
     const pr=Math.max(0,Math.min(ss.total,Number(progress)||0));
-    let s=ss[ss.length-1];
-    for(const q of ss){if(pr<=q.start+q.L){s=q;break;}}
-    const t=Math.max(0,Math.min(1,(pr-s.start)/s.L));
-    return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy};
-  }
 
+    let lo=0,hi=ss.length-1,idx=hi;
+    while(lo<=hi){
+      const mid=(lo+hi)>>1,s=ss[mid];
+      if(pr<=s.start+s.L){idx=mid;hi=mid-1;}
+      else lo=mid+1;
+    }
+    const s=ss[idx];
+    const t=Math.max(0,Math.min(1,(pr-s.start)/s.L));
+    return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy,segIndex:idx};
+  }
   function advanceDestinySafe818(p,distance,targetOff=0,mode="NORMAL"){
     if(!p||currentMap770().id!=='triple_diamond')return false;
     destinyPath813(p);
     const total=Math.max(0,p._dgSegs813?.total||0);
     if(!total)return false;
 
-    // No accidental backward travel on this map. Explicit back-control is converted
-    // to a brief forward hold, preventing "fork -> suddenly downward" behavior.
     const step=Math.max(0,Number(distance)||0);
     const old=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
     const next=Math.min(total,old+step);
-
     const q=destinyPoint813(p,next);
     const nx=-q.uy,ny=q.ux;
 
-    // Allow natural inside/avoidance movement but keep it well inside road bounds.
-    // Edge ends retain a little flexibility without ever reaching exterior terrain.
-    const maxLane=mode==="EVADE"?2.85:mode==="REJOIN"?2.15:2.55;
+    // Faster racing line: normal driving hugs the safe inside bias,
+    // while EVADE may temporarily use more width without touching exterior terrain.
+    const maxLane=mode==="EVADE"?2.65:mode==="REJOIN"?1.75:2.15;
     const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
     const prev=Number(p._dgLaneOff818)||0;
-    const blend=mode==="EVADE"?.34:.22;
+    const blend=mode==="EVADE"?.28:.18;
     let lane=prev+(wanted-prev)*blend;
 
-    let x=q.x+nx*lane,y=q.y+ny*lane;
-    const m=currentMap770();
+    // Hard numeric corridor; no genericCourseMask scan every frame.
+    lane=Math.max(-maxLane,Math.min(maxLane,lane));
 
-    // If an offset point is not legal road, shrink toward the personal centerline.
-    // This prevents wall-edge stalls instead of correcting them after the fact.
-    if(!genericCourseMask771(m,x,y,-.15)){
-      let ok=false;
-      for(const f of [.72,.48,.25,0]){
-        const test=lane*f;
-        const tx=q.x+nx*test,ty=q.y+ny*test;
-        if(genericCourseMask771(m,tx,ty,-.15)){
-          lane=test;x=tx;y=ty;ok=true;break;
-        }
-      }
-      if(!ok){lane=0;x=q.x;y=q.y;}
-    }
-
-    p.x=x;p.y=y;
+    p.x=q.x+nx*lane;
+    p.y=q.y+ny*lane;
     p._dgPrevProg815=old;
     p._dgProg813=next;
     p._dgLaneOff818=lane;
@@ -7413,6 +7407,7 @@ applyMapSet776();
     p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
     return true;
   }
+
   function advanceDestinyPath815(p,distance){
     return advanceDestinySafe818(p,distance,p?.desiredOffset||0,p?._raceState720?.mode||"NORMAL");
   }
@@ -7426,19 +7421,14 @@ applyMapSet776();
 
     let lane=Number(p._dgLaneOff818);
     if(!Number.isFinite(lane))lane=Number(p._lineOffset720)||0;
-    lane=Math.max(-2.85,Math.min(2.85,lane));
+    lane=Math.max(-2.65,Math.min(2.65,lane));
 
-    let x=q.x+nx*lane,y=q.y+ny*lane;
-    if(!genericCourseMask771(currentMap770(),x,y,-.15)){
-      lane=0;x=q.x;y=q.y;
-    }
-
-    // Never touch speed/state here. Old hard-boundary correction could fight the
-    // steering state every frame at an edge and look like a stop/freeze.
-    p.x=x;p.y=y;
+    p.x=q.x+nx*lane;
+    p.y=q.y+ny*lane;
     p._dgLaneOff818=lane;
     p._lineOffset720=lane;
   }
+
   function syncDestinyProgress813(p){
     if(currentMap770().id!=='triple_diamond')return;
     destinyPath813(p);
@@ -12619,23 +12609,25 @@ function seasonCardHtml(p){
     const m=MAP_DEFINITIONS_770.triple_diamond;
     if(!m)return;
     const S1=[72.2,165.8],S2=[105.9,165.8];
-    const M0=[89.05,131.0],J1=[89.05,113.4],M1=[89.05,82.8],J2=[89.05,60.0],M2=[89.05,18.7],G=[89.0,5.8];
+    // v8.181: merges sit at the visual center-neck of each fork, not at its lower tail.
+    const M0=[89.0,122.0],J1=[89.0,111.0],M1=[89.0,72.5],J2=[89.0,61.0],M2=[89.0,19.0],G=[89.0,5.8];
     m.destinyTopology815={
       startRoads:[
-        [S1,[66,160],[61,153],[60,147],[64,141],[72,136],[81,132],M0],
-        [S2,[112,160],[117,153],[118,147],[114,141],[106,136],[97,132],M0]
+        [S1,[67,159],[62,151],[63,143],[69,135],[79,128],M0],
+        [S2,[111,159],[116,151],[115,143],[109,135],[99,128],M0]
       ],
-      shared0:[M0,[89.05,123],[89.05,118],J1],
+      shared0:[M0,[89.0,117],J1],
       branch1:{
-        left:[J1,[76,110],[64,105],[55,98],[51,93],[54,88],[64,84],[76,82],M1],
-        right:[J1,[102,110],[114,105],[123,98],[127,93],[124,88],[114,84],[102,82],M1]
+        // optimized inside racing line: less unnecessary outer looping
+        left:[J1,[78,107],[68,102],[60,96],[57,90],[61,83],[70,78],[80,74],M1],
+        right:[J1,[100,107],[110,102],[118,96],[121,90],[117,83],[108,78],[98,74],M1]
       },
-      shared1:[M1,[89.05,75],[89.05,67],J2],
+      shared1:[M1,[89.0,67],J2],
       branch2:{
-        left:[J2,[76,57],[64,53],[55,47],[51,40],[54,33],[64,27],[76,22],M2],
-        right:[J2,[102,57],[114,53],[123,47],[127,40],[124,33],[114,27],[102,22],M2]
+        left:[J2,[78,57],[68,52],[60,46],[57,39],[61,32],[70,27],[80,22],M2],
+        right:[J2,[100,57],[110,52],[118,46],[121,39],[117,32],[108,27],[98,22],M2]
       },
-      shared2:[M2,[89.05,15.0],[89.02,10.5],[89.0,5.8]]
+      shared2:[M2,[89.0,14],[89.0,10],[89.0,5.8]]
     };
     m.destinyRoads813=[
       ...m.destinyTopology815.startRoads,
@@ -12766,6 +12758,23 @@ function seasonCardHtml(p){
   }
   applyPatch818();
 
+
+  function applyPatch8181(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m._destinyPathCache8181=Object.create(null);
+    m.destinyCachedPaths8181=true;
+    m.destinyBinaryLookup8181=true;
+    m.destinyNoFrameMaskScan8181=true;
+    m.optimizedInsideLine8181=true;
+    m.centerMerge8181=true;
+    m.mergePoints8181=[[89.0,122.0],[89.0,72.5]];
+    m.roadFollowMode778='personal-path-fast';
+    m.racingLineMode772='destiny-center-merge-inside-fast-v8.181';
+    m.qaDestiny8181=true;
+  }
+  applyPatch8181();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -12792,9 +12801,10 @@ function seasonCardHtml(p){
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="personal-path-authority")issues.push("하드경로778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="personal-path-fast")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny8181||!td?.destinyCachedPaths8181||!td?.destinyBinaryLookup8181||!td?.destinyNoFrameMaskScan8181||!td?.optimizedInsideLine8181||!td?.centerMerge8181)issues.push("데스티니8181");
       if(!td?.qaDestiny818||!td?.monotonicPersonalProgress818||!td?.allModesPersonalPath818||!td?.noEdgeStall818||!td?.noAdjacentLegSnap818||!td?.noBackwardFork818)issues.push("데스티니818");
       if(!td?.qaDestiny8172||!td?.runtimeRoadMaskFixed8172||!td?.cameraHorizontalLock8172||!td?.cameraVerticalLeaderFollow8172)issues.push("데스티니8172");
       if(!td?.qaDestiny8171||td.routeChoiceProbability813!==.50||td.routeChoiceCount815!==2||!td.branch2Independent8171||!td.exteriorNeverLegal8171)issues.push("데스티니8171");
