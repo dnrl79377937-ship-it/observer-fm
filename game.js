@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.1.0";
+  const BUILD_ID = "v1.1.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -9191,7 +9191,12 @@ applyMapSet776();
         p.desiredOffset=choice.laneOffset;
         p._survivalOverrideUntil109=now+(threat?.source722==="hard-close110"?900:(threat?.emergency?720:520));
         if(threat?.source722==="hard-close110"){
-          p._hardDodgeLane110=plan?.laneOffset ?? action?.laneOffset ?? p.desiredOffset;
+          // v1.1.1: `choice` is the actual evade plan in this scope.
+          // v1.1.0 incorrectly referenced undefined `plan` / `action`,
+          // causing a ReferenceError and freezing the game loop.
+          p._hardDodgeLane110=Number.isFinite(choice?.laneOffset)
+            ? choice.laneOffset
+            : p.desiredOffset;
           p._hardDodgeUntil110=now+900;
         }
       }
@@ -10560,8 +10565,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     if(now<(p._hardDodgeUntil110||0)&&Number.isFinite(p._hardDodgeLane110)){
-      targetOff=p._hardDodgeLane110;
-      p.desiredOffset=p._hardDodgeLane110;
+      const safeHardLane111=Math.max(-3.6,Math.min(3.6,p._hardDodgeLane110));
+      targetOff=safeHardLane111;
+      p.desiredOffset=safeHardLane111;
     }else if(now<(p._survivalOverrideUntil109||0)&&Number.isFinite(p.desiredOffset)){
       targetOff=p.desiredOffset;
     }
@@ -14374,6 +14380,16 @@ function seasonCardHtml(p){
     };
   }
   applyPatch110();
+
+
+  function applyPatch111(){
+    window.__OBSERVER_FM_V111__={
+      hardCloseReferenceErrorFixed:true,
+      hardDodgeLaneSanitized:true,
+      runtimeFreezeFixed:true
+    };
+  }
+  applyPatch111();
 
   function v36SelfAudit(){
     const issues=[];
