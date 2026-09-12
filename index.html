@@ -6,7 +6,7 @@
   <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observer Avoid FM v8.10 — Triple Diamond</title>
+  <title>Observer Avoid FM v8.16 — Start Safety AI</title>
   <link rel="stylesheet" href="style.css">
 
   <style id="mapSelectStyle774">
@@ -39,12 +39,74 @@
     }
   </style>
 
+
+  <style>
+    .match-mode-box{display:flex;align-items:center;gap:7px;padding:5px 8px;border:1px solid rgba(130,190,235,.28);border-radius:8px;background:rgba(5,18,32,.78);font-size:12px;font-weight:800}
+    .match-mode-box span{color:#9ec7e5;white-space:nowrap}
+    #matchModeSelect{height:30px;border:1px solid #315a78;border-radius:6px;background:#071b2d;color:#fff;font-weight:800;padding:0 8px}
+    #teamScoreBoard{position:absolute;z-index:12;top:58px;left:50%;transform:translateX(-50%);min-width:310px;pointer-events:none}
+    #personalScoreBoard{position:absolute;z-index:12;top:58px;right:12px;width:230px;max-height:330px;overflow:hidden;pointer-events:none}
+    .v813-team-live{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;padding:9px 12px;background:rgba(4,14,25,.90);border:1px solid rgba(160,210,245,.24);border-radius:10px;box-shadow:0 5px 18px rgba(0,0,0,.25)}
+    .v813-team-side{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:900}
+    .v813-team-side strong{font-size:21px}.v813-vs{font-size:11px;color:#93aec1;font-weight:900}
+    .v813-red{color:#ff6868}.v813-blue{color:#6fa5ff}
+    .personal-score-board{background:rgba(4,14,25,.90)!important;border:1px solid rgba(160,210,245,.22)!important;border-radius:10px!important;padding:9px!important}
+    .personal-score-title{font-size:12px!important;margin-bottom:5px!important}.personal-score-row{min-height:26px!important}
+    .ranking{min-width:290px}.rank-row{grid-template-columns:28px 16px auto minmax(80px,1fr) auto!important;gap:5px!important}
+    .rank-row.v813-individual{grid-template-columns:28px 16px minmax(95px,1fr) auto!important}.rank-row.v813-individual .team-mini{display:none!important}
+    .resultCard{width:min(1480px,96vw)!important;max-width:96vw!important;max-height:92vh!important;overflow:auto!important;padding:22px!important}
+    #teamResultSummary:empty{display:none}
+    .v813-mode-summary{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 16px;margin:8px 0 16px;border-radius:12px;background:linear-gradient(135deg,rgba(18,55,82,.68),rgba(7,27,45,.88));border:1px solid rgba(137,198,236,.25)}
+    .v813-mode-summary b{font-size:18px}.v813-mode-summary span{font-size:12px;color:#a9c7dc}
+    .v813-team-result{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:8px 0 18px}
+    .v813-team-result-card{padding:16px;border-radius:12px;background:#081b2b;border:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .v813-team-result-card strong{font-size:30px;margin-top:5px}.v813-team-result-center{display:flex;align-items:center;font-weight:1000;color:#a9bdca}
+    .visual-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.route-visual-card{grid-column:1/-1}
+    .telemetry-wrap{max-width:100%;overflow-x:auto}.resultTable{min-width:920px}
+    @media (max-width:1050px){.visual-grid{grid-template-columns:1fr!important}.route-visual-card{grid-column:auto}#personalScoreBoard{width:200px}.resultCard{padding:14px!important}}
+  </style>
+
+
+  <style>
+    /* v8.14 right-side broadcast center */
+    .broadcast-center-814{width:330px;min-width:330px;padding:14px!important;display:flex;flex-direction:column;gap:10px;
+      background:linear-gradient(180deg,rgba(5,18,31,.98),rgba(6,24,40,.96))!important;overflow:hidden}
+    .bc814-head{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 7px;border-bottom:1px solid rgba(130,200,240,.18)}
+    .bc814-head h2{margin:1px 0 0!important;font-size:18px!important}.bc814-kicker{font-size:9px;font-weight:1000;letter-spacing:.14em;color:#59d8ff}
+    #bc814Mode{font-size:10px;font-weight:900;color:#b5cee0;padding:4px 7px;border:1px solid rgba(150,205,240,.18);border-radius:999px}
+    .bc814-card{background:rgba(7,27,45,.78);border:1px solid rgba(123,191,233,.18);border-radius:11px;padding:10px}
+    .bc814-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+    .bc814-section-head b{font-size:11px;color:#edf8ff;letter-spacing:.06em}.bc814-section-head span{font-size:9px;color:#779bb4}
+    .bc814-top-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:7px;align-items:center;min-height:34px;padding:4px 3px;border-bottom:1px solid rgba(255,255,255,.055)}
+    .bc814-top-row:last-child{border-bottom:none}.bc814-rank{font-size:17px;font-weight:1000;text-align:center}
+    .bc814-top-name{min-width:0}.bc814-top-name b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .bc814-top-name small{font-size:9px;color:#7293aa}.bc814-gap{font-size:10px;font-weight:900;color:#88ddff}
+    .bc814-event{display:grid;grid-template-columns:36px 1fr;gap:7px;align-items:start;padding:6px 2px;border-bottom:1px solid rgba(255,255,255,.05)}
+    .bc814-event:last-child{border-bottom:none}.bc814-event time{font-size:9px;color:#678aa4}.bc814-event b{font-size:10px;line-height:1.35;color:#dceaf4}
+    .bc814-event.latest b{color:#fff}.bc814-events-empty{font-size:10px;color:#66879d;padding:15px 3px;text-align:center}
+    .bc814-focus{min-height:128px}.bc814-focus-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+    .bc814-focus-head span{font-size:9px;color:#61dbff;font-weight:1000;letter-spacing:.12em}.bc814-focus-head b{font-size:11px}
+    .bc814-focus-player{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+    .bc814-focus-player img{width:42px;height:42px;border-radius:10px;object-fit:cover}.bc814-focus-player strong{font-size:16px}.bc814-focus-player small{display:block;color:#81a2b8;font-size:9px}
+    .bc814-focus-grid,.bc814-metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .bc814-focus-grid div,.bc814-metric-grid div{padding:6px 7px;border-radius:7px;background:rgba(0,0,0,.18)}
+    .bc814-focus-grid span,.bc814-metric-grid span{display:block;font-size:8px;color:#6f91a8}.bc814-focus-grid b,.bc814-metric-grid b{font-size:12px;color:#f3fbff}
+    .bc814-team-score{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:rgba(7,24,39,.84);border:1px solid rgba(255,255,255,.08)}
+    .bc814-team-score .red{text-align:right;color:#ff6868}.bc814-team-score .blue{color:#6fa5ff}.bc814-team-score strong{font-size:19px}.bc814-team-score em{font-style:normal;font-size:9px;color:#708da1}
+    .broadcast{position:relative;padding-bottom:39px}
+    .bc814-rank-strip{position:absolute;left:10px;right:10px;bottom:5px;height:29px;z-index:13;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:3px;pointer-events:none}
+    .bc814-strip-item{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;border:1px solid rgba(145,205,240,.16);border-radius:6px;background:rgba(4,17,29,.88);font-size:9px;color:#b6cada}
+    .bc814-strip-item b{font-size:10px;color:#fff}.bc814-strip-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bc814-strip-item.leader{border-color:rgba(91,217,255,.50);box-shadow:0 0 10px rgba(67,197,244,.12)}
+    @media(max-width:1100px){.broadcast-center-814{width:285px;min-width:285px}.bc814-rank-strip{grid-template-columns:repeat(4,minmax(0,1fr));height:58px}.broadcast{padding-bottom:68px}}
+  </style>
+
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Observer Avoid FM</h1>
-      <p>v8.10 · 9 MAP · TRIPLE DIAMOND</p>
+      <p>v8.16 · 9 MAP · START SAFETY AI</p>
     </div>
     
     <div class="controls">
@@ -53,6 +115,13 @@
         <button id="mapSelectIcon774" class="map-picker-icon-774" type="button" title="맵 선택" aria-label="맵 선택">🗺️</button>
         <span class="map-picker-label-774">맵 선택</span>
         <select id="mapSelect774" class="map-picker-select-774" aria-label="레이싱 맵 선택"></select>
+      </div>
+      <div class="match-mode-box">
+        <span>경기 방식</span>
+        <select id="matchModeSelect" aria-label="경기 방식">
+          <option value="individual">8인 개인전</option>
+          <option value="team">팀전 4 vs 4</option>
+        </select>
       </div>
       <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
@@ -65,7 +134,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v8.10 · 9 MAP · TRIPLE DIAMOND</span>
+        <span id="cameraLabel">v8.16 · 9 MAP · START SAFETY AI</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <select id="povSelect" class="focus-mode-btn" title="AI 선수 POV"><option value="-1">POV: OFF</option></select>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
@@ -78,16 +147,39 @@
       <div id="diagnostics" class="diagnostics hidden"></div>
       <canvas id="race" width="1600" height="900"></canvas>
       <div class="minimap-wrap"><span>미니맵</span><canvas id="miniMap" width="126" height="123"></canvas></div>
+      <div id="bc814RankStrip" class="bc814-rank-strip"></div>
     </section>
 
-    <aside class="ranking">
-      <h2>실시간 순위</h2>
-      <div id="recordBoard" class="record-board"></div>
-      <div id="rankingList"></div>
-      <section class="live-rating-box">
-        <div class="live-rating-head"><b>실시간 평점</b><span>10.0 만점 · 종합 경기력</span></div>
-        <div id="liveRatingList" class="live-rating-list"></div>
+    <aside class="ranking broadcast-center-814">
+      <div class="bc814-head">
+        <div><span class="bc814-kicker">LIVE RACE CENTER</span><h2>레이스 중계센터</h2></div>
+        <span id="bc814Mode">개인전</span>
+      </div>
+
+      <section id="bc814TeamScore" class="bc814-team-score hidden"></section>
+
+      <section class="bc814-card">
+        <div class="bc814-section-head"><b>TOP 3</b><span>실시간 선두권</span></div>
+        <div id="bc814Top3" class="bc814-top3"></div>
       </section>
+
+      <section class="bc814-card bc814-dynamic">
+        <div id="bc814EventsWrap">
+          <div class="bc814-section-head"><b>LIVE EVENT</b><span>최근 경기 흐름</span></div>
+          <div id="bc814Events" class="bc814-events"></div>
+        </div>
+        <div id="bc814Focus" class="bc814-focus hidden"></div>
+      </section>
+
+      <section class="bc814-card bc814-metrics">
+        <div class="bc814-section-head"><b>LIVE 지표</b><span>현재 경기</span></div>
+        <div id="bc814Metrics" class="bc814-metric-grid"></div>
+      </section>
+
+      <!-- legacy targets retained hidden so older helper functions cannot break -->
+      <div id="recordBoard" style="display:none"></div>
+      <div id="rankingList" style="display:none"></div>
+      <div id="liveRatingList" style="display:none"></div>
     </aside>
   </main>
 
@@ -105,7 +197,7 @@
   <div id="resultPanel" class="overlay hidden">
     <div class="modalCard resultCard">
       <button id="resultClose" class="closeBtn">×</button>
-      <h2>8인 개인전 · 5클리어 선승 결과</h2>
+      <h2 id="resultTitle">8인 개인전 · 경기 통계</h2>
       <div id="teamResultSummary"></div>
 
       <section class="visual-dashboard">
@@ -140,7 +232,7 @@
         </div>
       </section>
 
-      <div class="qa-final-strip">v8.10 · 9 MAP · TRIPLE DIAMOND</div>
+      <div class="qa-final-strip">v8.16 · 9 MAP · START SAFETY AI</div>
       <div class="highlight-title">선수 경기 평점</div>
       <div id="matchRatings" class="match-ratings"></div>
       <div class="highlight-title">경기 분석 리포트</div>
@@ -167,7 +259,7 @@
       </div>
       <div class="tableWrap">
         <table class="resultTable">
-          <thead><tr><th>개인총점순위</th><th>팀</th><th>선수</th><th>1R</th><th>2R</th><th>3R</th><th>4R</th><th>5R</th><th>총점</th></tr></thead>
+          <thead><tr><th>순위</th><th id="resultTeamHead">팀</th><th>선수</th><th>1R</th><th>2R</th><th>3R</th><th>4R</th><th>5R</th><th>총점</th></tr></thead>
           <tbody id="resultBody"></tbody>
         </table>
       </div>
@@ -226,6 +318,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=8.10-triple-diamond"></script>
+  <script src="game.js?v=8.16-start-safety-ai"></script>
 </body>
 </html>

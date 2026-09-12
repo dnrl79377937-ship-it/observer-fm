@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.10";
+  const BUILD_ID = "v8.16";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -254,9 +254,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     {id:"cliff_hanger",slot:9,name:"스카이 클리프",en:"Sky Cliff",theme:"High Cliff",
       tags:["절벽","초협로","고난도지름길"],geometryReady:false,
       special:{shortcuts:true,obstacles:false,wideRoad:false,multiRoute:true,verticality:true},observerProfile:"precision"},
-    {id:"industrial_zone",slot:11,name:"산업지대",en:"Industrial Zone",theme:"Heavy Industry",
-      tags:["장애물","기믹","테크니컬"],geometryReady:false,
-      special:{shortcuts:false,obstacles:true,wideRoad:false,multiRoute:false,verticality:false},observerProfile:"industrial"}
+    {id:"triple_diamond",slot:9,name:"데스티니 게이트",en:"Destiny Gate",theme:"Heaven vs Hell Destiny Gate",
+      tags:["데스티니게이트","2스타트","천국vs지옥"],geometryReady:false,
+      special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:true,verticality:false},observerProfile:"branching"}
   ];
   const MAP_DEFINITIONS_770=Object.fromEntries(MAP_POOL_770.map(m=>[m.id,m]));
   let activeMapId770="s_map";
@@ -357,8 +357,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   let currentRound=1;
   let teamAssignments={};
   let activeSourceIndexes=[];
+  let matchMode="individual";
   const INDIVIDUAL_COLORS=["#ff4d4d","#4d8dff","#ffd84d","#39d46a","#66e3ff","#b06cff","#9aa0a6","#ff9f43"];
-  let teamTotals={A:0,B:0,C:0,D:0};
+  let teamTotals={RED:0,BLUE:0};
+  function isTeamMode(){return matchMode==="team";}
   let playerTournament={};
   let roundHistory=[];
   let tournamentHighlights=[];
@@ -372,7 +374,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   };
 
   function engineCoreRules(){
-    return {build:BUILD_ID,observerCount:observerCountForMap791(),observerCountMax:OBSERVER_COUNT,playerCount:8,
+    return {build:BUILD_ID,matchMode,observerCount:observerCountForMap791(),observerCountMax:OBSERVER_COUNT,playerCount:players.length||8,
       playerHitRadius:unitChassis764().hitRadius,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
@@ -395,7 +397,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const winnerTeam=teamWinner();
     const teamRows=teamStandings();
     const playerResults=names.map((name,index)=>{
-      const pt=playerTournament[index]||{rounds:[],total:0,team:teamAssignments[index]||"A"};
+      const pt=playerTournament[index]||{rounds:[],total:0,team:teamAssignments[index]||null};
       const rows=roundHistory.flatMap(r=>(r.players||[]).filter(x=>x.index===index));
       const mr=ratingByIndex.get(index);
       return {index,name,team:pt.team,totalPoints:pt.total||0,
@@ -411,13 +413,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         })};
     });
     return {schema:"observer-fm-race-result@1",build:BUILD_ID,createdAt:new Date().toISOString(),
-      rules:engineCoreRules(),match:{rounds:roundHistory.length,
-        teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},winnerTeam,
-        margin:teamRows.length>1?Math.max(0,teamRows[0].score-teamRows[1].score):0},
+      rules:engineCoreRules(),match:{mode:matchMode,rounds:roundHistory.length,
+        teamScores:isTeamMode()?{RED:teamTotals.RED,BLUE:teamTotals.BLUE}:null,winnerTeam,
+        margin:isTeamMode()&&teamRows.length>1?Math.max(0,teamRows[0].score-teamRows[1].score):0},
       players:playerResults,
       unitStats769:unitStats769(),
       rounds:roundHistory.map(r=>({round:r.round,unit769:clonePlain(r.unit769||null),
-        team:{A:r.team.A,B:r.team.B,C:r.team.C,D:r.team.D},
+        team:{...(r.team||{})},
         leaderChanges:r.leaderChanges||0,totalOvertakes:r.totalOvertakes||0,
         photoFinish:photoFinishArchive[r.round]?clonePlain(photoFinishArchive[r.round]):null,
         players:(r.players||[]).map(x=>({index:x.index,name:x.name,team:x.team,rank:x.rank,
@@ -438,62 +440,49 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     window.dispatchEvent(new CustomEvent("observerfm:matchcomplete",{detail:clonePlain(lastMasterResult)}));
     return lastMasterResult;
   }
-
   function createTeams(){
-    // v7.39 controlled 8-racer stat lab roster:
-    // 30: Angel / 90: GhostRider,Zino / 80: Kaka / 60: Egle,Bacilius,Chotbul,Pika.
     activeSourceIndexes=[0,2,4,6,1,3,5,7];
     teamAssignments={};
-    activeSourceIndexes.forEach((src,pos)=>teamAssignments[pos]=RACER_KEYS[pos]);
+    activeSourceIndexes.forEach((src,pos)=>{teamAssignments[pos]=isTeamMode()?(pos<4?"RED":"BLUE"):null;});
   }
-
   function initTournament(){
-    currentRound=1;
-    teamTotals={A:0,B:0,C:0,D:0};
-    roundHistory=[]; tournamentHighlights=[]; lastMasterResult=null;
-    window.__OBSERVER_FM_LAST_RESULT__=null; playerTournament={};
+    currentRound=1;teamTotals={RED:0,BLUE:0};
+    roundHistory=[];tournamentHighlights=[];lastMasterResult=null;
+    window.__OBSERVER_FM_LAST_RESULT__=null;playerTournament={};
     activeSourceIndexes.forEach((src,i)=>{
-      playerTournament[i]={name:names[src],team:RACER_KEYS[i],total:0,rounds:[],sourceIndex:src};
+      playerTournament[i]={name:names[src],team:teamAssignments[i]||null,total:0,rounds:[],sourceIndex:src};
     });
   }
 
-  function teamLabel(team){ return team==="A" ? "빨강팀" : team==="B" ? "파랑팀" : team==="C" ? "노랑팀" : "초록팀"; }
 
-  const TEAM_COLORS={A:"#ff4d4d",B:"#4d8dff",C:"#ffd84d",D:"#39d46a",E:"#66e3ff",F:"#b06cff",G:"#9aa0a6",H:"#ff9f43"};
+  function teamLabel(team){return team==="RED"?"빨강팀":team==="BLUE"?"파랑팀":"개인전";}
+
+  const TEAM_COLORS={RED:"#ff4d4d",BLUE:"#4d8dff"};
   function teamColor(team){return TEAM_COLORS[team]||"#ffffff";}
   function teamStandings(){
-    return ["A","B","C","D"].map(team=>({team,score:Number(teamTotals[team]||0)}))
+    if(!isTeamMode())return [];
+    return ["RED","BLUE"].map(team=>({team,score:Number(teamTotals[team]||0)}))
       .sort((a,b)=>b.score-a.score||a.team.localeCompare(b.team));
   }
   function teamWinner(){
+    if(!isTeamMode())return null;
     const rows=teamStandings();
-    return rows.length>1&&rows[0].score===rows[1].score?null:rows[0].team;
+    return rows.length>1&&rows[0].score===rows[1].score?null:rows[0]?.team||null;
   }
-
   function rebuildTournamentStandings(){
-    const totals={A:0,B:0,C:0,D:0};
-    const rebuilt={};
-    names.forEach((name,i)=>{
-      rebuilt[i]={name,team:teamAssignments[i]||"A",total:0,rounds:[]};
-    });
+    const totals={RED:0,BLUE:0};const rebuilt={};
+    activeSourceIndexes.forEach((src,i)=>{rebuilt[i]={name:names[src],team:teamAssignments[i]||null,total:0,rounds:[],sourceIndex:src};});
     for(const r of roundHistory){
-      totals.A+=Number(r.team?.A||0);
-      totals.B+=Number(r.team?.B||0);
-      totals.C+=Number(r.team?.C||0);
-      totals.D+=Number(r.team?.D||0);
+      if(isTeamMode()){totals.RED+=Number(r.team?.RED||0);totals.BLUE+=Number(r.team?.BLUE||0);}
       for(const x of (r.players||[])){
-        const row=rebuilt[x.index];
-        if(!row) continue;
-        row.team=x.team;
-        row.total+=Number(x.points||0);
-        row.rounds.push({
-          round:r.round,rank:x.rank,points:x.points,time:x.time,rating:x.rating||0
-        });
+        const row=rebuilt[x.index];if(!row)continue;
+        row.team=x.team||null;row.total+=Number(x.points||0);
+        row.rounds.push({round:r.round,rank:x.rank,points:x.points,time:x.time,rating:x.rating||0});
       }
     }
-    teamTotals=totals;
-    playerTournament=rebuilt;
+    teamTotals=totals;playerTournament=rebuilt;
   }
+
 
 
 
@@ -529,6 +518,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!mapDef)return false;
     const rr=mapDef.route770||[];
     const ww=mapDef.widths770||[];
+    if(mapDef.id==='triple_diamond'&&Array.isArray(mapDef.destinyRoads813)){
+      for(const road of mapDef.destinyRoads813){
+        if(pointNearPolyline771(x,y,road,8.4,extra))return true;
+      }
+      return false; // v8.15: never authorize the retired single zig-zag route on Destiny Gate.
+    }
     for(let i=0;i<rr.length-1;i++){
       const w=Number(ww[i]??ww[0]??10);
       if(pointNearPolyline771(x,y,[rr[i],rr[i+1]],w,extra))return true;
@@ -559,8 +554,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return activeSourceIndexes.map((src,i)=>{
       const map810=currentMap770();
       const spawnI=(map810.id==='triple_diamond'&&Array.isArray(map810.dualStarts810))
-        ? map810.dualStarts810[i%2]
+        ? map810.dualStarts810[(i < Math.ceil(activeSourceIndexes.length/2)) ? 0 : 1]
         : spawn770;
+      const dgStartIndex813=(map810.id==='triple_diamond')
+        ? ((i < Math.ceil(activeSourceIndexes.length/2)) ? 0 : 1) : -1;
+      const dgChoices813=(map810.id==='triple_diamond')
+        ? [Math.random()<(map810.routeChoiceProbability813??.5)?-1:1,
+           Math.random()<(map810.routeChoiceProbability813??.5)?-1:1]
+        : null;
       const laneSig=laneSignatures[i];
       const name=names[src];
       const pf=profiles[src];
@@ -585,7 +586,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Route separation must come from AI decisions after the gun, not spawn offsets.
       const startLane=0;
       return {
-        index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:RACER_KEYS[i],
+        index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||null,
+        _dgStartIndex813:dgStartIndex813,_dgChoices813:dgChoices813,_dgPath813:null,_dgProg813:0,
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
         visionRadius:Math.max(50,Math.min(64,
           52.0+((stats.prediction-72)/27)*6.0+((stats.reaction-72)/27)*3.5+((stats.focus-72)/27)*3.5)),
@@ -886,31 +888,67 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {x:3.5+Math.random()*(MAP_W-7),y:3.5+Math.random()*(MAP_H-7)};
   }
 
+
+  function startSafetyPoints816(mapDef=currentMap770()){
+    if(mapDef?.id==='triple_diamond'&&Array.isArray(mapDef.dualStarts810))
+      return mapDef.dualStarts810.map(s=>({x:s.x,y:s.y}));
+    if(mapDef?.start)return [{x:mapDef.start.x,y:mapDef.start.y}];
+    const s=mapStart770();return [{x:s.x,y:s.y}];
+  }
+  function startForwardRoads816(mapDef=currentMap770()){
+    if(mapDef?.id==='triple_diamond'&&Array.isArray(mapDef.destinyTopology815?.startRoads))
+      return mapDef.destinyTopology815.startRoads;
+    if(Array.isArray(mapDef?.route770)&&mapDef.route770.length>1)
+      return [mapDef.route770.slice(0,Math.min(6,mapDef.route770.length))];
+    return [];
+  }
+  function inStartObserverExclusion816(x,y,mapDef=currentMap770()){
+    const radius=mapDef?.startObserverExclusionRadius816??13.0, r2=radius*radius;
+    for(const s of startSafetyPoints816(mapDef)){
+      const dx=x-s.x,dy=y-s.y;
+      if(dx*dx+dy*dy<=r2)return true;
+    }
+    for(const road of startForwardRoads816(mapDef)){
+      if(pointNearPolyline771(x,y,road,7.2,5.6))return true;
+    }
+    return false;
+  }
+  function startProtectionActive816(p,now=gameNow()){
+    return !!p && now<(Number(p._startProtectionUntil816)||0);
+  }
+  function startAiBoost816(p,now=gameNow()){
+    return !!p && now<(Number(p._startAiBoostUntil816)||0);
+  }
   function spawnObservers(){
     const arr=[];
     const avgPlayerSpeed=9.72;
     const baseSpeed=avgPlayerSpeed*OBS_SPEED_RATIO;
     observerDensityZones=makeObserverDensityZones();
-
-    for(let i=0;i<observerCountForMap791();i++){
-      const spawn=densitySpawnPoint();
+    const target=observerCountForMap791();
+    for(let i=0;i<target;i++){
+      let spawn=null;
+      for(let tries=0;tries<80;tries++){
+        const cand=densitySpawnPoint();
+        if(inStartObserverExclusion816(cand.x,cand.y))continue;
+        spawn=cand;break;
+      }
+      // Extremely narrow fallback: do not force an observer into the protected launch corridor.
+      if(!spawn)continue;
       const o={
-        id:i,
-        x:spawn.x,
-        y:spawn.y,
-        vx:0, vy:0,
+        id:arr.length,
+        x:spawn.x,y:spawn.y,
+        vx:0,vy:0,
         speed:baseSpeed*(0.98+Math.random()*0.04),
-        phase:"move",
-        phaseUntil:0,
-        // Stagger phases so 650 observers do not stop simultaneously.
+        phase:"move",phaseUntil:0,
         cycleOffset:Math.random()*(OBS_MOVE_MS+OBS_STOP_MS),
-        pattern712:["free","sweep","diagonal","cross"][i%4]
+        pattern712:["free","sweep","diagonal","cross"][arr.length%4]
       };
       pickObserverLeg712(o);
       arr.push(o);
     }
     return arr;
   }
+
 
   function resetRound(){
     cancelAnimationFrame(raf);
@@ -922,7 +960,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     observers=spawnObservers();
     running=false;
     raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0; simTickCounter=0;
-    lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];
+    lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];liveEventFeed814=[];liveFocus814={playerId:-1,type:"",text:"",until:0};
     broadcastFocusId=-1; broadcastFocusUntil=0; previousUiRanks=new Map();
     cameraLeaderId=-1; cameraLeaderHoldUntil=0;
     raceFrameCache668={stamp:-1,active:[],leader:null,top:[]};
@@ -955,13 +993,19 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     initTournament();
     resetRound();
   }
-
   function currentProgress(p){
     if(p.done) return routeLength+1000-(p.finishTime||0)/1000000;
+    if(currentMap770().id==='triple_diamond'){
+      destinyPath813(p);
+      const total=Math.max(1,p._dgSegs813?.total||1);
+      const prog=Math.max(0,Math.min(total,Number(p._dgProg813)||destinyNearest813(p,p.x,p.y,0)));
+      return (prog/total)*routeLength;
+    }
     const s=segs[Math.min(p.seg,segs.length-1)];
     const along=((p.x-s.a[0])*s.ux+(p.y-s.a[1])*s.uy);
     return s.start + Math.max(0,Math.min(s.L,along));
   }
+
 
   function togglePause(){
     if(!running || !raceStart) return;
@@ -995,6 +1039,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(!raceStart){
       players.forEach(forceStartCenter625);
       raceStart=now;
+      for(const p of players){
+        p._startProtectionUntil816=now+1000;
+        p._startAiBoostUntil816=now+3000;
+        p._nextThreatScan724=0;
+        p._cachedThreat724=null;
+      }
       // v2.43: LIVE commentary UI removed.
       // v2.14: each racer gets a small stat-driven launch quality.
       // This is a start skill effect, not comeback rubber-banding.
@@ -1162,36 +1212,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   ];
   const FORBIDDEN96_PAD=.18;
   function currentForbidden770(){return currentMap770().forbiddenZones770||[];}
-
   function inForbidden96(x,y,pad=FORBIDDEN96_PAD){
-    const m=currentMap770();
-    // v7.93 Rolling Stone: rock hit-zones are aligned to the visibly shrunken
-    // boulders.  The two explicit route-side blocks are checked separately so
-    // racers cannot use the forbidden right/outside passage around rocks 2/3.
-    const rockPad=m?.boulderClearance793!=null?Math.max(pad,Number(m.boulderClearance793)||0):
-      (m?.boulderClearance791?Math.max(pad,Number(m.boulderClearance791)||0):pad);
-    if(m?.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
-      for(let bi=0;bi<m.rollingBoulders798.length;bi++){
-        const b=m.rollingBoulders798[bi];
-        // v7.996: rock #2 uses a smaller physical core so the extreme visual rim
-        // can be grazed without entering the collision/slide loop.  The lower
-        // outside shortcut is still blocked independently by rollingNoGoZones793.
-        const edgeFlex=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(rockPad,.03):rockPad;
-        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
-        if(Math.hypot(x-b.x,y-b.y)<=rr+edgeFlex)return true;
-      }
-    }else{
-      for(const z of currentForbidden770()){
-        if(x>=z.x1-rockPad && x<=z.x2+rockPad && y>=z.y1-rockPad && y<=z.y2+rockPad) return true;
-      }
-    }
-    const noGo=m?.rollingNoGoZones793||[];
-    const noGoPad=Math.max(.08,Math.min(.28,pad));
-    for(const z of noGo){
-      if(x>=z.x1-noGoPad && x<=z.x2+noGoPad && y>=z.y1-noGoPad && y<=z.y2+noGoPad) return true;
+    for(const z of currentForbidden770()){
+      if(x>=z.x1-pad && x<=z.x2+pad && y>=z.y1-pad && y<=z.y2+pad)return true;
     }
     return false;
   }
+
 
   function lineHitsForbidden96(x1,y1,x2,y2,pad=FORBIDDEN96_PAD){
     const dist=Math.hypot(x2-x1,y2-y1);
@@ -3886,8 +3913,8 @@ function calibratedFastCorridor79(si){
         cpa=Math.hypot(dx+rvx*tc,dy+rvy*tc);
       }
       // 4.80: only projected conflict / genuinely occupied forward space is a threat.
-      const projected=tc<3.45 && cpa<5.4;
-      const occupied=along>-.6 && along<12.5 && Math.abs(lat)<4.6;
+      const projected=tc<(startBoost816?3.8:3.45) && cpa<(startBoost816?6.1:5.4);
+      const occupied=along>-.6 && along<(startBoost816?15.0:12.5) && Math.abs(lat)<(startBoost816?5.2:4.6);
       if(projected || occupied) out.push({o,along,lat,tc,cpa});
     }
     out.sort((a,b)=>(a.tc-b.tc)||(a.cpa-b.cpa));
@@ -4509,7 +4536,7 @@ function calibratedFastCorridor79(si){
   function forceStartCenter625(p){
     const m810=currentMap770();
     const sp=(m810.id==='triple_diamond'&&Array.isArray(m810.dualStarts810))
-      ? m810.dualStarts810[(p.index||0)%2]
+      ? m810.dualStarts810[(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813>=0)?p._dgStartIndex813:((p.index||0)<Math.ceil(players.length/2)?0:1)]
       : mapStart770(),sx=sp.x,sy=sp.y;
     p.x=sx; p.y=sy;
     p.prevX=sx; p.prevY=sy;
@@ -4678,7 +4705,7 @@ function calibratedFastCorridor79(si){
     if(!Number.isFinite(p.x)||!Number.isFinite(p.y)){
       const m810=currentMap770();
       const sp770=(m810.id==='triple_diamond'&&Array.isArray(m810.dualStarts810))
-        ? m810.dualStarts810[(p.index||0)%2]
+        ? m810.dualStarts810[(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813>=0)?p._dgStartIndex813:((p.index||0)<Math.ceil(players.length/2)?0:1)]
         : mapStart770();
       p.x=sp770.x;p.y=sp770.y;p.seg=0;
       p.prevX=p.x;p.prevY=p.y;p.simPrevX=p.x;p.simPrevY=p.y;
@@ -5692,17 +5719,17 @@ function calibratedFastCorridor79(si){
 // on the in-game map roster, names, thumbnails, and artwork replacement.
 // ============================================================
 function applyMapSet776(){
-  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","industrial_zone"];
+  const keep=["s_map","star_fish","ice_ring","desert_oasis","neon_city","double_hairpin","skyway","cliff_hanger","triple_diamond"];
   const meta={
     s_map:{slot:1,name:"네온 드리프트",en:"Neon Drift",theme:"Blue Neon S Course",tags:["기본","S자","네온"],image:"map_v672_equal_medium_start_goal.png?v=776-neon-drift"},
     star_fish:{slot:2,name:"스타 피쉬",en:"Star Fish",theme:"Tropical Star Island",tags:["기본","별모양","한바퀴"],image:"map_star_fish_791.png?v=803-theme-tile"},
-    ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_776.png?v=793-ice-crown-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
-    desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
-    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_787.png?v=793-ice-crown-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
+    neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_7891_clean.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
     double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
-    skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
-    cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
-    industrial_zone:{slot:9,name:"롤링 스톤",en:"Rolling Stone",theme:"Ancient Ruins Obstacle",tags:["장애물","낙석","회피"],image:"map_rolling_stone_776.png?v=776-rolling-stone",special:{shortcuts:false,obstacles:true,wideRoad:false,multiRoute:false,verticality:false}}
+    skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_894.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
+    cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
+    triple_diamond:{slot:9,name:"데스티니 게이트",en:"Destiny Gate",theme:"Heaven vs Hell Destiny Gate",tags:["데스티니게이트","2스타트","천국vs지옥"],image:"map_destiny_gate_8113.png?v=812-destiny-gate",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:true,verticality:false}}
   };
   for(const id of keep){
     const m=MAP_DEFINITIONS_770[id];
@@ -5717,8 +5744,8 @@ function applyMapSet776(){
 }
 applyMapSet776();
 
-  const CIRCUIT_MAPS_775=new Set(["star_fish","desert_oasis","neon_city","industrial_zone"]);
-  const POINT_TO_POINT_MAPS_775=new Set(["ice_ring","double_hairpin","skyway","cliff_hanger"]);
+  const CIRCUIT_MAPS_775=new Set(["star_fish","desert_oasis","neon_city"]);
+  const POINT_TO_POINT_MAPS_775=new Set(["ice_ring","double_hairpin","skyway","cliff_hanger","triple_diamond"]);
   // v7.90: obsolete v7.75 start/finish conversion removed; final geometry patches below are authoritative.
 
 
@@ -5747,7 +5774,7 @@ applyMapSet776();
       lapArmFraction775:.82,racingLineMode772:"generated-v7.791"
     });
     set777("ice_ring",{
-      image:"map_ice_m_776.png?v=792-geometry",imageSize:{w:1122,h:1402},
+      image:"map_ice_m_787.png?v=792-geometry",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[20.377,138.642],[20.314,126.0],[20.314,112.0],[20.314,98.0],[20.314,84.0],[20.314,70.0],[20.55,56.0],[21.3,44.0],[23.4,33.2],[27.6,25.5],[33.6,22.4],[40.2,22.0],[45.5,24.8],[49.1,31.0],[53.0,39.8],[57.5,49.8],[62.3,59.5],[67.0,67.1],[71.099,69.194],[75.2,67.1],[79.9,59.5],[84.7,49.8],[89.2,39.8],[93.1,31.0],[96.7,24.8],[102.0,22.0],[108.6,22.4],[114.6,25.5],[118.8,33.2],[120.9,44.0],[121.65,56.0],[121.95,70.0],[121.95,84.0],[121.95,98.0],[121.946,112.0],[121.946,126.0],[121.946,138.642]],widths770:[16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0],
       start:{x:20.377,y:138.642},goal:{x:121.946,y:138.642},
@@ -5756,7 +5783,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.792"
     });
     set777("desert_oasis",{
-      image:"map_desert_oasis_776.png?v=803-theme-tile",imageSize:{w:1122,h:1402},
+      image:"map_desert_oasis_899.png?v=803-theme-tile",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[18.409,60.942],[17.775,82.525],[19.044,105.378],[29.836,130.77],[54.594,138.388],[82.525,138.388],[106.648,132.04],[118.074,114.265],[121.248,88.873],[121.248,63.481],[116.805,41.897],[101.569,26.662],[78.716,21.583],[59.672,26.662],[45.706,36.184],[27.932,38.088],[20.314,45.071],[18.409,60.942]],widths770:[17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0,17.0],
       start:{x:18.409,y:60.942},goal:{x:18.409,y:60.942},
@@ -5765,7 +5792,7 @@ applyMapSet776();
       lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
     });
     set777("neon_city",{
-      image:"map_heart_776.png?v=803-theme-tile",imageSize:{w:1122,h:1402},
+      image:"map_heart_7891_clean.png?v=803-theme-tile",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[71.099,131.405],[57.133,119.979],[43.167,107.917],[31.106,93.317],[23.488,76.177],[22.853,54.593],[29.836,38.088],[43.167,29.201],[57.133,31.106],[71.099,43.802],[85.064,31.106],[99.03,29.201],[112.361,38.088],[119.344,54.593],[118.709,76.177],[111.091,93.317],[99.03,107.917],[85.064,119.979],[71.099,131.405]],widths770:[16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5,16.5],
       start:{x:71.099,y:131.405},goal:{x:71.099,y:131.405},
@@ -5783,7 +5810,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.77"
     });
     set777("skyway",{
-      image:"map_space_776.png?v=803-theme-tile",imageSize:{w:724,h:2172},
+      image:"map_space_894.png?v=803-theme-tile",imageSize:{w:724,h:2172},
       logicalSize:{w:59.333,h:178},
       route770:[[29.666,167.182],[29.666,152.431],[29.666,135.221],[29.666,118.011],[29.666,100.801],[29.666,83.591],[29.666,66.381],[29.666,49.171],[29.666,31.961],[29.666,12.703]],widths770:[5.8,5.8,5.8,5.8,5.8,5.8,5.8,5.8,5.8],
       start:{x:29.666,y:167.182},goal:{x:29.666,y:12.703},
@@ -5792,7 +5819,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.77"
     });
     set777("cliff_hanger",{
-      image:"map_cliff_hanger_776.png?v=803-theme-tile",imageSize:{w:1086,h:1448},
+      image:"map_cliff_hanger_899.png?v=803-theme-tile",imageSize:{w:1086,h:1448},
       logicalSize:{w:133.5,h:178},
       route770:[[27.044,14.137],[36.878,14.137],[47.942,18.439],[57.776,26.43],[68.84,35.035],[84.82,40.566],[102.03,45.483],[116.167,52.859],[121.084,63.923],[120.47,79.903],[117.396,94.655],[110.635,106.948],[100.801,114.323],[88.508,115.552],[79.903,107.562],[70.684,95.884],[61.464,84.82],[51.63,81.133],[41.181,83.591],[31.347,89.738],[25.2,98.343],[25.2,108.177],[30.732,116.167],[39.337,121.084],[40.566,129.075],[36.878,135.221],[42.41,139.523],[54.703,139.523]],widths770:[6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4,6.4],
       start:{x:27.044,y:14.137},goal:{x:54.703,y:139.523},
@@ -5800,14 +5827,16 @@ applyMapSet776();
       courseType775:"point-to-point",finishRule775:"end-gate",lapRequired775:false,
       lapArmFraction775:0,racingLineMode772:"generated-v7.77"
     });
-    set777("industrial_zone",{
-      image:"map_rolling_stone_776.png?v=777-geometry",imageSize:{w:1122,h:1402},
-      logicalSize:{w:142.451,h:178},
-      route770:[[71.099,18.409],[54.594,18.409],[38.089,20.949],[26.662,27.932],[20.949,38.088],[26.027,48.245],[38.089,57.767],[45.071,66.655],[41.897,77.447],[33.01,87.603],[26.027,99.03],[26.662,111.726],[34.914,121.248],[49.515,126.961],[71.099,128.231],[92.682,125.692],[107.917,118.074],[117.44,106.648],[120.614,93.317],[116.805,79.351],[107.917,69.194],[100.3,63.481],[103.474,54.593],[111.726,46.341],[119.979,36.819],[117.44,27.932],[106.648,21.583],[88.873,18.409],[71.099,18.409]],widths770:[16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0,16.0],
-      start:{x:71.099,y:18.409},goal:{x:71.099,y:18.409},
-      safeZones:{"start":{"x0":65.599,"y0":12.908999999999999,"x1":76.599,"y1":23.909},"goal":{"x0":65.599,"y0":12.908999999999999,"x1":76.599,"y1":23.909}},miniCrop:{x:0,y:0,w:142.451,h:178},
-      courseType775:"circuit",finishRule775:"one-lap-gate",lapRequired775:true,
-      lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
+    set777("triple_diamond",{
+      image:"map_destiny_gate_8113.png?v=812-destiny-gate",imageSize:{w:1254,h:1254},
+      logicalSize:{w:178,h:178},
+      route770:[[89.05,165.8],[72.2,153],[55,138],[74,116],[89.05,107],[123,88],[110,61],[89.05,51],[55,34],[68,14.5],[89.1,5.8]],
+      widths770:[7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2],
+      start:{x:89.05,y:165.8},goal:{x:89.1,y:5.8},
+      safeZones:{start:{x0:67.5,y0:160.5,x1:110.7,y1:171.8},goal:{x0:84.4,y0:1.8,x1:93.8,y1:10.0}},
+      miniCrop:{x:0,y:0,w:178,h:178},
+      courseType775:"point-to-point",finishRule775:"end-gate",lapRequired775:false,
+      lapArmFraction775:0,racingLineMode772:"destiny-bootstrap-v8.12"
     });
     const s=MAP_DEFINITIONS_770.s_map;
     if(s){s.name="네온 드리프트";s.en="Neon Drift";s.courseType775="point-to-point";s.finishRule775="end-gate";s.lapRequired775=false;}
@@ -5936,7 +5965,7 @@ applyMapSet776();
 
     const space=MAP_DEFINITIONS_770.skyway;
     if(space){
-      space.image="map_space_776.png?v=803-theme-tile";
+      space.image="map_space_894.png?v=803-theme-tile";
       space.widths770=[7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0];
       space.safeZones={
         start:{x0:25.766,y0:163.932,x1:33.566,y1:170.432},
@@ -5975,33 +6004,10 @@ applyMapSet776();
   applyCliffHangerPatch795();
 
   // ============================================================
-  // v7.796 — Rolling Stone targeted patch
   // 1) Remove the extra 5 small rocks from the artwork and restore a single shared red gate
-  // 2) Make the three large boulders non-drivable via forbidden zones
   // 3) Enforce circuit road-follow so 6->3 and 3->1 stay on the paved lane
   // ============================================================
-  function applyRollingStonePatch796(){
-    const m=MAP_DEFINITIONS_770.industrial_zone;
-    if(!m)return;
-    m.image="map_rolling_stone_776.png?v=796-road-follow";
-    m.start={x:71.099,y:18.409};
-    m.goal={x:71.099,y:18.409};
-    m.safeZones={
-      start:{x0:65.6,y0:12.9,x1:76.6,y1:23.9},
-      goal:{x0:65.6,y0:12.9,x1:76.6,y1:23.9}
-    };
-    m.route770=[[71.099,18.409],[60.0,18.6],[49.0,18.8],[38.089,20.949],[29.5,24.5],[23.5,31.0],[20.7,39.0],[22.5,47.0],[28.0,53.0],[36.0,58.8],[44.2,66.7],[42.0,76.5],[36.2,84.5],[30.2,92.5],[26.5,101.0],[28.0,110.5],[33.0,118.8],[41.5,124.2],[52.5,127.3],[64.0,128.1],[76.0,128.1],[88.0,127.2],[99.0,125.0],[108.0,120.5],[116.0,113.5],[121.0,105.0],[123.0,95.0],[122.5,84.0],[120.0,73.0],[115.5,63.8],[111.0,55.0],[111.5,47.0],[116.0,39.0],[120.2,31.0],[116.0,23.5],[107.0,19.8],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
-    m.widths770=[8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8,8.8];
-    m.forbiddenZones770=[{x1:16.3,y1:28.2,x2:26.8,y2:38.7},{x1:14.0,y1:101.7,x2:25.6,y2:113.9},{x1:109.0,y1:74.8,x2:120.8,y2:86.8}];
-    m.sharedGate778=true;
-    m.strictRoadFollow778=true;
-    m.roadFollowMode778="route-center-hard";
-    let line=conservativeRacingLine778(m);
-    m.racingSpline770=line;
-    m.globalOptimal770=line;
-    m.racingLineMode772="generated-v7.796";
-  }
-  applyRollingStonePatch796();
+
 
   // ============================================================
   // v7.80 — 8 MAP FINAL QA NORMALIZATION (Neon Drift untouched)
@@ -6019,7 +6025,6 @@ applyMapSet776();
     }
     // These are actual non-drivable obstacles, not generic road-edge walls.
     if(MAP_DEFINITIONS_770.ice_ring) MAP_DEFINITIONS_770.ice_ring.hardForbidden780=true;
-    if(MAP_DEFINITIONS_770.industrial_zone) MAP_DEFINITIONS_770.industrial_zone.hardForbidden780=true;
   }
   applyMapQA780();
 
@@ -6271,7 +6276,7 @@ applyMapSet776();
 
     const ice=MAP_DEFINITIONS_770.ice_ring;
     if(ice){
-      ice.image="map_ice_m_786.png?v=786-outline-gates";
+      ice.image="map_ice_m_787.png?v=786-outline-gates";
       ice.gateArtwork786="outline-only";
       ice.edgeFlow785=true;
       ice.stallProofSpline784=true;
@@ -6304,7 +6309,7 @@ applyMapSet776();
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_black_hole_787.png?v=803-theme-tile";
+      black.image="map_black_hole_776.png?v=803-theme-tile";
       const oldRoute=(black.route770||[]).map(q=>[q[0],q[1]]);
       if(oldRoute.length>=2){
         black.route770=oldRoute.reverse();
@@ -6375,7 +6380,7 @@ applyMapSet776();
       space.widths770=(space.widths770||[]).map(w=>w+1.0);
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRowsAdded788=2;
-      space.image="map_space_788.png?v=803-theme-tile";
+      space.image="map_space_894.png?v=803-theme-tile";
       const line=conservativeRacingLine778(space);
       space.racingSpline770=line;
       space.globalOptimal770=line;
@@ -6432,29 +6437,14 @@ applyMapSet776();
     if(weight<.006)return {side:0,power:0};
     return {side:Math.sign(score)||0,power:Math.min(1,pMax*4.2)};
   }
-
   function mapForbiddenPoint789(m,x,y,pad=.10){
     if(!m?.hardForbidden780)return false;
-    // v7.98 Rolling Stone: use true circular boulder bodies instead of oversized
-    // axis-aligned rectangles. This lets racers pass naturally right up to the
-    // visible rock while still treating the rock itself as solid.
-    if(m.id==='industrial_zone'&&Array.isArray(m.rollingBoulders798)){
-      for(let bi=0;bi<m.rollingBoulders798.length;bi++){
-        const b=m.rollingBoulders798[bi];
-        const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
-        const pp=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(Math.max(0,pad),.03):Math.max(0,pad);
-        if(Math.hypot(x-b.x,y-b.y)<=rr+pp)return true;
-      }
-      for(const z of (m.rollingNoGoZones793||[])){
-        if(x>=z.x1-pad&&x<=z.x2+pad&&y>=z.y1-pad&&y<=z.y2+pad)return true;
-      }
-      return false;
-    }
     for(const z of (m.forbiddenZones770||[])){
       if(x>=z.x1-pad&&x<=z.x2+pad&&y>=z.y1-pad&&y<=z.y2+pad)return true;
     }
     return false;
   }
+
 
   function mapRoadPoint789(m,x,y,margin=-.18){
     if(!m)return false;
@@ -6473,7 +6463,6 @@ applyMapSet776();
   }
 
   function tuneRacingSpline789(m){
-    if(m?.id==='industrial_zone')return (m.racingSpline770||m.route770||[]).map(q=>[q[0],q[1]]);
     const src=(m?.racingSpline770||[]).map(q=>[q[0],q[1]]);
     if(m?.id==='s_map'||src.length<3)return src;
     const out=src.map(q=>[q[0],q[1]]);
@@ -6511,68 +6500,17 @@ applyMapSet776();
   function softLaneTarget789(p,t,mode){
     if(!t)return t;
     const m=currentMap770();
-
-    // v7.994 Rolling Stone: hard staged 6 -> 5-center -> 3 progression.
-    // Once a racer enters the lower sector, it must physically traverse two
-    // center-road approach points and then the 5-o'clock center gate. This is
-    // position-driven (not spline-progress-driven), so an outer diagonal line
-    // cannot bypass the gate even if projection/avoidance briefly drifts.
-    if(m.id==='industrial_zone'&&m.rollingFiveStage7994&&!p._rollingFivePassed7991){
-      const stages=m.rollingFiveStage7994;
-      if(p.y>=m.rollingFiveStageEnterY7994 && p.x<=m.rollingFiveStageExitX7994){
-        let st=Number.isFinite(p._rollingFiveStage7994)?p._rollingFiveStage7994:0;
-        // v7.998: advance every reached stage, INCLUDING the final 5-o'clock gate.
-        // v7.994-v7.997 stopped advancing at stages.length-1, so a racer that
-        // physically reached the final gate kept receiving the same target forever.
-        while(st<stages.length && Math.hypot(p.x-stages[st].x,p.y-stages[st].y)<=stages[st].r) st++;
-        p._rollingFiveStage7994=st;
-        if(st>=stages.length){
-          p._rollingFivePassed7991=true;
-          p._rollingFiveReleased7998=true;
-        }else{
-          const q=stages[st];
-          return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-five-stage7994'};
-        }
+    if(m.id==='triple_diamond'){
+      destinyPath813(p);
+      if(mode!=='NORMAL' && !mapRoadSegment789(m,[p.x,p.y],[t.x,t.y],-.70)){
+        const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
+        const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+(mode==='EVADE'?2.1:2.8)));
+        p._noChordGuards795=(p._noChordGuards795||0)+1;
+        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-destiny815'};
       }
+      return t;
     }
 
-    // v7.991 Rolling Stone: the lower turn has a physical 5-o'clock checkpoint.
-    // NORMAL / EVADE / REJOIN must all physically touch the gray-road center gate
-    // before any 3-o'clock target is allowed. This prevents a diagonal sight-line
-    // from bypassing the 5-o'clock bend even if local progress projection is noisy.
-    if(m.id==='industrial_zone'&&m.rollingMandatoryFiveGate7991){
-      const g=m.rollingMandatoryFiveGate7991;
-      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
-      if(!p._rollingFivePassed7991){
-        const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-        const gp=nearestSplineProgress720(g.x,g.y);
-        if(prog>=gp-20.0){
-          return {...t,x:g.x,y:g.y,kind:(t.kind||'race720')+'-rolling-five-gate7991'};
-        }
-      }
-    }
-
-    // v8.00 Rolling Stone: keep every steering mode inside the central road corridor.
-    // The authoritative spline already contains the legal narrow bypass around each
-    // boulder, so NORMAL / EVADE / REJOIN all use that same road-shaped path instead
-    // of drifting toward the wide outer shoulder.
-    if(m.id==='industrial_zone'&&m.rollingCenterRoadOnly800){
-      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
-      const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-      const nearRock=Array.isArray(m.rollingBoulders798)&&m.rollingBoulders798.some(b=>Math.hypot(p.x-b.x,p.y-b.y)<=b.r+7.0);
-      const look=nearRock?(mode==='EVADE'?.62:.82):(mode==='NORMAL'?1.00:.78);
-      const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
-      return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-center-road800'};
-    }
-
-    // v7.99 Rolling Stone: NORMAL driving must follow the authoritative spline
-    // with a short look-ahead. This prevents the lower 6->3 leg from sighting
-    // across the bend and skipping the mandatory 5-o'clock road.
-    if(m.id==='industrial_zone'&&m.rollingHardSpline799&&mode==='NORMAL'){
-      const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-      const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+1.05));
-      return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-rolling-hard-spline799'};
-    }
     // v7.95: edge rails stay pass-through, but an EVADE/REJOIN target may not
     // connect to another nearby road leg by a diagonal chord. When that happens,
     // fall back to a forward point on the authoritative spline at the same progress.
@@ -6581,9 +6519,7 @@ applyMapSet776();
       const forbiddenChord=mapForbiddenPoint789(m,t.x,t.y,.04);
       if(!sameLeg || forbiddenChord){
         const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-        const look=m.id==='industrial_zone'&&m.rollingShortRejoin7981
-          ? (mode==='EVADE'?.78:1.05)
-          : (mode==='EVADE'?2.20:2.70);
+        const look=mode==='EVADE'?2.20:2.70;
         const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
         p._noChordGuards795=(p._noChordGuards795||0)+1;
         return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-no-chord795'};
@@ -6635,21 +6571,6 @@ applyMapSet776();
     // a state change. Avoidance can continue through the edge and normal spline
     // recovery will happen from ordinary race-state logic, without a freeze loop.
     if(m.id==='star_fish')return false;
-    // v8.00 Rolling Stone: unlike the other maps, do not permit a wide exterior skim.
-    // Stay close to the route center, with a little extra room only while passing a boulder.
-    if(m.id==='industrial_zone'&&m.rollingCenterRoadOnly800){
-      const info=mapRouteInfo789(m,p.x,p.y);
-      const nearRock=Array.isArray(m.rollingBoulders798)&&m.rollingBoulders798.some(b=>Math.hypot(p.x-b.x,p.y-b.y)<=b.r+7.0);
-      const cap=nearRock?Math.min(3.6,(info?.half||8)*.48):Math.min(2.15,(info?.half||8)*.28);
-      if(info&&Math.abs(info.lat)<=cap)return false;
-      const st=ensureRaceState720(p,now);
-      if(st.mode!=='REJOIN'){
-        st.mode='REJOIN';st.since=now;st.target=null;st.action='none';st.actionUntil=0;
-        st.rejoinUntil=now+420+driverExecution720(p).recovery*180;
-      }
-      p._rollingCenterRecoveries800=(p._rollingCenterRecoveries800||0)+1;
-      return true;
-    }
     // One road-edge line plus a small exterior skim remains freely traversable.
     // Only a genuinely large exterior excursion requests a natural REJOIN.
     if(courseContainsPoint(p.x,p.y,1.20))return false;
@@ -6682,22 +6603,9 @@ applyMapSet776();
   applyGlobalInsideTune789();
 
 
-  // v7.89 code-audit fix: Rolling Stone's v7.796 center route passed through
-  // the three hard boulder rectangles.  That could trap NORMAL racers in a
   // hard-obstacle rollback/rejoin loop.  Restore enough real road width for the
   // narrow side passages and use a prevalidated continuous bypass spline.
-  function applyRollingStoneObstacleBypass789(){
-    const m=MAP_DEFINITIONS_770.industrial_zone;
-    if(!m)return;
-    m.widths770=new Array(Math.max(1,(m.route770||[]).length-1)).fill(14.0);
-    const line=[[71.099,18.409],[70.405,18.421],[69.712,18.433],[69.018,18.445],[68.324,18.457],[67.631,18.469],[66.937,18.481],[66.243,18.493],[65.549,18.505],[64.856,18.516],[64.162,18.528],[63.468,18.54],[62.775,18.552],[62.081,18.564],[61.387,18.576],[60.694,18.588],[60.0,18.6],[59.312,18.613],[58.625,18.625],[57.938,18.638],[57.25,18.65],[56.562,18.663],[55.875,18.675],[55.188,18.688],[54.5,18.7],[53.812,18.713],[53.125,18.725],[52.438,18.738],[51.75,18.75],[51.062,18.762],[50.375,18.775],[49.688,18.788],[49.0,18.8],[48.318,18.934],[47.636,19.069],[46.954,19.203],[46.272,19.337],[45.59,19.472],[44.908,19.606],[44.226,19.74],[43.544,19.875],[42.863,20.009],[42.181,20.143],[41.499,20.277],[40.817,20.412],[40.135,20.546],[39.453,20.68],[38.771,20.815],[38.089,20.949],[37.475,21.203],[36.862,21.456],[36.248,21.71],[35.635,21.964],[35.021,22.217],[34.408,22.471],[33.794,22.724],[33.181,22.978],[32.567,23.232],[31.954,23.485],[31.34,23.739],[30.975,24.593],[30.61,25.448],[30.455,25.382],[29.994,25.882],[29.532,26.382],[29.071,26.882],[28.609,27.382],[28.148,27.882],[27.686,28.382],[27.702,29.323],[27.718,30.264],[27.734,31.204],[27.75,32.145],[27.766,33.086],[27.305,33.586],[27.795,32.503],[27.579,33.118],[27.364,33.734],[27.762,34.564],[27.547,35.179],[27.331,35.795],[27.729,36.625],[27.514,37.24],[27.912,38.07],[27.697,38.686],[27.481,39.301],[25.425,39.272],[23.369,39.244],[19.432,39.285],[20.216,39.809],[21.0,40.333],[21.15,41.0],[21.3,41.667],[21.45,42.333],[21.6,43.0],[21.75,43.667],[21.9,44.333],[22.05,45.0],[22.2,45.667],[22.35,46.333],[22.5,47.0],[22.958,47.5],[23.417,48.0],[23.875,48.5],[24.333,49.0],[24.792,49.5],[25.25,50.0],[25.708,50.5],[26.167,51.0],[26.625,51.5],[27.083,52.0],[27.542,52.5],[28.0,53.0],[28.533,53.387],[29.067,53.773],[29.6,54.16],[30.133,54.547],[30.667,54.933],[31.2,55.32],[31.733,55.707],[32.267,56.093],[32.8,56.48],[33.333,56.867],[33.867,57.253],[34.4,57.64],[34.933,58.027],[35.467,58.413],[36.0,58.8],[36.482,59.265],[36.965,59.729],[37.447,60.194],[37.929,60.659],[38.412,61.124],[38.894,61.588],[39.376,62.053],[39.859,62.518],[40.341,62.982],[40.824,63.447],[41.306,63.912],[41.788,64.376],[42.271,64.841],[42.753,65.306],[43.235,65.771],[43.718,66.235],[44.2,66.7],[44.053,67.353],[43.907,68.007],[43.76,68.66],[43.613,69.313],[43.467,69.967],[43.32,70.62],[43.173,71.273],[43.027,71.927],[42.88,72.58],[42.733,73.233],[42.587,73.887],[42.44,74.54],[42.293,75.193],[42.147,75.847],[42.0,76.5],[41.613,77.033],[41.227,77.567],[40.84,78.1],[40.453,78.633],[40.067,79.167],[39.68,79.7],[39.293,80.233],[38.907,80.767],[38.52,81.3],[38.133,81.833],[37.747,82.367],[37.36,82.9],[36.973,83.433],[36.587,83.967],[36.2,84.5],[35.8,85.033],[35.4,85.567],[35.0,86.1],[34.6,86.633],[34.2,87.167],[33.8,87.7],[33.4,88.233],[33.0,88.767],[32.6,89.3],[32.2,89.833],[31.8,90.367],[31.4,90.9],[31.0,91.433],[30.6,91.967],[30.2,92.5],[29.936,93.107],[29.671,93.714],[29.407,94.321],[29.143,94.929],[28.879,95.536],[28.614,96.143],[28.35,96.75],[28.086,97.357],[27.821,97.964],[27.557,98.571],[27.293,99.179],[27.029,99.786],[26.764,100.393],[26.5,101.0],[26.607,101.679],[26.714,102.357],[26.821,103.036],[26.929,103.714],[27.036,104.393],[27.143,105.071],[27.25,105.75],[27.357,106.429],[27.464,107.107],[27.571,107.786],[27.679,108.464],[27.786,109.143],[27.893,109.821],[28.0,110.5],[28.357,111.093],[28.714,111.686],[29.071,112.279],[29.429,112.871],[29.786,113.464],[30.143,114.057],[30.5,114.65],[30.857,115.243],[31.214,115.836],[31.571,116.429],[31.929,117.021],[32.286,117.614],[32.643,118.207],[33.0,118.8],[33.567,119.16],[34.133,119.52],[34.7,119.88],[35.267,120.24],[35.833,120.6],[36.4,120.96],[36.967,121.32],[37.533,121.68],[38.1,122.04],[38.667,122.4],[39.233,122.76],[39.8,123.12],[40.367,123.48],[40.933,123.84],[41.5,124.2],[42.147,124.382],[42.794,124.565],[43.441,124.747],[44.088,124.929],[44.735,125.112],[45.382,125.294],[46.029,125.476],[46.676,125.659],[47.324,125.841],[47.971,126.024],[48.618,126.206],[49.265,126.388],[49.912,126.571],[50.559,126.753],[51.206,126.935],[51.853,127.118],[52.5,127.3],[53.176,127.347],[53.853,127.394],[54.529,127.441],[55.206,127.488],[55.882,127.535],[56.559,127.582],[57.235,127.629],[57.912,127.676],[58.588,127.724],[59.265,127.771],[59.941,127.818],[60.618,127.865],[61.294,127.912],[61.971,127.959],[62.647,128.006],[63.324,128.053],[64.0,128.1],[64.667,128.1],[65.333,128.1],[66.0,128.1],[66.667,128.1],[67.333,128.1],[68.0,128.1],[68.667,128.1],[69.333,128.1],[70.0,128.1],[70.667,128.1],[71.333,128.1],[72.0,128.1],[72.667,128.1],[73.333,128.1],[74.0,128.1],[74.667,128.1],[75.333,128.1],[76.0,128.1],[76.667,128.05],[77.333,128.0],[78.0,127.95],[78.667,127.9],[79.333,127.85],[80.0,127.8],[80.667,127.75],[81.333,127.7],[82.0,127.65],[82.667,127.6],[83.333,127.55],[84.0,127.5],[84.667,127.45],[85.333,127.4],[86.0,127.35],[86.667,127.3],[87.333,127.25],[88.0,127.2],[88.647,127.071],[89.294,126.941],[89.941,126.812],[90.588,126.682],[91.235,126.553],[91.882,126.424],[92.529,126.294],[93.176,126.165],[93.824,126.035],[94.471,125.906],[95.118,125.776],[95.765,125.647],[96.412,125.518],[97.059,125.388],[97.706,125.259],[98.353,125.129],[99.0,125.0],[99.6,124.7],[100.2,124.4],[100.8,124.1],[101.4,123.8],[102.0,123.5],[102.6,123.2],[103.2,122.9],[103.8,122.6],[104.4,122.3],[105.0,122.0],[105.6,121.7],[106.2,121.4],[106.8,121.1],[107.4,120.8],[108.0,120.5],[108.5,120.062],[109.0,119.625],[109.5,119.188],[110.0,118.75],[110.5,118.312],[111.0,117.875],[111.5,117.438],[112.0,117.0],[112.5,116.562],[113.0,116.125],[113.5,115.688],[114.0,115.25],[114.5,114.812],[115.0,114.375],[115.5,113.938],[116.0,113.5],[116.333,112.933],[116.667,112.367],[117.0,111.8],[117.333,111.233],[117.667,110.667],[118.0,110.1],[118.333,109.533],[118.667,108.967],[119.0,108.4],[119.333,107.833],[119.667,107.267],[120.0,106.7],[120.333,106.133],[120.667,105.567],[121.0,105.0],[121.133,104.333],[121.267,103.667],[121.4,103.0],[121.533,102.333],[121.667,101.667],[121.8,101.0],[121.933,100.333],[122.067,99.667],[122.2,99.0],[122.333,98.333],[122.467,97.667],[122.6,97.0],[122.733,96.333],[122.867,95.667],[123.0,95.0],[122.969,94.312],[122.938,93.625],[122.906,92.938],[122.875,92.25],[122.844,91.562],[122.812,90.875],[122.781,90.188],[122.75,89.5],[122.719,88.812],[122.688,88.125],[122.656,87.438],[122.625,86.75],[122.594,86.062],[122.562,85.375],[122.531,84.688],[122.5,84.0],[122.353,83.353],[122.206,82.706],[122.059,82.059],[121.912,81.412],[121.765,80.765],[121.618,80.118],[121.471,79.471],[121.324,78.824],[121.81,78.032],[121.663,77.385],[121.516,76.738],[121.369,76.091],[121.856,75.3],[121.709,74.653],[121.562,74.006],[120.781,73.503],[120.0,73.0],[119.7,72.387],[119.4,71.773],[119.1,71.16],[118.8,70.547],[118.5,69.933],[118.2,69.32],[117.9,68.707],[117.6,68.093],[117.3,67.48],[117.0,66.867],[116.7,66.253],[116.4,65.64],[116.1,65.027],[115.8,64.413],[115.5,63.8],[115.2,63.213],[114.9,62.627],[114.6,62.04],[114.3,61.453],[114.0,60.867],[113.7,60.28],[113.4,59.693],[113.1,59.107],[112.8,58.52],[112.5,57.933],[112.2,57.347],[111.9,56.76],[111.6,56.173],[111.3,55.587],[111.0,55.0],[111.042,54.333],[111.083,53.667],[111.125,53.0],[111.167,52.333],[111.208,51.667],[111.25,51.0],[111.292,50.333],[111.333,49.667],[111.375,49.0],[111.417,48.333],[111.458,47.667],[111.5,47.0],[111.821,46.429],[112.143,45.857],[112.464,45.286],[112.786,44.714],[113.107,44.143],[113.429,43.571],[113.75,43.0],[114.071,42.429],[114.393,41.857],[114.714,41.286],[115.036,40.714],[115.357,40.143],[115.679,39.571],[116.0,39.0],[116.323,38.385],[116.646,37.769],[116.969,37.154],[117.292,36.538],[117.615,35.923],[117.938,35.308],[118.262,34.692],[118.585,34.077],[118.908,33.462],[119.231,32.846],[119.554,32.231],[119.877,31.615],[119.633,31.318],[119.31,30.741],[118.987,30.164],[118.664,29.587],[118.341,29.01],[118.017,28.433],[117.694,27.856],[117.371,27.279],[117.048,26.702],[116.725,26.125],[116.402,25.548],[116.079,24.971],[115.756,24.395],[115.753,24.101],[115.357,23.236],[114.714,22.971],[114.071,22.707],[113.429,22.443],[112.786,22.179],[112.143,21.914],[111.5,21.65],[110.857,21.386],[110.214,21.121],[109.571,20.857],[108.929,20.593],[108.286,20.329],[107.643,20.064],[107.0,19.8],[106.306,19.739],[105.611,19.678],[104.917,19.617],[104.222,19.556],[103.528,19.494],[102.833,19.433],[102.139,19.372],[101.444,19.311],[100.75,19.25],[100.056,19.189],[99.361,19.128],[98.667,19.067],[97.972,19.006],[97.278,18.944],[96.583,18.883],[95.889,18.822],[95.194,18.761],[94.5,18.7],[93.833,18.686],[93.167,18.672],[92.5,18.658],[91.833,18.644],[91.167,18.631],[90.5,18.617],[89.833,18.603],[89.167,18.589],[88.5,18.575],[87.833,18.561],[87.167,18.547],[86.5,18.533],[85.833,18.519],[85.167,18.506],[84.5,18.492],[83.833,18.478],[83.167,18.464],[82.5,18.45],[81.829,18.448],[81.159,18.445],[80.488,18.443],[79.817,18.44],[79.147,18.438],[78.476,18.436],[77.805,18.433],[77.135,18.431],[76.464,18.428],[75.794,18.426],[75.123,18.423],[74.452,18.421],[73.782,18.419],[73.111,18.416],[72.44,18.414],[71.77,18.411],[71.099,18.409]];
-    m.racingSpline770=line;
-    m.globalOptimal770=line;
-    m.racingLineMode772='boulder-bypass-v7.89';
-    m.boulderBypass789=true;
-    m.insideTune789='boulder-bypass+runtime-bias';
-  }
-  applyRollingStoneObstacleBypass789();
+
 
 
   // ============================================================
@@ -6857,7 +6765,7 @@ applyMapSet776();
 
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
-      desert.image="map_desert_oasis_776.png?v=803-theme-tile";
+      desert.image="map_desert_oasis_899.png?v=803-theme-tile";
       desert.desertStartClean894=true;
     }
   }
@@ -6926,7 +6834,7 @@ applyMapSet776();
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRowsAdded896=2;
       space.spaceRoadTotalExtra896=4;
-      space.image="map_space_896.png?v=803-theme-tile";
+      space.image="map_space_894.png?v=803-theme-tile";
       const line=conservativeRacingLine778(space);
       space.racingSpline770=line;
       space.globalOptimal770=line;
@@ -6969,7 +6877,7 @@ applyMapSet776();
       space.special=Object.assign({},space.special,{wideRoad:true});
       space.spaceRoadRows897=4;
       space.spaceRoadDoubleWidth897=true;
-      space.image="map_space_897.png?v=803-theme-tile";
+      space.image="map_space_894.png?v=803-theme-tile";
       const line=conservativeRacingLine778(space);
       space.racingSpline770=line;
       space.globalOptimal770=line;
@@ -6979,35 +6887,9 @@ applyMapSet776();
   applyPatch7897();
 
   // ============================================================
-  // v7.898 — ROLLING STONE BOULDERS ARE TRUE SOLID OBSTACLES
-  // - Unlike ordinary map edge rails, these three boulders are impassable.
-  // - No inside-cut is allowed around a boulder. Units must use only the
   //   remaining visible gray-road gap beside each rock.
   // ============================================================
-  function applyPatch7898(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      roll.hardForbidden780=true;
-      roll.boulderSolid898=true;
-      roll.boulderInsideCutDisabled898=true;
-      // Slightly enlarge the previous hard zones so the sprite/hit radius cannot
-      // clip through a rock or ride the forbidden outer side of it.
-      roll.forbiddenZones770=[
-        {x1:14.8,y1:26.6,x2:28.6,y2:40.7},
-        {x1:12.5,y1:99.8,x2:27.4,y2:115.5},
-        {x1:107.2,y1:72.8,x2:122.7,y2:88.8}
-      ];
-      // Keep the established obstacle-bypass spline, but do not apply the
-      // global inside racing bias on this map.
-      roll.insideTune789="disabled-boulder-gap-v7.898";
-      roll.outerSoftLimit789=true;
-      roll.racingLineMode772="solid-boulder-road-gap-only-v7.898";
-      roll.strictRoadFollow778=true;
-      roll.roadFollowMode778="route-center-hard";
-      roll.widths770=new Array(Math.max(1,(roll.route770||[]).length-1)).fill(9.2);
-    }
-  }
-  applyPatch7898();
+
 
   // ============================================================
   // v7.899 — START/GATE ARTIFACT CLEANUP
@@ -7017,14 +6899,14 @@ applyMapSet776();
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
       desert.image="map_desert_oasis_899.png?v=803-theme-tile";
-      desert.imageFallback791="map_desert_oasis_776.png?v=803-theme-tile";
+      desert.imageFallback791="map_desert_oasis_899.png?v=803-theme-tile";
       desert.startArtifactClean899=true;
       desert.mapLoadSafe791=true;
     }
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
       cliff.image="map_cliff_hanger_899.png?v=803-theme-tile";
-      cliff.imageFallback791="map_cliff_hanger_776.png?v=803-theme-tile";
+      cliff.imageFallback791="map_cliff_hanger_899.png?v=803-theme-tile";
       cliff.startArtifactClean899=true;
       cliff.mapLoadSafe791=true;
     }
@@ -7035,91 +6917,29 @@ applyMapSet776();
   applyPatch7899();
 
   // ============================================================
-  // v7.91 — MAP LOAD / OBSERVER BALANCE / ROLLING STONE GAP FIX
   // ============================================================
   function applyPatch791(){
     const desert=MAP_DEFINITIONS_770.desert_oasis;
     if(desert){
       desert.mapLoadSafe791=true;
-      desert.imageFallback791="map_desert_oasis_776.png?v=803-theme-tile";
+      desert.imageFallback791="map_desert_oasis_899.png?v=803-theme-tile";
     }
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
       cliff.mapLoadSafe791=true;
-      cliff.imageFallback791="map_cliff_hanger_776.png?v=803-theme-tile";
+      cliff.imageFallback791="map_cliff_hanger_899.png?v=803-theme-tile";
     }
 
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      // Route follows only the remaining gray-road gap around each boulder.
-      // It never crosses the padded obstacle rectangles.
-      roll.route770=[[71.099,18.409],[60,18.6],[49,18.8],[38.1,20.8],[32.5,22.2],[28.8,23.0],[24.5,23.4],[20.0,24.0],[16.2,24.8],[13.1,24.9],[13.0,27.2],[11.8,31.5],[11.5,36.0],[12.5,40.8],[15.0,45.0],[19.0,48.5],[24.5,51.0],[30.0,54.0],[36.0,58.8],[41.5,64.0],[44.2,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[30.5,94.0],[30.3,99.0],[30.0,104.0],[30.5,109.5],[32.0,114.5],[35.0,118.8],[41.5,124.2],[52.5,127.3],[64,128.1],[76,128.1],[88,127.2],[99,125.0],[108,120.5],[116,113.5],[121,105],[124,96],[126.0,91.0],[127.0,86.0],[127.0,81.0],[126.5,76.0],[125.0,71.0],[122.0,66.0],[117.0,60.0],[113.0,55.0],[112.5,49.0],[114.0,43.5],[117.0,38.0],[120.2,31.0],[118.0,26.0],[113.5,22.5],[107,19.8],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
-      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(9.2);
-      roll.forbiddenZones770=[
-        {x1:14.8,y1:26.6,x2:28.6,y2:40.7},
-        {x1:12.5,y1:99.8,x2:27.4,y2:115.5},
-        {x1:107.2,y1:72.8,x2:122.7,y2:88.8}
-      ];
-      roll.hardForbidden780=true;
-      roll.boulderSolid898=true;
-      roll.boulderInsideCutDisabled898=true;
-      roll.boulderBypass789=true;
-      roll.boulderClearance791=1.4;
-      roll.boulderGapCenter791=true;
-      roll.strictRoadFollow778=true;
-      roll.roadFollowMode778="route-center-hard";
-      roll.outerSoftLimit789=true;
-      roll.insideTune789="disabled-boulder-gap-v7.91";
-      const line=densifyLine772(roll.route770,.30);
-      roll.racingSpline770=line;
-      roll.globalOptimal770=line;
-      roll.racingLineMode772="gray-road-gap-center-v7.91";
-    }
   }
   applyPatch791();
 
   // ============================================================
-  // v7.93 — ROLLING STONE SAFE LEFT-GAP ROUTE + NO-STALL BOULDERS
   // 1) Rocks 2/3: right/outside passage is forbidden; use left narrow gap only.
   // 2) Bottom 6->3 section follows the visible road curve; no diagonal chord.
-  // 3) Boulder artwork/hit zones are reduced about 15% and re-aligned.
   // 4) An accidental obstacle entry is guided forward on the legal spline instead
   //    of rolling back to the previous point, eliminating the visible freeze loop.
   // ============================================================
-  function applyPatch793(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.image="map_rolling_stone_793.png?v=793-rocks15-left-gap";
-    roll.route770=[[71.099,18.409],[60.0,18.6],[49.0,18.8],[38.1,20.8],[32.5,22.2],[28.8,22.8],[24.0,23.3],[19.0,24.0],[15.5,26.5],[13.0,30.5],[12.0,35.0],[12.8,40.5],[15.0,45.0],[19.0,48.5],[24.5,51.0],[30.0,54.0],[36.0,58.8],[41.5,64.0],[44.2,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[29.8,93.3],[17.0,96.0],[14.0,99.5],[12.8,104.5],[13.0,109.5],[14.2,112.2],[18.8,114.2],[25.0,118.0],[33.2,122.5],[42.0,126.8],[52.0,130.8],[62.0,133.5],[72.0,135.0],[82.0,135.4],[92.0,134.0],[101.0,131.0],[109.0,126.0],[115.0,119.5],[119.5,112.0],[122.0,104.0],[123.8,96.0],[122.0,90.0],[116.0,85.0],[109.0,81.0],[106.5,78.0],[106.0,73.0],[107.0,68.0],[109.0,64.0],[112.0,60.0],[111.0,54.0],[110.5,49.0],[112.0,44.0],[115.0,39.0],[118.0,34.0],[120.2,30.0],[118.0,26.0],[113.5,22.5],[107.0,19.8],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(9.2);
-    // 15%-smaller visual rocks, aligned to the actual three boulder centers.
-    roll.forbiddenZones770=[
-      {x1:21.1,y1:24.9,x2:32.4,y2:36.4},
-      {x1:18.3,y1:98.0,x2:30.9,y2:110.2},
-      {x1:110.2,y1:66.2,x2:122.8,y2:78.6}
-    ];
-    // Rock 2/3 right/outside lanes are intentionally non-drivable. The only
-    // legal bypass is the narrow left-side gray road traced by route770 above.
-    roll.rollingNoGoZones793=[
-      {x1:31.8,y1:96.0,x2:45.0,y2:113.5},
-      {x1:123.8,y1:65.0,x2:137.5,y2:80.0}
-    ];
-    roll.boulderClearance793=.82;
-    roll.boulderVisualScale793=.85;
-    roll.boulderLeftOnly793=true;
-    roll.bottomRoadFollow793=true;
-    roll.rollingNoStop793=true;
-    roll.boulderGapCenter791=true;
-    roll.strictRoadFollow778=true;
-    roll.roadFollowMode778="route-center-hard";
-    roll.outerSoftLimit789=true;
-    roll.insideTune789="disabled-boulder-left-gap-v7.93";
-    const line=densifyLine772(roll.route770,.24);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772="left-gap-road-center-no-chord-v7.93";
-  }
-  applyPatch793();
+
 
   // ============================================================
   // v7.95 — UNIFIED 9-MAP DRIVING STABILITY + INSIDE AI + NO-CHORD GUARD
@@ -7143,7 +6963,7 @@ applyMapSet776();
 
     // Maps where adjacent road legs are physically close need the strictest
     // same-leg protection. Black Hole already has exact-center authority.
-    for(const id of ['ice_ring','double_hairpin','industrial_zone']){
+    for(const id of ['ice_ring','double_hairpin']){
       const m=MAP_DEFINITIONS_770[id];
       if(m)m.strictNoChord795=true;
     }
@@ -7152,193 +6972,18 @@ applyMapSet776();
     const neon=MAP_DEFINITIONS_770.s_map;
     if(neon)neon.openingInsideLock795=true;
 
-    // Rolling Stone retains the left-only rock 2/3 bypass and curved bottom leg.
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      roll.boulderLeftOnly793=true;
-      roll.bottomRoadFollow793=true;
-      roll.rollingNoStop793=true;
-      roll.strictNoChord795=true;
-    }
+
   }
   applyPatch795();
 
 
-  // v7.991 Rolling Stone: prevent high-speed tunneling through a boulder.
   // The previous endpoint-only check could miss a rock if one frame entered and
   // exited the circular body. Sample the whole physical step and return the first
   // entry fraction so collision is identical from above, below, left, or right.
-  function rollingBoulderEntry7991(m,x1,y1,x2,y2){
-    if(m?.id!=='industrial_zone'||!m.rollingSolidBoulders7991||!Array.isArray(m.rollingBoulders798))return null;
-    const dist=Math.hypot(x2-x1,y2-y1);
-    const n=Math.max(8,Math.ceil(dist/.10));
-    const clearance=Math.max(0,Number(m.boulderClearance793)||0);
-    const inside=(x,y)=>m.rollingBoulders798.some((b,bi)=>{
-      const rr=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
-      const cc=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(clearance,.03):clearance;
-      return Math.hypot(x-b.x,y-b.y)<=rr+cc;
-    });
-    let prev=0;
-    for(let i=1;i<=n;i++){
-      const t=i/n,x=x1+(x2-x1)*t,y=y1+(y2-y1)*t;
-      if(inside(x,y)){
-        let lo=prev,hi=t;
-        for(let k=0;k<12;k++){
-          const mid=(lo+hi)*.5,mx=x1+(x2-x1)*mid,my=y1+(y2-y1)*mid;
-          if(inside(mx,my))hi=mid;else lo=mid;
-        }
-        return Math.max(0,lo-.006);
-      }
-      prev=t;
-    }
-    return null;
-  }
-
   function enforceHardForbidden780(p,oldX,oldY){
     const m=currentMap770();
-    const rollingEntry7991=rollingBoulderEntry7991(m,oldX,oldY,p.x,p.y);
-    if(!m.hardForbidden780 || (!inForbidden96(p.x,p.y,0)&&rollingEntry7991==null))return false;
-    // v7.981/v7.991 Rolling Stone: obstacle contact must never relocate the racer.
-    // Clamp only the attempted physical step to the last safe point, then let the
-    // steering/rejoin logic route around the boulder on subsequent frames. This
-    // removes the old visible forward snap / micro-teleport beside rocks.
-    if(m.id==='industrial_zone'&&m.rollingSmoothCollision7981){
-      const attemptedX=p.x,attemptedY=p.y;
-      const stepX=attemptedX-oldX,stepY=attemptedY-oldY;
-      const stepLen=Math.hypot(stepX,stepY);
-
-      // v7.993: do not freeze at the boulder boundary.  When a physical step
-      // points into a rock, preserve forward motion by sliding tangentially
-      // around the visible stone instead of repeatedly clamping to one point.
-      if(rollingEntry7991!=null && stepLen>.001 && Array.isArray(m.rollingBoulders798)){
-        let hit=null,hitIndex=-1,best=Infinity;
-        for(let bi=0;bi<m.rollingBoulders798.length;bi++){
-          const b=m.rollingBoulders798[bi];
-          const effR=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(b.r,Number(m.rollingRock2CoreRadius7999)||5.42):b.r;
-          const effC=(bi===1&&m.rollingRock2EdgeFlex7996)?Math.min(Math.max(0,Number(m.boulderClearance793)||0),.03):Math.max(0,Number(m.boulderClearance793)||0);
-          const d=Math.hypot(oldX-b.x,oldY-b.y)-(effR+effC);
-          if(d<best){best=d;hit=b;hitIndex=bi;}
-        }
-        if(hit){
-          let rx=oldX-hit.x,ry=oldY-hit.y,rl=Math.hypot(rx,ry)||1;
-          rx/=rl; ry/=rl;
-          // two tangents; choose the one most aligned with the racer's attempted motion
-          // v7.995: evaluate BOTH tangential escape directions.  v7.994's
-          // rock-2 lower outside block can invalidate the first tangent; choosing
-          // only that one left the racer clamped on the boulder edge.  Pick the
-          // legal tangent with the best forward alignment instead.
-          const slideScale=Math.max(.55,Math.min(1.05,stepLen));
-          const tangents=[[-ry,rx],[ry,-rx]]
-            .map(([tx,ty])=>({tx,ty,align:tx*stepX+ty*stepY}))
-            .sort((a,b)=>b.align-a.align);
-          let slid=false;
-          for(const cand of tangents){
-            const sx=oldX+cand.tx*slideScale, sy=oldY+cand.ty*slideScale;
-            if(inForbidden96(sx,sy,0))continue;
-            p.x=sx; p.y=sy;
-            const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
-            const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,20);
-            p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+Math.max(.06,stepLen*1.15)));
-            p._splineFloor754=p._splineProg720;
-            p.desiredOffset=(p.desiredOffset||0)*.55; p.routeBand=0; p.openingLineBias=0;
-            if(p._raceState720){
-              p._raceState720.mode='REJOIN';
-              p._raceState720.action='none';
-              p._raceState720.actionUntil=0;
-              p._raceState720.rejoinUntil=gameNow()+120;
-            }
-            p._rollingSlideBlocks7992=(p._rollingSlideBlocks7992||0)+1;
-            p._rollingDualTangent7995=(p._rollingDualTangent7995||0)+1;
-            slid=true;
-            break;
-          }
-          if(slid)return true;
-
-          // v7.997: rock #2 left-side no-stall fallback. If both tangents are
-          // rejected by an outside/no-go boundary, advance a short distance toward
-          // the authoritative forward spline instead of clamping at the same rock
-          // edge forever. This preserves the legal 9-o'clock paved bypass.
-          if(hitIndex===1 && m.rollingRock2LeftCorridor7997){
-            const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
-            const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,oldProg+.72));
-            let vx=q.x-oldX,vy=q.y-oldY,vl=Math.hypot(vx,vy)||1;
-            vx/=vl;vy/=vl;
-            const step=Math.max(.22,Math.min(.62,stepLen*.82));
-            const sx=oldX+vx*step,sy=oldY+vy*step;
-            if(!inForbidden96(sx,sy,0)){
-              p.x=sx;p.y=sy;
-              const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,16);
-              p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+.9));
-              p._splineFloor754=p._splineProg720;
-              p.desiredOffset=(p.desiredOffset||0)*.35;p.routeBand=0;p.openingLineBias=0;
-              if(p._raceState720){
-                p._raceState720.mode='REJOIN';p._raceState720.action='none';
-                p._raceState720.actionUntil=0;p._raceState720.rejoinUntil=gameNow()+90;
-              }
-              p._rollingRock2ForwardEscape7997=(p._rollingRock2ForwardEscape7997||0)+1;
-              return true;
-            }
-          }
-        }
-      }
-
-      let t;
-      if(rollingEntry7991!=null){
-        t=rollingEntry7991;
-      }else{
-        let lo=0,hi=1;
-        for(let k=0;k<12;k++){
-          const mid=(lo+hi)*.5;
-          const x=oldX+(attemptedX-oldX)*mid,y=oldY+(attemptedY-oldY)*mid;
-          if(inForbidden96(x,y,0))hi=mid;else lo=mid;
-        }
-        t=Math.max(0,lo-.015);
-      }
-      p.x=oldX+(attemptedX-oldX)*t;
-      p.y=oldY+(attemptedY-oldY)*t;
-      const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(oldX,oldY);
-      const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,20);
-      const moved=Math.hypot(p.x-oldX,p.y-oldY);
-      p._splineProg720=Math.max(oldProg,Math.min(projected,oldProg+Math.max(.05,moved*1.10)));
-      p._splineFloor754=p._splineProg720;
-      p.desiredOffset=(p.desiredOffset||0)*.45; p.routeBand=0; p.openingLineBias=0;
-      if(p._raceState720){
-        p._raceState720.mode='REJOIN';
-        p._raceState720.action='none';
-        p._raceState720.actionUntil=0;
-        p._raceState720.rejoinUntil=gameNow()+180;
-      }
-      p._rollingSmoothBlocks7981=(p._rollingSmoothBlocks7981||0)+1;
-      return true;
-    }
-
-    // Legacy Rolling Stone guide retained as fallback for old map definitions.
-    if(m.rollingNoStop793){
-      const moved=Math.max(.02,Math.hypot(p.x-oldX,p.y-oldY));
-      let prog=Math.max(
-        Number.isFinite(p._splineProg720)?p._splineProg720:0,
-        nearestSplineProgress720(oldX,oldY)
-      );
-      prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+Math.min(.72,moved));
-      let q=splinePointAt720(prog);
-      for(let k=0;k<24 && inForbidden96(q.x,q.y,0);k++){
-        prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+.18);
-        q=splinePointAt720(prog);
-      }
-      p.x=q.x; p.y=q.y;
-      p._splineProg720=prog;
-      p._splineFloor754=Math.max(Number(p._splineFloor754)||0,prog);
-      p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
-      if(p._raceState720){
-        p._raceState720.mode="REJOIN";
-        p._raceState720.action="none";
-        p._raceState720.actionUntil=0;
-      }
-      p._hardObstacleGuides793=(p._hardObstacleGuides793||0)+1;
-      return true;
-    }
-    // Other hard obstacles keep the existing single-step rollback semantics.
-    p.x=oldX; p.y=oldY;
+    if(!m.hardForbidden780 || !inForbidden96(p.x,p.y,0))return false;
+    p.x=oldX;p.y=oldY;
     p.desiredOffset=(p.desiredOffset||0)*.20;
     if(p._raceState720){
       p._raceState720.mode="REJOIN";
@@ -7348,6 +6993,7 @@ applyMapSet776();
     p._hardObstacleBlocks780=(p._hardObstacleBlocks780||0)+1;
     return true;
   }
+
 
   function mapLapRule775(m=currentMap770()){
     return {
@@ -7610,6 +7256,93 @@ applyMapSet776();
       rival:c.rival?.name||null,rivalGap:c.gap,pressureLoad:c.load
     };
   }
+  function destinyPath813(p){
+    const m=currentMap770();
+    if(m.id!=='triple_diamond')return null;
+    if(Array.isArray(p?._dgPath813)&&p._dgPath813.length>4)return p._dgPath813;
+    if(!Array.isArray(p?._dgChoices813))p._dgChoices813=[
+      Math.random()<(m.routeChoiceProbability813??.5)?-1:1,
+      Math.random()<(m.routeChoiceProbability813??.5)?-1:1
+    ];
+    const topo=m.destinyTopology815;
+    if(!topo)return null;
+    const si=(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813===1)?1:0;
+    const pts=[];
+    const add=(arr,skipFirst=false)=>{
+      if(!Array.isArray(arr))return;
+      arr.forEach((q,i)=>{if(skipFirst&&i===0)return;pts.push([q[0],q[1]]);});
+    };
+    add(topo.startRoads[si]);
+    add(topo.shared0,true);
+    add(p._dgChoices813[0]<0?topo.branch1.left:topo.branch1.right,true);
+    add(topo.shared1,true);
+    add(p._dgChoices813[1]<0?topo.branch2.left:topo.branch2.right,true);
+    add(topo.shared2,true);
+
+    const dense=densifyLine772(pts,.34);
+    const segs813=[];let total=0;
+    for(let i=0;i<dense.length-1;i++){
+      const a=dense[i],b=dense[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
+      segs813.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});total+=L;
+    }
+    segs813.total=total;
+    p._dgPath813=dense;p._dgSegs813=segs813;
+    p._dgProg813=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
+    return dense;
+  }
+
+  function destinyNearest813(p,x,y,hint=NaN){
+    destinyPath813(p);
+    const ss=p._dgSegs813||[];if(!ss.length)return 0;
+    let bestD=Infinity,bestP=0;
+    for(const s of ss){
+      const den=s.L*s.L||1;
+      const t=Math.max(0,Math.min(1,((x-s.a[0])*s.dx+(y-s.a[1])*s.dy)/den));
+      const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t,d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
+      if(d<bestD){bestD=d;bestP=s.start+s.L*t;}
+    }
+    return Number.isFinite(hint)?Math.max(Math.min(hint,ss.total),bestP):bestP;
+  }
+  function destinyPoint813(p,progress){
+    destinyPath813(p);
+    const ss=p._dgSegs813||[];if(!ss.length)return {x:p.x,y:p.y,ux:0,uy:-1};
+    const pr=Math.max(0,Math.min(ss.total,Number(progress)||0));
+    let s=ss[ss.length-1];
+    for(const q of ss){if(pr<=q.start+q.L){s=q;break;}}
+    const t=Math.max(0,Math.min(1,(pr-s.start)/s.L));
+    return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy};
+  }
+
+  function advanceDestinyPath815(p,distance){
+    if(!p||!(distance>0))return false;
+    destinyPath813(p);
+    const total=Math.max(0,p._dgSegs813?.total||0);
+    if(!total)return false;
+    const old=destinyNearest813(p,p.x,p.y,p._dgProg813);
+    const next=Math.min(total,Math.max(old,p._dgProg813||0)+distance);
+    const q=destinyPoint813(p,next);
+    p.x=q.x;p.y=q.y;p._dgPrevProg815=Number(p._dgProg813)||0;p._dgProg813=next;
+    const frac=next/Math.max(1,total);
+    p._splineProg720=frac*Math.max(1,RACING_SPLINE_SEGS_720.total||1);
+    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
+    p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
+    p._lineOffset720=0;
+    return true;
+  }
+
+  function syncDestinyProgress813(p){
+    if(currentMap770().id!=='triple_diamond')return;
+    destinyPath813(p);
+    p._dgPrevProg815=Number(p._dgProg813)||0;
+    const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
+    p._dgProg813=Math.max(p._dgProg813||0,prog);
+    const total=Math.max(1,p._dgSegs813?.total||1);
+    const frac=Math.max(0,Math.min(1,p._dgProg813/total));
+    p._splineProg720=frac*Math.max(1,RACING_SPLINE_SEGS_720.total||1);
+    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
+    p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
+  }
+
 
   function nearestSplineProgress720(x,y){
     let bestD=Infinity,bestP=0;
@@ -7750,10 +7483,6 @@ applyMapSet776();
       const localHalf789=Math.max(.55,(widths[Math.max(0,Math.min(widths.length-1,p.seg|0))]||8)*.5);
       off+=turn789.side*Math.min(.20,localHalf789*.032)*(.35+turn789.power*.65);
     }
-    // v7.91 Rolling Stone uses a prevalidated gap-center spline. Do not let a
-    // tiny personality/inside offset push the unit back toward a boulder.
-    if(currentMap770().boulderGapCenter791)off=0;
-
     let x=q.x+nx*off,y=q.y+ny*off;
     if(visualRoadMask674(x,y,0) && courseContainsPoint(x,y,0))
       return {...q,x,y,executionOffset720:off};
@@ -7762,21 +7491,9 @@ applyMapSet776();
 
   function advanceOnSpline720(p,distance){
     if(!p || !(distance>0)) return false;
+    if(currentMap770().id==='triple_diamond')return advanceDestinyPath815(p,distance);
     let prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+distance);
-
-    // v7.991 Rolling Stone mandatory 5-o'clock center-road gate.
-    // Spline progress itself cannot move past the gate until the rendered racer
-    // has actually reached it, so 6->3 can never be resolved as a diagonal skip.
-    const gateMap7991=currentMap770();
-    if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
-      const g=gateMap7991.rollingMandatoryFiveGate7991;
-      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
-      if(!p._rollingFivePassed7991){
-        const gp=nearestSplineProgress720(g.x,g.y);
-        prog=Math.min(prog,gp);
-      }
-    }
 
     const raw=splinePointAt720(prog);
     const q=executedSplinePoint720(p,prog);
@@ -7820,6 +7537,10 @@ applyMapSet776();
 
   function syncEvadeSplineProgress754(p,fromX,fromY){
     if(!p)return;
+    if(currentMap770().id==='triple_diamond'){
+      syncDestinyProgress813(p);
+      return;
+    }
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:
       nearestSplineProgress720(fromX,fromY);
     const projected=nearestSplineProgressLocal734(p.x,p.y,old,48);
@@ -7827,16 +7548,6 @@ applyMapSet776();
     const maxForward=old+Math.max(.18,moved*1.55+.12);
     const floor=Math.max(Number(p._splineFloor754)||0,old);
     let next=Math.max(floor,Math.min(projected,maxForward));
-    // v7.991: EVADE/REJOIN progress is also checkpoint-gated on Rolling Stone.
-    const gateMap7991=currentMap770();
-    if(gateMap7991.id==='industrial_zone'&&gateMap7991.rollingMandatoryFiveGate7991){
-      const g=gateMap7991.rollingMandatoryFiveGate7991;
-      if(Math.hypot(p.x-g.x,p.y-g.y)<=g.r) p._rollingFivePassed7991=true;
-      if(!p._rollingFivePassed7991){
-        const gp=nearestSplineProgress720(g.x,g.y);
-        next=Math.min(next,gp);
-      }
-    }
     p._splineProg720=Math.min(RACING_SPLINE_SEGS_720.total,next);
     p._splineFloor754=Math.max(floor,p._splineProg720);
   }
@@ -7869,20 +7580,29 @@ applyMapSet776();
     if(normalGuard754){
       // Bookkeeping repair only: physical position never moves backward.
       // Full projection runs only when the guard trips, so it has negligible cost.
-      const repaired=nearestSplineProgress720(p.x,p.y);
-      p._splineProg720=repaired;
-      p._splineFloor754=repaired;
+      if(currentMap770().id==='triple_diamond'){
+        syncDestinyProgress813(p);
+      }else{
+        const repaired=nearestSplineProgress720(p.x,p.y);
+        p._splineProg720=repaired;
+        p._splineFloor754=repaired;
+      }
       p._splineRepair770=(p._splineRepair770||0)+1;
     }else{
       syncEvadeSplineProgress754(p,fromX,fromY);
     }
     return true;
   }
-
   function splineDeviation720(p){
+    if(currentMap770().id==='triple_diamond'){
+      destinyPath813(p);
+      const prog=destinyNearest813(p,p.x,p.y,p._dgProg813),q=destinyPoint813(p,prog);
+      return Math.hypot(p.x-q.x,p.y-q.y);
+    }
     const prog=nearestSplineProgressLocal734(p.x,p.y,p._splineProg720,28),q=splinePointAt720(prog);
     return Math.hypot(p.x-q.x,p.y-q.y);
   }
+
 
   function ensureRaceState720(p,now){
     if(!p._raceState720){
@@ -7952,17 +7672,20 @@ applyMapSet776();
     const prog=Number.isFinite(p._splineProg720)
       ? p._splineProg720
       : nearestSplineProgress720(p.x,p.y);
-    const frame=splinePointAt720(prog);
+    const frame=currentMap770().id==='triple_diamond'
+      ? destinyPoint813(p,destinyNearest813(p,p.x,p.y,p._dgProg813))
+      : splinePointAt720(prog);
     const pv=Math.max(6.5,Number(p.speed)||9.72);
     const pvx=frame.ux*pv,pvy=frame.uy*pv;
 
     // Cheap emergency pass every frame: only observers within 4.0.
-    const close=localObservers723(p,4.0);
+    const startBoost816=startAiBoost816(p,now);
+    const close=localObservers723(p,startBoost816?5.4:4.0);
     for(const o of close){
       const ox=o.x-p.x,oy=o.y-p.y,dist=Math.hypot(ox,oy);
       const forward=ox*frame.ux+oy*frame.uy;
       const lateral=ox*(-frame.uy)+oy*frame.ux;
-      if(dist<2.35 || (forward>-.25&&forward<3.55&&Math.abs(lateral)<1.95)){
+      if(dist<(startBoost816?2.75:2.35) || (forward>-.25&&forward<(startBoost816?4.8:3.55)&&Math.abs(lateral)<(startBoost816?2.35:1.95))){
         return {
           o,t:.12,miss:dist,dist,rx:ox,ry:oy,forward,lateral,
           minSep:dist,minH:.12,frontBlock:true,emergency:true,
@@ -7974,10 +7697,10 @@ applyMapSet776();
     // v7.24(130): normal prediction is capped at 11.1; emergency 4.0 stays immediate.
     if(now<(p._nextThreatScan724||0))
       return p._cachedThreat724||null;
-    p._nextThreatScan724=now+44;
+    p._nextThreatScan724=now+(startBoost816?28:44);
 
     let best=null,bestScore=Infinity;
-    const nearby=localObservers723(p,11.1);
+    const nearby=localObservers723(p,startBoost816?14.2:11.1);
 
     for(const o of nearby){
       const ox=o.x-p.x,oy=o.y-p.y;
@@ -8117,9 +7840,13 @@ applyMapSet776();
 
   function chooseEvadeAction720(p,now,threat){
     const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:0;
-    const projected=nearestSplineProgressLocal734(p.x,p.y,oldProg,28);
+    const projected=currentMap770().id==='triple_diamond'
+      ? destinyNearest813(p,p.x,p.y,p._dgProg813)
+      : nearestSplineProgressLocal734(p.x,p.y,oldProg,28);
     const prog=Math.max(oldProg,projected);
-    const frame=splinePointAt720(prog);
+    const frame=currentMap770().id==='triple_diamond'
+      ? destinyPoint813(p,Math.min(p._dgSegs813?.total||0,projected))
+      : splinePointAt720(prog);
     const nx=-frame.uy,ny=frame.ux,ex=driverExecution720(p);
     const pers=driverPersonality754(p),mix=integratedDriver759(p);
     const clutch759=clutchContext759(p),sig759=mix.signature;
@@ -8259,6 +7986,15 @@ applyMapSet776();
   }
 
   function rejoinTarget720(p,now){
+    if(currentMap770().id==='triple_diamond'){
+      destinyPath813(p);
+      const old=Number.isFinite(p._dgProg813)?p._dgProg813:0;
+      const projected=destinyNearest813(p,p.x,p.y,old);
+      const prog=Math.max(old,projected);
+      p._dgProg813=prog;
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+3.3));
+      return {x:q.x,y:q.y,kind:"race720-rejoin-destiny813"};
+    }
     const ex=driverExecution720(p);
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:0;
     const projected=nearestSplineProgressLocal734(p.x,p.y,old,36);
@@ -8346,6 +8082,15 @@ applyMapSet776();
   }
 
   function normalTarget720(p){
+    if(currentMap770().id==='triple_diamond'){
+      destinyPath813(p);
+      const old=Number.isFinite(p._dgProg813)?p._dgProg813:0;
+      const projected=destinyNearest813(p,p.x,p.y,old);
+      const prog=Math.max(old,projected);
+      p._dgProg813=prog;
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+2.35));
+      return {x:q.x,y:q.y,kind:"race720-normal-destiny813"};
+    }
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     const prog=Math.max(old,Number(p._splineFloor754)||0);
     const look=currentMap770().optimizedSplineAuthority783?5.20:(currentMap770().strictRoadFollow778?2.35:8.0);
@@ -9490,7 +9235,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     // v7.19 HOTFIX1: shortest corner cuts cross macro joints before the old
     // centerline endpoint. Synchronize first, then retain legacy micro-segment advancement.
-    syncShortestSegment719(p,now);
+    if(currentMap770().id==='triple_diamond')syncDestinyProgress813(p);
+    else syncShortestSegment719(p,now);
 
     // Robust segment advancement: crossing the end plane OR entering the next joint zone.
     // A short while-loop handles high FPS drops without skipping/sticking.
@@ -9539,9 +9285,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
        p._lapMaxFraction775>=lapRule775.armFraction)
       p._lapArmed775=true;
 
-    const finishGate775=
-      p.seg>=segs.length-1 &&
-      (finishAlong>=fs.L*0.88 || finishDx*finishDx+finishDy*finishDy<38.44);
+    const destinyFinish815=currentMap770().id==='triple_diamond';
+    const dgTotal815=destinyFinish815?Math.max(1,p._dgSegs813?.total||1):1;
+    const dgFrac815=destinyFinish815?Math.max(0,Math.min(1,(Number(p._dgProg813)||0)/dgTotal815)):0;
+    const finishGate775=destinyFinish815
+      ? (dgFrac815>=.985 && finishDx*finishDx+finishDy*finishDy<49.0)
+      : (p.seg>=segs.length-1 && (finishAlong>=fs.L*0.88 || finishDx*finishDx+finishDy*finishDy<38.44));
     const finishEligible775=!lapRule775.lapRequired || !!p._lapArmed775;
 
     if(finishEligible775 && finishGate775){
@@ -9578,12 +9327,12 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(!engineAuthority719) rescueIfStuck(p,now);
 
     // v2.50 danger + near miss telemetry.
-    if(!safeAt(p.x,p.y)){let nearestObsSq=Infinity;for(const o of playerNearbyObservers(p,3)){const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;if(d2<nearestObsSq)nearestObsSq=d2;}if(nearestObsSq<10.24)p.match.dangerExposureMs+=dt;const hitR764=playerHitRadius764(p),hitSq=hitR764*hitR764;if(nearestObsSq>hitSq&&nearestObsSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){p.match.nearMisses++;if(nearestObsSq<.3844)p.match.extremeNearMisses++;p.match.lastNearMissAt=now;addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestObsSq<.3844?2:1);}}
+    if(!safeAt(p.x,p.y) && !startProtectionActive816(p,now)){let nearestObsSq=Infinity;for(const o of playerNearbyObservers(p,3)){const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;if(d2<nearestObsSq)nearestObsSq=d2;}if(nearestObsSq<10.24)p.match.dangerExposureMs+=dt;const hitR764=playerHitRadius764(p),hitSq=hitR764*hitR764;if(nearestObsSq>hitSq&&nearestObsSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){p.match.nearMisses++;if(nearestObsSq<.3844)p.match.extremeNearMisses++;p.match.lastNearMissAt=now;addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestObsSq<.3844?2:1);}}
 
     // Players are non-solid and may overlap completely.
     // Collision here is observer-only: player-player contact never pushes, slows, or stops anyone.
     // Collision check: actual observer contact = guaranteed stop outside invincible safe zones.
-    if(!safeAt(p.x,p.y) && now>=p.invUntil && now>=p.collisionLockUntil){
+    if(!safeAt(p.x,p.y) && !startProtectionActive816(p,now) && now>=p.invUntil && now>=p.collisionLockUntil){
       const hitR764=playerHitRadius764(p);
       for(const o of playerNearbyObservers(p,hitR764+1.0)){
         const observerStep=Math.hypot(o.x-(o.simPrevX??o.x),o.y-(o.simPrevY??o.y));
@@ -9599,6 +9348,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
           p.hitFxUntil=0;
           p.dead=true;
           p.match.collisions++;
+          pushRaceEvent(`OBSERVER HIT · ${p.name}`,now,p.index,"COLLISION");
+          addAutoHighlight("COLLISION",`${p.name} · 옵저버 충돌`,now,p.index,2);
           p.match.deathPoints.push({
             round:currentRound,
             t:Math.max(0,now-raceStart),
@@ -9839,6 +9590,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
   let bestSector=[null,null,null];
 
 
+  let liveEventFeed814=[];
+  let liveFocus814={playerId:-1,type:"",text:"",until:0};
   let commentaryItems=[];
   let commentaryLastKey="";
   let commentaryLastAt=0;
@@ -9919,14 +9672,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const ordered=[...players].sort((a,b)=>a.finishTime-b.finishTime);
     const result={round:currentRound,unit769:{...unitChassis764(currentRound)},
-      team:{A:0,B:0,C:0,D:0},
+      team:{RED:0,BLUE:0},
       leaderChanges:raceLeaderChanges,totalOvertakes:raceTotalOvertakes,players:[]};
 
     ordered.forEach((p,idx)=>{
       const pts=ROUND_POINTS[idx];
       const team=p.team;
-      result.team[team]+=pts;
-      teamTotals[team]+=pts;
+      if(isTeamMode()&&team){
+        result.team[team]=(result.team[team]||0)+pts;
+        teamTotals[team]=(teamTotals[team]||0)+pts;
+      }
       playerTournament[p.index].total+=pts;
       playerTournament[p.index].rounds.push({
         round:currentRound,rank:idx+1,points:pts,time:p.finishTime,rating:0
@@ -10030,18 +9785,30 @@ targetOff=clampRoadOffset(si,targetOff,p);
       setTimeout(showMatchResults,350);
     }
   }
-
   function renderTeamScore(){
-    const el=document.getElementById("teamScoreBoard"); if(el) el.style.display="none";
-    renderPersonalScore();
+    const teamEl=document.getElementById("teamScoreBoard"),personalEl=document.getElementById("personalScoreBoard");
+    if(isTeamMode()){
+      if(personalEl)personalEl.style.display="none";
+      if(teamEl){teamEl.style.display="block";teamEl.innerHTML=`<div class="v813-team-live">
+        <div class="v813-team-side v813-red"><span>빨강팀</span><strong>${teamTotals.RED||0}</strong></div>
+        <div class="v813-vs">VS</div>
+        <div class="v813-team-side v813-blue"><strong>${teamTotals.BLUE||0}</strong><span>파랑팀</span></div></div>`;}
+    }else{
+      if(teamEl){teamEl.style.display="none";teamEl.innerHTML="";}
+      if(personalEl)personalEl.style.display="block";renderPersonalScore();
+    }
+  }
+  function renderPersonalScore(){
+    const el=document.getElementById("personalScoreBoard");if(!el)return;
+    if(isTeamMode()){el.style.display="none";el.innerHTML="";return;}
+    el.style.display="block";
+    const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+    el.innerHTML=`<div class="personal-score-title">8인 개인전 · 5클리어 선승</div>`+
+      rows.map((pt,i)=>`<div class="personal-score-row"><span class="personal-rank">${i+1}</span>
+      <span class="score-dot" style="background:${INDIVIDUAL_COLORS[i%INDIVIDUAL_COLORS.length]}"></span>
+      <span class="personal-name">${pt.name}</span><b>${pt.total}</b></div>`).join("");
   }
 
-  function renderPersonalScore(){
-    const el=document.getElementById("personalScoreBoard"); if(!el) return;
-    const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
-    el.innerHTML=`<div class="personal-score-title">개인 클리어 점수 · 5점 선승</div>`+
-      rows.map((pt,i)=>`<div class="personal-score-row"><span class="personal-rank">${i+1}</span><span class="score-dot" style="background:${teamColor(pt.team)}"></span><span class="personal-name">${pt.name}</span><b>${pt.total}</b></div>`).join("");
-  }
 
   function renderDiagnostics(){
     const el=document.getElementById("diagnostics");
@@ -10314,23 +10081,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
     }
 
     const roundFinishers=players.filter(p=>p.done&&p.finishTime!=null).sort((a,b)=>a.finishTime-b.finishTime);
-    if(roundFinishers.length){
-      running=false;
-      finalizeIndividualClear(roundFinishers,ts);
-      return;
+    if(!isTeamMode()&&roundFinishers.length){
+      running=false;finalizeIndividualClear(roundFinishers,ts);return;
     }
     if(players.every(p=>p.dead)){
-      running=false;
-      restartSameIndividualRound();
-      return;
+      running=false;restartSameIndividualRound();return;
     }
-
-    if(false && players.every(p=>p.done)){
+    if(isTeamMode()&&players.every(p=>p.done)){
       const fin=[...players].sort((a,b)=>a.finishTime-b.finishTime);
-      if(fin[0])commentaryLine(`round-finish-${currentRound}`,`${currentRound}라운드 종료! ${fin[0].name}이 1위로 결승선을 통과했습니다.`,ts,true);
-      running=false;
-      finalizeRound();
-      return;
+      if(fin[0])commentaryLine(`round-finish-${currentRound}`,`${currentRound}라운드 종료! ${fin[0].name} 1위`,ts,true);
+      running=false;finalizeRound();return;
     }
     raf=requestAnimationFrame(loop);
   }
@@ -10761,7 +10521,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const labels={
       PHOTO_FINISH:"초접전 결승",MULTIPASS:"연속 추월",OVERTAKE:"추월",
       LEAD_CHANGE:"선두 변경",COMEBACK:"대역전",BACKCON:"빽컨 회피",
-      STOPCON:"스탑컨 회피",FINISH:"완주",WIN:"우승",CLEAN:"무충돌",
+      STOPCON:"스탑컨 회피",COLLISION:"옵저버 충돌",FINISH:"완주",WIN:"우승",CLEAN:"무충돌",
       BEST_SECTOR:"최고 구간기록",
       FOLLOWER_SAVE:"연쇄 생존 회피",
       MARSEILLE:"마르세유턴"
@@ -10778,10 +10538,14 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(highlightMarkers.length>40) highlightMarkers.shift();
   }
 
-  function pushRaceEvent(text,now=gameNow()){
+  function pushRaceEvent(text,now=gameNow(),playerId=-1,type="EVENT"){
     raceEventText=text;raceEventUntil=now+1600;
-    const spoken=text.replace("OVERTAKE · ","추월! ").replace("NEW LEADER · ","새로운 선두! ").replace(/최고 구간기록 (\d+) · /,"최고 구간기록! ").replace("FINISH · ","결승선 통과! ");
-    // v2.43: LIVE commentary removed; highlights/events are still recorded.
+    const t=raceStart?Math.max(0,now-raceStart):0;
+    liveEventFeed814.unshift({text,time:t,playerId,type});
+    if(liveEventFeed814.length>6)liveEventFeed814.length=6;
+    if(playerId>=0&&players[playerId]){
+      liveFocus814={playerId,type,text,until:now+4200};
+    }
   }
 
   function updateSectors(now){
@@ -10799,7 +10563,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         p.sectorIndex++;
         if(!bestSector[si] || sectorMs<bestSector[si].time){
           bestSector[si]={name:p.name,time:sectorMs};
-          pushRaceEvent(`최고 구간기록 ${si+1} · ${p.name} ${formatTime(sectorMs)}`,now);
+          pushRaceEvent(`최고 구간기록 ${si+1} · ${p.name} ${formatTime(sectorMs)}`,now,p.index,"BEST_SECTOR");
         }
       }
     }
@@ -10818,7 +10582,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const gained=prev-rank;
         p.match.overtakes += gained;
         if(gained>=1){
-          pushRaceEvent(`OVERTAKE · ${p.name} ${prev}위 → ${rank}위`,now);
+          pushRaceEvent(`OVERTAKE · ${p.name} ${prev}위 → ${rank}위`,now,p.index,"OVERTAKE");
           raceTotalOvertakes+=gained;
           addAutoHighlight(gained>=2?"MULTIPASS":"OVERTAKE",
             `${p.name} · ${prev}위 → ${rank}위${gained>=2?" 연속 추월":""}`,
@@ -10833,7 +10597,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       if(lastLeaderName && lastLeaderName!==ordered[0].name){
         raceLeaderChanges++;
         const oldLeader=lastLeaderName;
-        pushRaceEvent(`NEW LEADER · ${ordered[0].name}`,now);
+        pushRaceEvent(`NEW LEADER · ${ordered[0].name}`,now,ordered[0].index,"LEAD_CHANGE");
 
         addAutoHighlight("LEAD_CHANGE",`NEW LEADER · ${ordered[0].name}`,now,ordered[0].index,2);
       }
@@ -10935,50 +10699,90 @@ targetOff=clampRoadOffset(si,targetOff,p);
     return "time-90";
   }
 
+
+  function broadcastGap814(leader,p,rank){
+    if(p.done)return formatTime(p.finishTime);
+    if(p.dead)return "사망";
+    if(rank===0)return "LEADER";
+    const dist=Math.max(0,currentProgress(leader)-currentProgress(p));
+    return `+${(dist/Math.max(1,leader.speed||1)).toFixed(2)}s`;
+  }
+  function renderBroadcastCenter814(ordered){
+    if(!ordered?.length)return;
+    const now=gameNow(),leader=ordered[0];
+
+    const mode=document.getElementById("bc814Mode");
+    if(mode)mode.textContent=isTeamMode()?"TEAM 4v4":"8인 개인전";
+
+    const teamBox=document.getElementById("bc814TeamScore");
+    if(teamBox){
+      if(isTeamMode()){
+        teamBox.classList.remove("hidden");
+        teamBox.innerHTML=`<div class="red"><em>빨강팀</em><strong>${teamTotals.RED||0}</strong></div><b>VS</b><div class="blue"><strong>${teamTotals.BLUE||0}</strong><em>파랑팀</em></div>`;
+      }else{teamBox.classList.add("hidden");teamBox.innerHTML="";}
+    }
+
+    const top3=document.getElementById("bc814Top3");
+    if(top3)top3.innerHTML=ordered.slice(0,3).map((p,i)=>{
+      const medal=i===0?"🥇":i===1?"🥈":"🥉";
+      const team=isTeamMode()?` · ${p.team==="RED"?"빨강":"파랑"}`:"";
+      return `<div class="bc814-top-row"><div class="bc814-rank">${medal}</div><div class="bc814-top-name"><b>${p.name}</b><small>${i+1}위${team}</small></div><div class="bc814-gap">${broadcastGap814(leader,p,i)}</div></div>`;
+    }).join("");
+
+    const focus=document.getElementById("bc814Focus"),eventsWrap=document.getElementById("bc814EventsWrap");
+    const focusP=(liveFocus814.until>now&&liveFocus814.playerId>=0)?players[liveFocus814.playerId]:null;
+    if(focus&&eventsWrap){
+      if(focusP){
+        focus.classList.remove("hidden");eventsWrap.classList.add("hidden");
+        const rank=Math.max(1,ordered.findIndex(x=>x.index===focusP.index)+1);
+        const m=focusP.match||{};
+        focus.innerHTML=`<div class="bc814-focus-head"><span>PLAYER FOCUS</span><b>${highlightTypeLabel(liveFocus814.type)}</b></div>
+          <div class="bc814-focus-player">${avatarHtml(focusP.index,"bc814-avatar")}<div><strong>${focusP.name}</strong><small>현재 ${rank}위 · ${liveFocus814.text}</small></div></div>
+          <div class="bc814-focus-grid">
+            <div><span>추월</span><b>${m.overtakes||0}회</b></div>
+            <div><span>충돌</span><b>${m.collisions||0}회</b></div>
+            <div><span>선두 유지</span><b>${((m.leadMs||0)/1000).toFixed(1)}초</b></div>
+            <div><span>현재 순위</span><b>${rank}위</b></div>
+          </div>`;
+      }else{
+        focus.classList.add("hidden");eventsWrap.classList.remove("hidden");
+        const events=document.getElementById("bc814Events");
+        if(events){
+          events.innerHTML=liveEventFeed814.length?liveEventFeed814.slice(0,4).map((e,i)=>`<div class="bc814-event ${i===0?"latest":""}"><time>${(e.time/1000).toFixed(1)}s</time><b>${e.text}</b></div>`).join("")
+            :`<div class="bc814-events-empty">레이스 이벤트 대기 중</div>`;
+        }
+      }
+    }
+
+    const metrics=document.getElementById("bc814Metrics");
+    if(metrics){
+      const totalCollisions=players.reduce((sum,p)=>sum+(p.match?.collisions||0),0);
+      const elapsed=raceStart?Math.max(0,now-raceStart):0;
+      metrics.innerHTML=`<div><span>선두</span><b>${leader.name}</b></div>
+        <div><span>선두 유지</span><b>${((leader.match?.leadMs||0)/1000).toFixed(1)}초</b></div>
+        <div><span>총 추월</span><b>${raceTotalOvertakes}회</b></div>
+        <div><span>총 충돌</span><b>${totalCollisions}회</b></div>
+        <div><span>선두 교체</span><b>${raceLeaderChanges}회</b></div>
+        <div><span>레이스 시간</span><b>${formatTime(elapsed)}</b></div>`;
+    }
+
+    const strip=document.getElementById("bc814RankStrip");
+    if(strip)strip.innerHTML=ordered.map((p,i)=>`<div class="bc814-strip-item ${i===0?"leader":""}"><b>${i+1}</b><span>${p.name}</span></div>`).join("");
+  }
+
   function renderRanking(){
     const ordered=[...players].sort((a,b)=>{
-      if(a.done && b.done) return a.finishTime-b.finishTime;
-      if(a.done) return -1;if(b.done) return 1;
-      if(a.dead!==b.dead) return a.dead?1:-1;
+      if(a.done&&b.done)return a.finishTime-b.finishTime;
+      if(a.done)return -1;if(b.done)return 1;
+      if(a.dead!==b.dead)return a.dead?1:-1;
       const diff=currentProgress(b)-currentProgress(a);
-      if(Math.abs(diff)<0.20) return a.index-b.index;
+      if(Math.abs(diff)<.20)return a.index-b.index;
       return diff;
     });
-    if(!ordered.length) return;
-    const frag=document.createDocumentFragment();
-    const leaderProg=currentProgress(ordered[0]);
-
-    for(let i=0;i<ordered.length;i++){
-      const p=ordered[i], c=rankRowFor(p.index);
-      let gapText;
-      if(p.done) gapText=formatTime(p.finishTime);
-      else if(p.dead) gapText="사망";
-      else if(i===0) gapText="선두";
-      else{
-        const distGap=Math.max(0,leaderProg-currentProgress(p));
-        gapText=`+${(distGap/Math.max(1,ordered[0].speed||1)).toFixed(2)}초`;
-      }
-      const rank=i+1, oldRank=previousUiRanks.get(p.index);
-      const trendText=oldRank==null?"":rank<oldRank?"▲":rank>oldRank?"▼":"";
-      previousUiRanks.set(p.index,rank);
-      const eta=(i===0&&!p.done)?estimatedFinishSeconds(p):null;
-      const etaText=eta?` · 예상 ${eta.toFixed(2)}초`:"";
-
-      c.no.textContent=String(rank);
-      c.trend.textContent=trendText;
-      c.team.textContent=p.team;
-      c.team.className=`team-mini team-${p.team.toLowerCase()}`;
-      c.name.textContent=p.name;
-      c.gap.textContent=gapText+etaText;
-      const displayMs=p.done ? p.finishTime : (raceStart?Math.max(0,(gameNow()-raceStart)):0);
-      c.gap.className=`rank-gap ${rankingTimeClass(displayMs)}`;
-      frag.appendChild(c.row);
-    }
-    // Existing nodes are simply reordered; listeners/DOM nodes are reused.
-    rankingEl.appendChild(frag);
-    renderRecordBoard();
-    renderLiveRatings();
+    if(!ordered.length)return;
+    renderBroadcastCenter814(ordered);
   }
+
 
   function statLabel(k){
     const labels={pace:"속도",acceleration:"가속",cornering:"코너링",insideLine:"인코스",routeReading:"루트판단",
@@ -11225,10 +11029,10 @@ function seasonCardHtml(p){
     body.innerHTML=`
       <div class="profile-hero">
         ${avatarHtml(p.index,"profile-avatar")}
-        <div><b>${p.name}</b><span>${teamLabel(p.team)} · ${styleLabel(p.drivingStyle.style)}</span><small>OVR ${overallOf(p)}</small></div>
+        <div><b>${p.name}</b><span>${isTeamMode()?teamLabel(p.team)+" · ":""}${styleLabel(p.drivingStyle.style)}</span><small>OVR ${overallOf(p)}</small></div>
       </div>
       <div class="profileSummary">
-        <div><b>소속팀</b><span>${teamLabel(p.team)}</span></div>
+        <div><b>경기 구분</b><span>${isTeamMode()?teamLabel(p.team):"8인 개인전"}</span></div>
         <div><b>주행 성향</b><span>${styleLabel(p.drivingStyle.style)}</span></div>
         <div><b>AI 개성</b><span>${identitySummary(p)}</span></div>
         <div><b>시그니처</b><span>${personalitySummary759(p).signature}</span></div>
@@ -11238,7 +11042,7 @@ function seasonCardHtml(p){
         <div><b>유닛 특성</b><span>속도 x${unitChassis764().topSpeed.toFixed(3)} · 충돌 ${unitChassis764().hitRadius.toFixed(2)}</span></div>
         <div><b>유닛 궁합</b><span>${unitCompatibility769(p).grade} · ${Math.round(unitCompatibility769(p).fit*100)}</span></div>
         <div><b>당일 컨디션</b><span>${p.raceForm>=1.025?"좋음":p.raceForm<=.975?"흔들림":"보통"}</span></div>
-        <div><b>팀전 누적점수</b><span>${playerTournament[p.index]?.total||0}점</span></div>
+        <div><b>누적점수</b><span>${playerTournament[p.index]?.total||0}점</span></div>
         <div><b>강점</b><span>${entries.slice(0,3).map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
         <div><b>약점</b><span>${entries.slice(-3).reverse().map(([k,v])=>`${statLabel(k)} ${v}`).join(" · ")}</span></div>
       </div>
@@ -11549,36 +11353,28 @@ function seasonCardHtml(p){
       strengths:strengths.slice(0,3),weaknesses:weaknesses.slice(0,3),summary
     };
   }
-
   function buildMatchAnalysisReport(){
     const reports=players.map((_,i)=>playerMatchAnalysis(i)).filter(Boolean)
-      .sort((a,b)=>b.avgRating-a.avgRating || a.avgRank-b.avgRank);
-
+      .sort((a,b)=>b.avgRating-a.avgRating||a.avgRank-b.avgRank);
     const avg=(arr,key)=>arr.length?arr.reduce((s,x)=>s+x[key],0)/arr.length:0;
-    const teamSummary={};
-    for(const team of ["A","B","C","D"]){
-      const rows=reports.filter(x=>x.team===team);
-      teamSummary[team]={
-        rating:avg(rows,"avgRating"),
-        collisions:rows.reduce((s,x)=>s+x.collisions,0),
-        overtakes:rows.reduce((s,x)=>s+x.overtakes,0)
-      };
-    }
-
     const allLeaderChanges=roundHistory.reduce((s,r)=>s+(r.leaderChanges||0),0);
     const allOvertakes=roundHistory.reduce((s,r)=>s+(r.totalOvertakes||0),0);
-    const winner=teamWinner();
-    const standings=teamStandings();
-    let matchText;
-    if(!winner){
-      matchText=`4팀 최고점이 동률로 경기를 마쳤다. 빨강 ${teamTotals.A}점, 파랑 ${teamTotals.B}점, 노랑 ${teamTotals.C}점, 초록 ${teamTotals.D}점.`;
+    const teamSummary={};let matchText="";
+    if(isTeamMode()){
+      for(const team of ["RED","BLUE"]){
+        const rows=reports.filter(x=>x.team===team);
+        teamSummary[team]={rating:avg(rows,"avgRating"),collisions:rows.reduce((s,x)=>s+x.collisions,0),overtakes:rows.reduce((s,x)=>s+x.overtakes,0)};
+      }
+      const winner=teamWinner();
+      matchText=winner?`${teamLabel(winner)} 승리 · 빨강 ${teamTotals.RED}점 : ${teamTotals.BLUE}점 파랑.`:`팀전 무승부 · 빨강 ${teamTotals.RED}점 : ${teamTotals.BLUE}점 파랑.`;
     }else{
-      matchText=`${teamLabel(winner)}이 ${teamTotals[winner]}점으로 승리했다. `+
-        `빨강 ${teamTotals.A}점, 파랑 ${teamTotals.B}점, 노랑 ${teamTotals.C}점, 초록 ${teamTotals.D}점.`;
+      const ordered=Object.values(playerTournament).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+      const leader=ordered[0];matchText=`8인 개인전 · ${leader?`${leader.name} ${leader.total}점으로 선두.`:"경기 진행 중."}`;
     }
-    matchText+=` 전체 5라운드 기준 선두교체 ${allLeaderChanges}회, 순위상승 ${allOvertakes}회를 기록했다.`;
+    matchText+=` 선두교체 ${allLeaderChanges}회 · 순위상승 ${allOvertakes}회.`;
     return {reports,teamSummary,matchText};
   }
+
 
   function renderMatchAnalysis(){
     const wrap=document.getElementById("matchAnalysis");
@@ -11593,7 +11389,7 @@ function seasonCardHtml(p){
         ${data.reports.map((a,i)=>`
           <article class="analysis-card ${i===0?"best":""}">
             <div class="analysis-head">
-              <div class="analysis-player">${avatarHtml(a.index,"analysis-avatar")}<div><span>${teamLabel(a.team)}</span><b>${a.name}</b></div></div>
+              <div class="analysis-player">${avatarHtml(a.index,"analysis-avatar")}<div><span>${isTeamMode()?teamLabel(a.team):"개인전"}</span><b>${a.name}</b></div></div>
               <strong>${a.avgRating.toFixed(1)}</strong>
             </div>
             <p>${a.summary}</p>
@@ -11717,7 +11513,7 @@ function seasonCardHtml(p){
       return `<article class="podium-card p${i+1}">
         <div class="podium-rank">${medal}</div>
         ${avatarHtml(idx,"podium-avatar")}
-        <div class="podium-copy"><b>${pt.name}</b><span>${teamLabel(pt.team)}</span><strong>${pt.total>0?"+":""}${pt.total}점</strong><small>평점 ${rt?rt.rating.toFixed(1):"-"} · 추월 ${rt?.overtakes||0}</small></div>
+        <div class="podium-copy"><b>${pt.name}</b><span>${isTeamMode()?teamLabel(pt.team):"8인 개인전"}</span><strong>${pt.total>0?"+":""}${pt.total}점</strong><small>평점 ${rt?rt.rating.toFixed(1):"-"} · 추월 ${rt?.overtakes||0}</small></div>
       </article>`;
     }).join("");
     picks.innerHTML=[1,2,3,4,5].map(r=>`<button data-round="${r}">${r}R 경로</button>`).join("");
@@ -11733,8 +11529,9 @@ function seasonCardHtml(p){
     const body=document.getElementById("resultBody");
     const teamSummary=document.getElementById("teamResultSummary");
 
-    const winnerTeam=teamWinner();
-    const winner=winnerTeam?`${teamLabel(winnerTeam)} 승리`:"무승부";
+    const teamMode=isTeamMode();
+    const winnerTeam=teamMode?teamWinner():null;
+    const winner=teamMode?(winnerTeam?`${teamLabel(winnerTeam)} 승리`:"무승부"):"개인전";
     const awards=buildMatchAwards();
     const ratings=aggregateMatchRatings();
     const ratingEl=document.getElementById("matchRatings");
@@ -11783,92 +11580,25 @@ function seasonCardHtml(p){
         openReplay(Number(b.dataset.round),Math.max(0,Number(b.dataset.time)-1400),b.dataset.photo==="1");
       }));
     }
-    const resultTeams=[
-      {id:"A",name:"빨강팀",short:"빨강",color:"#ff4d4d",rgb:"255,77,77",score:teamTotals.A},
-      {id:"B",name:"파랑팀",short:"파랑",color:"#4d8dff",rgb:"77,141,255",score:teamTotals.B},
-      {id:"C",name:"노랑팀",short:"노랑",color:"#ffd84d",rgb:"255,216,77",score:teamTotals.C},
-      {id:"D",name:"초록팀",short:"초록",color:"#39d46a",rgb:"57,212,106",score:teamTotals.D}
-    ];
-    const rankedTeams=[...resultTeams].sort((a,b)=>b.score-a.score);
-    const minTeamScore=Math.min(...resultTeams.map(t=>t.score),0);
-    const maxTeamScore=Math.max(...resultTeams.map(t=>t.score),1);
-    const scoreSpan=Math.max(1,maxTeamScore-minTeamScore);
-    const totalPositive=resultTeams.reduce((s,t)=>s+Math.max(0,t.score),0)||1;
-
-    // Cumulative points by round for the line chart.
-    const cumulative={A:[],B:[],C:[],D:[]};
-    const running={A:0,B:0,C:0,D:0};
-    roundHistory.forEach(r=>{
-      for(const t of resultTeams){
-        running[t.id]+=r.team[t.id]||0;
-        cumulative[t.id].push(running[t.id]);
+    const resultTitle=document.getElementById("resultTitle");
+    const resultTeamHead=document.getElementById("resultTeamHead");
+    if(resultTitle)resultTitle.textContent=teamMode?"팀전 4 vs 4 · 경기 통계":"8인 개인전 · 경기 통계";
+    if(resultTeamHead)resultTeamHead.style.display=teamMode?"":"none";
+    if(teamSummary){
+      if(teamMode){
+        const red=teamTotals.RED||0,blue=teamTotals.BLUE||0;
+        teamSummary.innerHTML=`<div class="v813-team-result">
+          <div class="v813-team-result-card v813-red"><span>빨강팀</span><strong>${red}</strong><small>4명</small></div>
+          <div class="v813-team-result-center">${red===blue?"DRAW":"VS"}</div>
+          <div class="v813-team-result-card v813-blue"><span>파랑팀</span><strong>${blue}</strong><small>4명</small></div>
+        </div>`;
+      }else{
+        const personalRows=Object.values(playerTournament).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+        const leader=personalRows[0];
+        teamSummary.innerHTML=`<div class="v813-mode-summary"><div><b>8인 개인전</b><span>팀 구분 없이 선수 8명의 순위·기록·평점을 집계</span></div>
+          <strong>${leader?`${leader.name} · ${leader.total}점`:"-"}</strong></div>`;
       }
-    });
-    const allCum=resultTeams.flatMap(t=>[0,...cumulative[t.id]]);
-    const minCum=Math.min(0,...allCum),maxCum=Math.max(1,...allCum);
-    const cumSpan=Math.max(1,maxCum-minCum);
-    const chartW=640,chartH=190,padL=42,padR=18,padT=18,padB=32;
-    const xAt=i=>padL+(chartW-padL-padR)*(i/5);
-    const yAt=v=>padT+(chartH-padT-padB)*(1-(v-minCum)/cumSpan);
-    const gridVals=[minCum,minCum+cumSpan*.25,minCum+cumSpan*.5,minCum+cumSpan*.75,maxCum];
-    const lineSvg=`<svg class="team-result-line-svg" viewBox="0 0 ${chartW} ${chartH}" role="img" aria-label="라운드별 누적 팀 점수">
-      ${gridVals.map(v=>`<line x1="${padL}" y1="${yAt(v).toFixed(1)}" x2="${chartW-padR}" y2="${yAt(v).toFixed(1)}" class="tr-grid"/><text x="${padL-8}" y="${(yAt(v)+4).toFixed(1)}" class="tr-axis" text-anchor="end">${Math.round(v)}</text>`).join("")}
-      ${[1,2,3,4,5].map((r,i)=>`<text x="${xAt(i+1).toFixed(1)}" y="${chartH-9}" class="tr-axis" text-anchor="middle">${r}R</text>`).join("")}
-      ${resultTeams.map(t=>{
-        const vals=[0,...cumulative[t.id]];
-        const pts=vals.map((v,i)=>`${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
-        return `<polyline points="${pts}" fill="none" stroke="${t.color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-          ${vals.slice(1).map((v,i)=>`<circle cx="${xAt(i+1).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="5" fill="${t.color}" stroke="#07111d" stroke-width="2"><title>${t.name} ${i+1}R 누적 ${v}</title></circle>`).join("")}`;
-      }).join("")}
-    </svg>`;
-
-    teamSummary.innerHTML=`<div class="team-result-hero">
-        <div class="winner">${winnerTeam?`<span class="winner-dot team-result-${winnerTeam}"></span>${winner}`:winner}</div>
-        <div class="team-result-rank-grid">${rankedTeams.map((t,i)=>{
-          const pct=Math.max(8,((t.score-minTeamScore)/scoreSpan)*100);
-          return `<div class="team-result-rank-card team-result-card-${t.id}" style="--team:${t.color};--team-rgb:${t.rgb}">
-            <div class="tr-rank">${i+1}</div>
-            <div class="tr-team-name"><span class="tr-color-dot"></span>${t.name}</div>
-            <div class="tr-score">${t.score}</div>
-            <div class="tr-score-track"><i style="width:${pct.toFixed(1)}%"></i></div>
-          </div>`;
-        }).join("")}</div>
-      </div>
-
-      <div class="team-result-dashboard">
-        <section class="team-result-panel team-result-trend">
-          <div class="team-result-head"><b>라운드별 누적 점수</b><span>흐름 한눈에 보기</span></div>
-          ${lineSvg}
-          <div class="tr-legend">${resultTeams.map(t=>`<span><i style="background:${t.color}"></i>${t.name}</span>`).join("")}</div>
-        </section>
-
-        <section class="team-result-panel">
-          <div class="team-result-head"><b>라운드 점수 상세</b><span>팀 색상으로 구분</span></div>
-          <div class="round-score-matrix">
-            <div class="rsm-head"><span>팀</span>${roundHistory.map(r=>`<b>${r.round}R</b>`).join("")}<b>합계</b></div>
-            ${resultTeams.map(t=>`<div class="rsm-row" style="--team:${t.color};--team-rgb:${t.rgb}">
-              <strong><i></i>${t.short}</strong>
-              ${roundHistory.map(r=>{
-                const v=r.team[t.id]||0;
-                return `<span class="${v>0?"plus":v<0?"minus":"zero"}">${v>0?"+":""}${v}</span>`;
-              }).join("")}
-              <b>${t.score>0?"+":""}${t.score}</b>
-            </div>`).join("")}
-          </div>
-        </section>
-      </div>
-
-      <div class="team-result-share">
-        <div class="team-result-head"><b>양수 점수 점유율</b><span>팀별 최종 점수 비중</span></div>
-        <div class="tr-share-bar">${resultTeams.map(t=>{
-          const w=Math.max(0,t.score)/totalPositive*100;
-          return `<i style="width:${w.toFixed(2)}%;background:${t.color}" title="${t.name} ${w.toFixed(1)}%"></i>`;
-        }).join("")}</div>
-        <div class="tr-share-labels">${resultTeams.map(t=>{
-          const w=Math.max(0,t.score)/totalPositive*100;
-          return `<span style="--team:${t.color}"><i></i><b>${t.name}</b> ${w.toFixed(1)}%</span>`;
-        }).join("")}</div>
-      </div>`;
+    }
 
     const rows=Object.values(playerTournament).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
     body.innerHTML=rows.map((pt,i)=>{
@@ -11878,7 +11608,7 @@ function seasonCardHtml(p){
       });
       return `<tr>
         <td>${i+1}</td>
-        <td><span class="team-mini team-${pt.team.toLowerCase()}">${pt.team}</span></td>
+        ${teamMode?`<td class="result-team-cell"><span class="team-mini team-${pt.team==="RED"?"a":"b"}">${pt.team==="RED"?"R":"B"}</span></td>`:""}
         <td><div class="table-player">${avatarHtml(names.indexOf(pt.name),"table-avatar")}<button class="result-name player-link" data-player="${names.indexOf(pt.name)}">${pt.name}</button></div></td>
         <td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td>
         <td><b>${pt.total>0?"+":""}${pt.total}</b></td>
@@ -12256,6 +11986,18 @@ function seasonCardHtml(p){
     });
   }
 
+  const matchModeSelect=document.getElementById("matchModeSelect");
+  if(matchModeSelect){
+    matchModeSelect.value=matchMode;
+    matchModeSelect.addEventListener("change",()=>{
+      matchMode=matchModeSelect.value==="team"?"team":"individual";
+      reset();
+      const resultTitle=document.getElementById("resultTitle");
+      if(resultTitle)resultTitle.textContent=isTeamMode()?"팀전 4 vs 4 · 경기 통계":"8인 개인전 · 경기 통계";
+      renderTeamScore();renderRanking();
+    });
+  }
+
   if(pauseBtn) pauseBtn.addEventListener("click",togglePause);
   startBtn.addEventListener("click",start);
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
@@ -12307,9 +12049,7 @@ function seasonCardHtml(p){
 
 
   // ============================================================
-  // v7.94 — Sky Cliff goal alignment / Rolling Stone cleanup / Space gate-art cleanup
   // 1) Sky Cliff: move the green finish gate slightly right/down so it sits on the visible road end.
-  // 2) Rolling Stone: remove circular glow rings from the three rocks and harden the 5->3 road-follow curve.
   // 3) Space: remove the extra embedded gate rectangle artwork so only the live overlay gate remains.
   // ============================================================
   function applyPatch794(){
@@ -12331,38 +12071,6 @@ function seasonCardHtml(p){
       cliff.racingLineMode772='goal-endpoint-aligned-v7.94';
     }
 
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      roll.image='map_rolling_stone_794.png?v=794-no-rock-rings';
-      roll.route770=[[71.099,18.409],[60.0,18.6],[49.0,18.8],[38.1,20.8],[32.5,22.2],[28.8,22.8],[24.0,23.3],[19.0,24.0],[15.5,26.5],[13.0,30.5],[12.0,35.0],[12.8,40.5],[15.0,45.0],[19.0,48.5],[24.5,51.0],[30.0,54.0],[36.0,58.8],[41.5,64.0],[44.2,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[29.8,93.3],[17.0,96.0],[14.0,99.5],[12.8,104.5],[13.0,109.5],[14.2,112.2],[18.8,114.2],[25.0,118.0],[33.2,122.5],[42.0,126.8],[52.0,130.8],[62.0,133.5],[72.0,135.0],[82.0,135.4],[90.0,134.9],[97.8,133.8],[105.0,131.4],[111.5,127.4],[117.0,121.8],[121.0,115.0],[123.5,107.5],[124.6,99.8],[124.2,92.2],[122.5,85.8],[119.2,80.5],[114.6,76.0],[109.6,72.4],[106.7,68.8],[106.3,64.0],[107.4,59.2],[109.2,55.0],[108.8,49.6],[110.1,44.5],[112.8,39.3],[116.1,34.2],[118.5,29.8],[117.0,25.7],[112.8,22.6],[106.5,19.9],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
-      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(7.8);
-      roll.forbiddenZones770=[
-        {x1:21.1,y1:24.9,x2:32.4,y2:36.4},
-        {x1:18.3,y1:98.0,x2:30.9,y2:110.2},
-        {x1:110.2,y1:66.2,x2:122.8,y2:78.6}
-      ];
-      roll.rollingNoGoZones793=[
-        {x1:31.8,y1:96.0,x2:45.0,y2:113.5},
-        {x1:123.8,y1:65.0,x2:137.5,y2:80.0},
-        {x1:90.0,y1:101.0,x2:112.0,y2:128.0}
-      ];
-      roll.boulderClearance793=.88;
-      roll.boulderVisualScale793=.85;
-      roll.boulderLeftOnly793=true;
-      roll.bottomRoadFollow793=true;
-      roll.rollingNoStop793=true;
-      roll.boulderGapCenter791=true;
-      roll.lockOptimalExecution784=true;
-      roll.strictRoadFollow778=true;
-      roll.roadFollowMode778='route-center-hard';
-      roll.outerSoftLimit789=true;
-      roll.insideTune789='disabled-boulder-left-gap-plus-bottom-curve-v7.94';
-      const line=densifyLine772(roll.route770,.18);
-      roll.racingSpline770=line;
-      roll.globalOptimal770=line;
-      roll.racingLineMode772='left-gap-road-center-no-rings-v7.94';
-      roll.rollingCurveNoCut794=true;
-    }
 
     const space=MAP_DEFINITIONS_770.skyway;
     if(space){
@@ -12373,10 +12081,8 @@ function seasonCardHtml(p){
   applyPatch794();
 
   // ============================================================
-  // v7.941 — TWO-MAP QA LOCK (Rolling Stone + Sky Cliff only)
   // No global AI/map changes. This release freezes and audits the v7.94
   // geometry requirements for these two maps so later patches cannot silently
-  // reintroduce the Rolling Stone shortcut/stall or miss the Sky Cliff finish.
   // ============================================================
   function applyPatch7941(){
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
@@ -12392,19 +12098,6 @@ function seasonCardHtml(p){
       cliff.qaGoalLock7941=true;
     }
 
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      // QA-lock the v7.94 behavior: rocks 2/3 left-gap only, no boulder stall,
-      // and no 5->3 diagonal chord through the inside of the bottom curve.
-      roll.boulderLeftOnly793=true;
-      roll.rollingNoStop793=true;
-      roll.bottomRoadFollow793=true;
-      roll.rollingCurveNoCut794=true;
-      roll.strictRoadFollow778=true;
-      roll.roadFollowMode778='route-center-hard';
-      roll.lockOptimalExecution784=true;
-      roll.qaRouteLock7941=true;
-    }
   }
   applyPatch7941();
 
@@ -12533,204 +12226,31 @@ function seasonCardHtml(p){
   applyPatch797();
 
   // ============================================================
-  // v7.98 — ROLLING STONE FULL ROUTE / BOULDER RE-AUDIT
   // - remove the remaining circular halo-style rock artwork,
   // - replace oversized rectangular collision envelopes with tight circular bodies,
-  // - delay avoidance until racers are close to each visible boulder,
   // - keep rocks 2/3 left-gap only, no stall, and no 5->3 diagonal chord.
   // ============================================================
-  function applyPatch798(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.image='map_rolling_stone_798.png?v=798-clean-halo-close-pass';
-    roll.rollingBoulders798=[
-      {x:26.75,y:30.65,r:5.35},
-      {x:24.60,y:104.10,r:5.75},
-      {x:116.50,y:72.40,r:5.75}
-    ];
-    // Route approaches each rock first, then makes the minimum legal detour.
-    roll.route770=[[71.099,18.409],[60.0,18.55],[49.0,18.8],[38.2,20.5],[34.0,22.0],[31.6,23.4],[29.8,24.1],[25.0,24.3],[22.0,25.8],[20.6,28.7],[20.5,32.0],[21.8,35.2],[24.8,37.0],[29.5,41.8],[34.7,49.5],[40.5,57.5],[44.3,64.0],[45.0,68.0],[43.0,74.5],[40.5,80.0],[36.2,84.5],[32.5,89.0],[30.0,94.0],[28.6,96.8],[24.6,97.9],[20.3,99.2],[18.3,102.5],[18.4,106.3],[20.6,109.3],[24.0,111.0],[28.6,114.0],[34.0,119.0],[42.0,124.8],[52.0,129.5],[62.0,132.5],[72.0,134.0],[82.0,134.2],[92.0,133.0],[101.0,130.0],[109.0,125.2],[115.0,119.0],[119.5,111.8],[122.0,103.5],[123.5,95.0],[122.7,87.0],[120.2,81.8],[116.0,79.2],[111.5,78.0],[109.8,75.0],[110.0,71.0],[111.2,67.8],[108.2,63.5],[107.0,59.2],[109.2,55.0],[108.8,49.6],[110.1,44.5],[112.8,39.3],[116.1,34.2],[118.5,29.8],[117.0,25.7],[112.8,22.6],[106.5,19.9],[94.5,18.7],[82.5,18.45],[71.099,18.409]];
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.6);
-    // Keep legacy boxes only for diagnostics; runtime collision uses rollingBoulders798.
-    roll.forbiddenZones770=[
-      {x1:21.1,y1:24.9,x2:32.4,y2:36.4},
-      {x1:18.3,y1:98.0,x2:30.9,y2:110.2},
-      {x1:110.2,y1:66.2,x2:122.8,y2:78.6}
-    ];
-    // Right/outside side of rocks 2/3 remains prohibited. The old oversized
-    // bottom-right rectangle is removed; strict same-road no-chord handles 5->3.
-    roll.rollingNoGoZones793=[
-      {x1:31.0,y1:97.0,x2:43.0,y2:112.2},
-      {x1:122.3,y1:65.0,x2:135.0,y2:80.0}
-    ];
-    roll.boulderClearance793=.18;
-    roll.boulderVisualScale793=.85;
-    roll.boulderLeftOnly793=true;
-    roll.bottomRoadFollow793=true;
-    roll.rollingNoStop793=true;
-    roll.boulderGapCenter791=true;
-    roll.lockOptimalExecution784=true;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.roadFollowMode778='route-center-hard';
-    roll.outerSoftLimit789=true;
-    roll.insideTune789='tight-boulder-close-pass-v7.98';
-    const line=densifyLine772(roll.route770,.14);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='tight-circular-boulder-left-gap-v7.98';
-    roll.rollingCurveNoCut794=true;
-    roll.rollingClosePass798=true;
-    roll.rollingHaloRemoved798=true;
-    roll.qaRollingFullAudit798=true;
-  }
-  applyPatch798();
+
 
   // ============================================================
-  // v7.981 — ROLLING STONE CONTINUITY / 6->5->3 ROUTE HOTFIX
   // - eliminate obstacle correction snaps that looked like teleporting,
   // - shorten no-chord/rejoin lookahead to remove micro-stutter,
   // - force the bottom section to travel through a real 5-o'clock arc before
   //   climbing toward 3 o'clock; no outside excursion + diagonal climb.
   // ============================================================
-  function applyPatch7981(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.rollingSmoothCollision7981=true;
-    roll.rollingShortRejoin7981=true;
-    roll.rollingBottomViaFive7981=true;
-    roll.rollingNoTeleport7981=true;
-    roll.rollingNoStutter7981=true;
 
-    // Replace only the lower 6->5->3 leg. The rest of v7.98's close-pass route
-    // and the left-only rock 2/3 rules remain untouched.
-    const a=roll.route770.findIndex(q=>Math.abs(q[0]-34.0)<.01&&Math.abs(q[1]-119.0)<.01);
-    const b=roll.route770.findIndex(q=>Math.abs(q[0]-123.5)<.01&&Math.abs(q[1]-95.0)<.01);
-    if(a>=0&&b>a){
-      const viaFive=[
-        [34.0,119.0],[41.5,124.0],[50.0,128.0],[59.0,130.8],
-        [68.0,132.0],[77.0,132.0],[86.0,130.9],[94.0,128.6],
-        [101.0,125.2],[106.5,121.2],[111.0,116.2],[114.5,110.5],
-        [117.0,104.2],[118.8,98.0],[120.0,93.0]
-      ];
-      roll.route770.splice(a,b-a+1,...viaFive);
-    }
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.6);
-    // Tighten the right/outside planning blocks without touching the visible road.
-    roll.rollingNoGoZones793=[
-      {x1:31.8,y1:98.0,x2:41.2,y2:111.2},
-      {x1:123.0,y1:66.0,x2:132.5,y2:79.2}
-    ];
-    const line=densifyLine772(roll.route770,.10);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='continuous-close-pass-via-5oclock-v7.981';
-    roll.qaRollingContinuity7981=true;
-  }
-  applyPatch7981();
 
   // ============================================================
-  // v7.982 — ROLLING STONE 3->1->12 ROAD-FOLLOW + FULL ARC TIGHTENING
   // - after rock #3, force a real 3->2->1->12 progression on the paved right arc,
   // - add intermediate waypoints so NORMAL AI cannot sight a far upper target and chord inward,
-  // - tighten other sparse outer arcs without changing the close-pass boulder rules,
   // - preserve v7.981 no-teleport / short-rejoin continuity behavior.
   // ============================================================
-  function applyPatch7982(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
 
-    // Re-author the full circuit with denser, road-shaped arcs.  The route keeps
-    // the same macro order, but removes large waypoint gaps that allowed the AI
-    // to look across bends and choose an over-inside or over-outside chord.
-    roll.route770=[
-      [71.099,18.409],[63.0,18.48],[55.0,18.62],[47.0,19.0],[40.0,20.1],
-      [35.0,21.7],[31.6,23.4],[29.8,24.1],[25.0,24.3],[22.0,25.8],
-      [20.6,28.7],[20.5,32.0],[21.8,35.2],[24.8,37.0],[28.5,40.7],
-      [32.0,45.0],[35.5,50.0],[39.0,55.0],[42.0,60.0],[44.3,64.0],
-      [45.0,68.0],[44.3,71.5],[43.0,74.5],[41.8,77.5],[40.5,80.0],
-      [38.2,82.5],[36.2,84.5],[34.2,87.0],[32.5,89.0],[31.0,91.5],
-      [30.0,94.0],[28.6,96.8],[24.6,97.9],[20.3,99.2],[18.3,102.5],
-      [18.4,106.3],[20.6,109.3],[24.0,111.0],[28.6,114.0],[34.0,119.0],
-      [41.5,124.0],[50.0,128.0],[59.0,130.8],[68.0,132.0],[77.0,132.0],
-      [86.0,130.9],[94.0,128.6],[101.0,125.2],[106.5,121.2],[111.0,116.2],
-      [114.5,110.5],[117.0,104.2],[118.8,98.0],[120.0,93.0],[121.0,88.0],
-      [120.8,84.0],[119.6,81.2],[116.0,79.2],[112.8,78.5],[110.5,76.8],
-      // rock #3 left-gap exit -> real 3 o'clock to 1 o'clock road arc
-      [109.8,74.0],[110.2,70.0],[111.0,66.0],[112.0,62.0],[112.3,58.0],
-      [112.1,54.0],[112.4,50.0],[113.2,46.0],[114.4,42.0],[116.0,38.0],
-      [117.8,34.0],[119.0,30.5],[119.2,28.0],[117.8,25.5],[115.0,23.2],
-      [111.0,21.2],[106.5,19.9],[100.5,19.1],[94.5,18.7],[88.5,18.52],
-      [82.5,18.45],[76.5,18.42],[71.099,18.409]
-    ];
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.25);
-
-    // Preserve true obstacle bodies and left-only rock #2/#3 rules.
-    roll.boulderLeftOnly793=true;
-    roll.bottomRoadFollow793=true;
-    roll.rollingBottomViaFive7981=true;
-    roll.rollingSmoothCollision7981=true;
-    roll.rollingShortRejoin7981=true;
-    roll.rollingNoTeleport7981=true;
-    roll.rollingNoStutter7981=true;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.lockOptimalExecution784=true;
-    roll.outerSoftLimit789=true;
-
-    // Slightly tighter planning blocks: prevent the two known outside excursions
-    // while keeping every visible gray-road edge legal to drive on.
-    roll.rollingNoGoZones793=[
-      {x1:31.8,y1:98.0,x2:40.2,y2:110.8},
-      {x1:123.0,y1:65.0,x2:131.0,y2:79.0}
-    ];
-
-    const line=densifyLine772(roll.route770,.075);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='road-arc-3to1to12-full-tight-v7.982';
-    roll.insideTune789='dense-road-arc-no-far-chord-v7.982';
-    roll.rollingThreeToOneToTwelve7982=true;
-    roll.rollingFullArcTight7982=true;
-    roll.qaRollingRoadArc7982=true;
-  }
-  applyPatch7982();
 
   // ============================================================
-  // v7.99 — ROLLING STONE 5-O'CLOCK HARD GATE + SKY CLIFF FINAL ENDPOINT
   // ============================================================
   function applyPatch799(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      roll.image='map_rolling_stone_799.png?v=799-clean-no-halo-hard-five';
-      roll.rollingHaloRemoved799=true;
-      roll.rollingHardSpline799=true;
-      roll.rollingMandatoryFive799=true;
 
-      const r=roll.route770.slice();
-      const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.05&&Math.abs(q[1]-119.0)<.05);
-      const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.05&&Math.abs(q[1]-88.0)<.05);
-      if(a>=0&&b>a){
-        const viaFiveHard=[
-          [34.0,119.0],[39.0,122.0],[44.0,124.8],[49.0,127.2],[54.0,129.2],
-          [59.0,130.8],[64.0,131.8],[69.0,132.4],[74.0,132.4],[79.0,132.0],
-          [84.0,131.2],[89.0,129.9],[94.0,128.2],[98.5,126.0],[102.5,123.6],
-          [106.0,120.8],[109.0,117.6],[111.8,113.8],[114.0,109.5],[115.8,105.0],
-          [117.2,100.5],[118.2,96.0],[119.0,92.0],[120.0,89.5],[121.0,88.0]
-        ];
-        roll.route770.splice(a,b-a+1,...viaFiveHard);
-      }
-      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.10);
-      const line=densifyLine772(roll.route770,.055);
-      roll.racingSpline770=line;
-      roll.globalOptimal770=line;
-      roll.racingLineMode772='mandatory-6-5-3-hard-spline-v7.99';
-      roll.insideTune789='road-follow-no-chord-v7.99';
-      roll.strictNoChord795=true;
-      roll.strictRoadFollow778=true;
-      roll.roadFollowMode778='route-center-hard';
-      roll.qaRollingMandatoryFive799=true;
-    }
 
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
@@ -12762,50 +12282,7 @@ function seasonCardHtml(p){
   // v7.991 — ROLLING SOLID ROCKS / TRUE FIVE GATE + SKY CLIFF FINAL ARC
   // ============================================================
   function applyPatch7991(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(roll){
-      roll.image='map_rolling_stone_7991.png?v=7991-clean-red-outline-solid-rocks';
-      // Match collision to the full visible stone body and add a small no-touch margin.
-      roll.rollingBoulders798=[
-        {x:26.75,y:30.65,r:6.25},
-        {x:24.60,y:104.10,r:6.55},
-        {x:116.50,y:72.40,r:6.55}
-      ];
-      roll.boulderClearance793=.58;
-      roll.hardForbidden780=true;
-      roll.rollingSolidBoulders7991=true;
-      roll.rollingNoTouch7991=true;
 
-      // Real physical checkpoint on the center of the 5-o'clock gray road.
-      // Every steering mode and spline progress must touch this before 3 o'clock.
-      roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.6};
-      roll.rollingMandatoryFive799=true;
-      roll.rollingHardSpline799=true;
-      roll.strictNoChord795=true;
-      roll.strictRoadFollow778=true;
-      roll.lockOptimalExecution784=true;
-      roll.qaRollingSolidFive7991=true;
-
-      // Keep the lower paved arc explicit and centered around the mandatory gate.
-      const r=roll.route770.slice();
-      const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.05&&Math.abs(q[1]-119.0)<.05);
-      const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.05&&Math.abs(q[1]-88.0)<.05);
-      if(a>=0&&b>a){
-        const viaFiveCenter=[
-          [34.0,119.0],[39.0,122.0],[44.0,124.8],[49.0,127.2],[54.0,129.2],
-          [59.0,130.8],[64.0,131.8],[69.0,132.4],[74.0,132.4],[79.0,132.0],
-          [84.0,131.2],[89.0,129.9],[94.0,128.2],[98.5,126.0],[102.5,123.6],
-          [106.0,120.8],[109.0,117.6],[111.8,113.8],[114.0,109.5],[115.8,105.0],
-          [117.2,100.5],[118.2,96.0],[119.0,92.0],[120.0,89.5],[121.0,88.0]
-        ];
-        roll.route770.splice(a,b-a+1,...viaFiveCenter);
-      }
-      roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(8.0);
-      const line=densifyLine772(roll.route770,.045);
-      roll.racingSpline770=line;
-      roll.globalOptimal770=line;
-      roll.racingLineMode772='solid-rocks-mandatory-five-center-v7.991';
-    }
 
     const cliff=MAP_DEFINITIONS_770.cliff_hanger;
     if(cliff){
@@ -12842,449 +12319,258 @@ function seasonCardHtml(p){
   applyPatch7991();
 
   // ============================================================
-  // v7.993 — ROLLING STONE NO-STALL BOULDER SLIDE + SINGLE RED GATE
   // ============================================================
-  function applyPatch7992(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    // Keep one red gate only: artwork remains visible, duplicate runtime outline is hidden.
-    roll.hideRuntimeSharedGate7992=true;
-    roll.qaSingleRedGate7992=true;
-    // No-touch remains, but the collision response now slides along the boulder instead of freezing.
-    roll.rollingNoTouch7991=true;
-    roll.rollingSmoothCollision7981=true;
-    roll.rollingBoulderSlide7992=true;
-    roll.boulderClearance793=.42;
-    roll.qaNoRockStall7992=true;
-  }
-  applyPatch7992();
+
 
 
   // ============================================================
-  // v7.993 — ROLLING STONE FLEXIBLE ROCK EDGES + TIGHTER ROAD ARC
-  // - keep the visible boulder core solid, but allow tiny edge/corner grazes,
   // - reduce the no-touch envelope so racers do not overreact around rock tips,
   // - tighten the 6->5->3 paved arc around the actual road center,
   // - retain the physical 5-o'clock checkpoint and no-diagonal rule.
   // ============================================================
-  function applyPatch7993(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
 
-    // The previous v7.991 radii + clearance were deliberately strict.  For v7.993
-    // shrink only the collision envelope, not the artwork: the central stone body
-    // remains solid while the extreme visual rim can be grazed naturally.
-    roll.rollingBoulders798=[
-      {x:26.75,y:30.65,r:5.88},
-      {x:24.60,y:104.10,r:6.12},
-      {x:116.50,y:72.40,r:6.12}
-    ];
-    roll.boulderClearance793=.10;
-    roll.rollingEdgeGraze7993=true;
-    roll.rollingNoTouch7991=false;
-
-    // Re-author only the lower 6->5->3 leg closer to the paved centerline.
-    // The mandatory gate stays at the 5-o'clock road center; targets beyond it
-    // remain unavailable until the racer physically reaches that gate.
-    const r=roll.route770.slice();
-    const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.08&&Math.abs(q[1]-119.0)<.08);
-    const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.08&&Math.abs(q[1]-88.0)<.08);
-    if(a>=0&&b>a){
-      const tighterFive=[
-        [34.0,119.0],[40.0,121.5],[46.0,123.8],[52.0,125.7],[58.0,127.2],
-        [64.0,128.2],[70.0,128.8],[76.0,128.7],[82.0,128.0],[88.0,127.1],
-        [93.5,126.5],[98.5,126.0],[103.0,123.9],[107.0,120.9],[110.4,117.2],
-        [113.2,113.0],[115.5,108.4],[117.2,103.5],[118.4,98.6],[119.2,94.0],
-        [120.0,90.8],[121.0,88.0]
-      ];
-      roll.route770.splice(a,b-a+1,...tighterFive);
-    }
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(7.85);
-    roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.1};
-    roll.rollingHardSpline799=true;
-    roll.strictNoChord795=true;
-    roll.strictRoadFollow778=true;
-    roll.roadFollowMode778='route-center-hard';
-    roll.outerSoftLimit789=true;
-    const line=densifyLine772(roll.route770,.042);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='flex-rock-edge-tight-6-5-3-center-v7.993';
-    roll.insideTune789='tight-road-center-no-wide-excursion-v7.993';
-    roll.qaRollingFlexibleRockEdge7993=true;
-    roll.qaRollingTightFiveArc7993=true;
-  }
-  applyPatch7993();
 
 
   // ============================================================
-  // v7.994 — ROLLING STONE 7-O'CLOCK ROCK LOWER BLOCK + TRUE 6->5->3
-  // - close the lower/outside leak beneath the 7-o'clock (#2) boulder,
   // - force the lower road through staged center-road waypoints,
   // - retain flexible rock-edge grazing elsewhere without allowing body cuts.
   // ============================================================
-  function applyPatch7994(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
 
-    // #2 boulder (7 o'clock): its lower side may not be used as a shortcut into
-    // the exterior. Keep the block compact so the legitimate paved route is free.
-    roll.rollingNoGoZones793=[
-      {x1:17.2,y1:104.6,x2:33.6,y2:116.7,kind:'rock2-lower-outer-block7994'},
-      {x1:31.8,y1:98.0,x2:40.2,y2:110.8,kind:'rock2-right-block'},
-      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
-    ];
-    roll.rollingRock2LowerBlock7994=true;
-
-    // A true staged route: from the 6-o'clock lower road move right along the
-    // gray center, touch the 5-o'clock center, then and only then climb to 3.
-    roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.6};
-    roll.rollingFiveStage7994=[
-      {x:55.0,y:126.0,r:5.0},
-      {x:77.0,y:128.6,r:5.0},
-      {x:98.5,y:126.0,r:4.6}
-    ];
-    roll.rollingFiveStageEnterY7994=116.0;
-    roll.rollingFiveStageExitX7994=104.0;
-    roll.rollingHardSpline799=true;
-    roll.rollingMandatoryFive799=true;
-    roll.strictNoChord795=true;
-    roll.strictRoadFollow778=true;
-    roll.roadFollowMode778='route-center-hard';
-    roll.lockOptimalExecution784=true;
-    roll.outerSoftLimit789=true;
-
-    // Re-author the same lower arc once more, with no large external excursion.
-    const r=roll.route770.slice();
-    const a=r.findIndex(q=>Math.abs(q[0]-34.0)<.12&&Math.abs(q[1]-119.0)<.12);
-    const b=r.findIndex(q=>Math.abs(q[0]-121.0)<.12&&Math.abs(q[1]-88.0)<.12);
-    if(a>=0&&b>a){
-      const forcedFive=[
-        [34.0,119.0],[40.0,121.0],[46.0,123.0],[52.0,125.0],[58.0,126.8],
-        [64.0,127.8],[70.0,128.5],[77.0,128.6],[84.0,128.0],[90.0,127.2],
-        [95.0,126.5],[98.5,126.0],[102.5,123.8],[106.0,121.0],[109.0,117.5],
-        [111.8,113.6],[114.0,109.2],[115.8,104.8],[117.2,100.2],[118.3,95.8],
-        [119.2,92.0],[120.0,89.5],[121.0,88.0]
-      ];
-      roll.route770.splice(a,b-a+1,...forcedFive);
-    }
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(7.65);
-    const line=densifyLine772(roll.route770,.036);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='hard-stage-6-5-center-3-rock2-lower-block-v7.994';
-    roll.insideTune789='no-outer-diagonal-forced-five-center-v7.994';
-    roll.qaRollingRock2Lower7994=true;
-    roll.qaRollingFiveStage7994=true;
-  }
-  applyPatch7994();
 
 
   // ============================================================
-  // v7.995 — ROLLING STONE ROCK #2 NO-STALL DUAL-TANGENT ESCAPE
   // ============================================================
-  function applyPatch7995(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.rollingRock2NoStall7995=true;
-    roll.rollingDualTangentEscape7995=true;
-    roll.rollingNoTouch7991=false;
-    roll.rollingSmoothCollision7981=true;
-    roll.qaRollingRock2NoStall7995=true;
-  }
-  applyPatch7995();
+
 
   // ============================================================
-  // v7.996 — ROLLING STONE ROCK #2 FLEX EDGE / ZERO-STALL CONTACT
-  // - shallow contact with the visible rim of rock #2 is legal,
   // - only the inner physical core triggers collision handling,
   // - keep the lower/outside shortcut block and 6->5->3 gate unchanged.
   // ============================================================
-  function applyPatch7996(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.rollingRock2EdgeFlex7996=true;
-    roll.rollingRock2NoStall7995=true;
-    roll.rollingDualTangentEscape7995=true;
-    roll.rollingSmoothCollision7981=true;
-    roll.rollingNoTouch7991=false;
-    // Keep the artwork-size metadata, but use the dedicated smaller physical
-    // core in collision helpers above.  This avoids a visible snap or freeze
-    // when a racer merely brushes the rock's extreme edge.
-    roll.qaRollingRock2EdgeFlex7996=true;
-  }
-  applyPatch7996();
+
 
   // ============================================================
-  // v7.997 — ROLLING STONE ROCK #2 LEFT-CORRIDOR FULL RE-AUDIT
   // - v7.994's lower/outside rectangle overlapped the legal 9-o'clock road,
   //   causing rock collision + no-go rejection to loop at the same position.
   // - move that block to the true lower-right exterior only, leaving the paved
   //   left-side bypass completely open.
-  // - add a forward-spline escape as a final no-stall fallback at rock #2.
   // ============================================================
-  function applyPatch7997(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.rollingNoGoZones793=[
-      {x1:29.4,y1:106.8,x2:39.6,y2:116.6,kind:'rock2-lower-right-outer-only7997'},
-      {x1:32.0,y1:97.0,x2:40.2,y2:110.6,kind:'rock2-right-block7997'},
-      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
-    ];
-    roll.rollingRock2LowerBlock7994=true;
-    roll.rollingRock2LeftCorridor7997=true;
-    roll.rollingRock2NoStall7995=true;
-    roll.rollingRock2EdgeFlex7996=true;
-    roll.rollingSmoothCollision7981=true;
-    roll.rollingDualTangentEscape7995=true;
-    roll.rollingNoTouch7991=false;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.rollingHardSpline799=true;
-    roll.racingLineMode772='rock2-left-corridor-no-stall-v7.997';
-    roll.qaRollingRock2LeftCorridor7997=true;
-  }
-  applyPatch7997();
+
 
   // ============================================================
-  // v7.998 — ROLLING STONE 5-O'CLOCK FINAL-STAGE RELEASE FIX
   // - reaching the final staged 5-o'clock waypoint now marks the gate passed,
   // - prevents the old infinite same-target loop / apparent stop at 5 o'clock,
-  // - preserves rock #2 left corridor and mandatory 6->5->3 route.
   // ============================================================
-  function applyPatch7998(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.rollingFiveFinalRelease7998=true;
-    roll.qaRollingFiveNoStall7998=true;
-    roll.racingLineMode772='rock2-left-corridor-five-release-v7.998';
-  }
-  applyPatch7998();
+
 
   // ============================================================
-  // v7.999 — ROLLING STONE ROCK #2 FIRST-ROCK-STYLE SMOOTH PASS
   // - remove the overlapping lower/right hard box that could deadlock the racer,
   // - use a nearly full-size solid core so only the extreme visible rim is grazeable,
   // - keep a far-right exterior guard without touching the legal tangent corridor,
   // - reuse the same dual-tangent sliding behavior as rock #1.
   // ============================================================
-  function applyPatch7999(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
 
-    // Visual radius is 6.12.  A 5.82 physical core leaves only ~0.30 world units
-    // of forgiving rim, so racers may shave the tip but cannot drive through the body.
-    roll.rollingRock2CoreRadius7999=5.82;
-    roll.rollingRock2EdgeFlex7996=true;
-    roll.boulderClearance793=.08;
-
-    // Do NOT place a blocker under the stone itself.  The solid circular core handles
-    // the body.  Keep only a far-right exterior guard, separated from the collision
-    // tangent so the lower-right corner cannot become a zero-motion trap.
-    roll.rollingNoGoZones793=[
-      {x1:35.0,y1:98.0,x2:40.2,y2:111.8,kind:'rock2-far-right-exterior7999'},
-      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
-    ];
-    roll.rollingRock2LowerBlock7994=false;
-    roll.rollingRock2LeftCorridor7997=true;
-    roll.rollingRock2NoStall7995=true;
-    roll.rollingDualTangentEscape7995=true;
-    roll.rollingSmoothCollision7981=true;
-    roll.rollingNoTouch7991=false;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.rollingHardSpline799=true;
-    roll.racingLineMode772='rock2-smooth-solid-core-flex-rim-v7.999';
-    roll.qaRollingRock2Smooth7999=true;
-  }
-  applyPatch7999();
 
   // ============================================================
-  // v8.00 — ROLLING STONE CENTRAL-ROAD ONLY + ROCK #2 40% SMALLER
   // - outside/wide routes are no longer valid AI targets,
   // - the normal road center is authoritative everywhere,
-  // - boulder sections still use the narrow bypass already authored in route770,
-  // - rock #2 physical size is reduced by 40% (60% of the previous radius).
   // ============================================================
-  function applyPatch800(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.rollingCenterRoadOnly800=true;
-    roll.rollingOuterRoutesDisabled800=true;
-    roll.rollingBoulderNarrowBypass800=true;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.rollingHardSpline799=true;
-    roll.roadFollowMode778='route-center-hard';
-    roll.lockOptimalExecution784=true;
-    roll.outerSoftLimit789=true;
-    roll.insideTune789='center-road-only-except-boulder-bypass-v8.00';
 
-    // Rock #2: 40% smaller than v7.999. The extreme rim remains forgiving,
-    // while the shrunken core stays solid and the authored bypass runs beside it.
-    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]){
-      roll.rollingBoulders798[1].r=3.672;
-    }
-    roll.rollingRock2CoreRadius7999=3.50;
-    roll.boulderClearance793=.06;
-    roll.rollingRock2Scale800=.60;
-
-    // Keep only the remote rock #3 guard; central-road steering now prevents the
-    // old rock #2 outer excursion without a blocker that can create a deadlock.
-    roll.rollingNoGoZones793=[
-      {x1:123.0,y1:65.0,x2:131.0,y2:79.0,kind:'rock3-right-block'}
-    ];
-
-    // Tighten the lower 6 -> 5 -> 3 stages around the actual road center.
-    roll.rollingMandatoryFiveGate7991={x:98.5,y:126.0,r:4.2};
-    roll.rollingFiveStage7994=[
-      {x:55.0,y:126.0,r:4.4},
-      {x:77.0,y:128.6,r:4.4},
-      {x:98.5,y:126.0,r:4.2}
-    ];
-    roll.rollingFiveStageEnterY7994=114.5;
-    roll.rollingFiveStageExitX7994=105.0;
-
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(6.8);
-    const line=densifyLine772(roll.route770,.032);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='central-road-only-boulder-bypass-v8.00';
-    roll.qaRollingCenterRoad800=true;
-    roll.qaRollingRock2Smaller800=true;
-  }
-  applyPatch800();
 
   // ============================================================
-  // v8.01 — ROLLING STONE TRUE VISUAL ROCK2 -40% + HARD 5-O'CLOCK CENTER ARC
-  // - use the new map asset where rock #2 is visually reduced by 40%,
   // - keep the lower 6 -> 5 -> 3 section on dense center-road checkpoints,
   // - forbid the old wide/exterior 5-o'clock corner line.
   // ============================================================
-  function applyPatch801(){
-    const roll=MAP_DEFINITIONS_770.industrial_zone;
-    if(!roll)return;
-    roll.image='map_rolling_stone_801.png?v=801-rock2-visual40-five-center';
-    roll.rollingRock2Scale800=.60;
-    if(Array.isArray(roll.rollingBoulders798)&&roll.rollingBoulders798[1]) roll.rollingBoulders798[1].r=3.672;
-    roll.rollingRock2CoreRadius7999=3.50;
 
-    // Dense, road-center-only progression across the entire lower bend.
-    // A racer cannot jump from 6 directly toward 3 or swing around the outer coast.
-    roll.rollingFiveStage7994=[
-      {x:55.0,y:126.0,r:3.5},
-      {x:64.0,y:128.1,r:3.4},
-      {x:74.0,y:128.1,r:3.4},
-      {x:84.0,y:127.5,r:3.4},
-      {x:93.0,y:126.2,r:3.4},
-      {x:99.0,y:125.0,r:3.2},
-      {x:105.0,y:122.0,r:3.2},
-      {x:110.0,y:118.8,r:3.2},
-      {x:114.0,y:115.3,r:3.2},
-      {x:117.0,y:111.8,r:3.2},
-      {x:119.5,y:107.5,r:3.2}
-    ];
-    roll.rollingMandatoryFiveGate7991={x:99.0,y:125.0,r:3.4};
-    roll.rollingFiveStageEnterY7994=108.0;
-    roll.rollingFiveStageExitX7994=121.0;
-    roll.rollingFiveCenterHard801=true;
-    roll.rollingOuterFiveBlocked801=true;
-    roll.rollingCenterRoadOnly800=true;
-    roll.strictRoadFollow778=true;
-    roll.strictNoChord795=true;
-    roll.widths770=new Array(Math.max(1,roll.route770.length-1)).fill(6.0);
-    const line=densifyLine772(roll.route770,.026);
-    roll.racingSpline770=line;
-    roll.globalOptimal770=line;
-    roll.racingLineMode772='hard-five-center-arc-rock2-visual40-v8.01';
-    roll.qaRolling801=true;
-  }
-  applyPatch801();
 
 
   // ============================================================
-  // v8.10 — TRIPLE DIAMOND replaces Rolling Stone
-  // Active Rolling Stone behavior is fully retired on Map 09.
   // Two nearby yellow starts share the camera; one green finish sits at the top.
   // ============================================================
   function applyPatch810(){
-    const m=MAP_DEFINITIONS_770.industrial_zone;
+    const m=MAP_DEFINITIONS_770.triple_diamond;
     if(!m)return;
-
-    // Rename/re-key the active map while retaining an internal compatibility alias
-    // so older audit code cannot crash during startup.
     m.id='triple_diamond';
     m.slot=9;
-    m.name='트리플 다이아몬드';
-    m.en='Triple Diamond';
-    m.theme='Heaven vs Hell Triple Diamond';
-    m.tags=['트리플다이아','2스타트','천국vs지옥'];
-    m.image='map_triple_diamond_810.png?v=810-triple-diamond';
-    m.imageSize={w:1232,h:1232};
+    m.name='데스티니 게이트';
+    m.en='Destiny Gate';
+    m.theme='Heaven vs Hell Destiny Gate';
+    m.tags=['데스티니게이트','2스타트','천국vs지옥'];
+    m.image='map_destiny_gate_8113.png?v=812-destiny-gate';
+    m.imageSize={w:1254,h:1254};
     m.logicalSize={w:178,h:178};
     m.miniCrop={x:0,y:0,w:178,h:178};
-
-    // START 1 / START 2 are close enough for one camera frame.
-    m.dualStarts810=[
-      {x:80.0,y:165.0},
-      {x:98.0,y:165.0}
-    ];
-    m.start={x:89.0,y:165.0};
-    m.goal={x:89.0,y:10.5};
-    m.safeZones={
-      start:{x0:74.0,y0:157.0,x1:104.0,y1:172.0},
-      goal:{x0:83.0,y0:4.5,x1:95.0,y1:16.5}
-    };
-
-    // Stable first-pass centerline. The three diamonds remain visually symmetric;
-    // route-choice AI can be expanded in later v8.1x patches without legacy rock code.
+    m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
+    m.start={x:89.05,y:165.8};
+    m.goal={x:89.1,y:5.8};
+    m.safeZones={start:{x0:67.5,y0:160.5,x1:110.7,y1:171.8},goal:{x0:84.4,y0:1.8,x1:93.8,y1:10.0}};
     m.route770=[
-      [89.0,165.0],
-      [61.0,150.0],[47.0,135.0],[61.0,120.0],[89.0,105.0],
-      [117.0,90.0],[131.0,75.0],[117.0,60.0],[89.0,45.0],
-      [61.0,32.0],[47.0,22.0],[66.0,14.5],[89.0,10.5]
+      [80,165],[69,158],[58,149],[50,138],[55,128],[66,118],[78,111],[89,106],
+      [101,100],[113,92],[124,82],[129,75],[124,68],[113,58],[101,50],[89,45],
+      [77,40],[65,34],[55,27],[50,21],[58,16],[70,12.5],[80,11],[89.1,5.8]
     ];
-    m.widths770=new Array(m.route770.length-1).fill(10.5);
+    m.widths770=new Array(m.route770.length-1).fill(7.2);
     const line=densifyLine772(m.route770,.030);
     m.racingSpline770=line;
     m.globalOptimal770=line;
-    m.racingLineMode772='triple-diamond-v8.10';
+    m.racingLineMode772='destiny-base-v8.12';
     m.strictRoadFollow778=true;
-    m.roadFollowMode778='route-center-hard';
+    m.roadFollowMode778='branch-road-hard';
     m.geometryReady=true;
     m.approvedImageShape772=true;
     m.outerSoftLimit789=true;
-    m.insideTune789='triple-diamond-balanced';
-
-    // Point-to-point: two starts -> one finish.
+    m.insideTune789='destiny-gate-balanced';
     m.courseType775='point-to-point';
     m.finishRule775='end-gate';
     m.lapRequired775=false;
     m.lapArmFraction775=0;
     m.sharedGate778=false;
-
-    // Remove every active Rolling Stone/boulder property from this map.
-    for(const k of Object.keys(m)){
-      if(/^rolling/i.test(k)||/^boulder/i.test(k)||/rock2/i.test(k)||/rock3/i.test(k)){
-        delete m[k];
-      }
-    }
-    delete m.forbiddenZones770;
-    delete m.hardForbidden780;
-    delete m.boulderSolid898;
-    delete m.boulderInsideCutDisabled898;
-
-    // Public map lookup for the new id.
-    MAP_DEFINITIONS_770.triple_diamond=m;
-    const mp810=MAP_POOL_770.indexOf(m);
-    if(mp810<0) MAP_POOL_770.push(m);
-    activeMap770=(activeMapId770==='industrial_zone'||activeMapId770==='triple_diamond')
-      ? m : activeMap770;
-    if(activeMapId770==='industrial_zone')activeMapId770='triple_diamond';
-
     m.qaTripleDiamond810=true;
   }
   applyPatch810();
+
+  function applyPatch811(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.en='Destiny Gate';
+    m.theme='Heaven vs Hell Destiny Gate';
+    m.tags=['데스티니게이트','2스타트','천국vs지옥'];
+    m.qaDestinyGate811=true;
+    m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
+    m.start={x:89.05,y:165.8};
+    m.goal={x:89.1,y:5.8};
+    m.strictRoadFollow778=true;
+    m.roadFollowMode778='route-center-hard';
+    m.strictNoChord795=true;
+    m.outerSoftLimit789=true;
+    m.noDiagonalShortcut811=true;
+    m.rejoinRoadHard811=true;
+    m.racingLineMode772='destiny-gate-road-lock-v8.11';
+    m.widths770=new Array(Math.max(1,m.route770.length-1)).fill(7.0);
+    const line=densifyLine772(m.route770,.014);
+    m.racingSpline770=line;
+    m.globalOptimal770=line;
+  }
+  applyPatch811();
+
+
+  function applyPatch8113(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.en='Destiny Gate';
+    m.image='map_destiny_gate_8113.png?v=8113-clean-merged-junctions';
+    m.imageSize={w:1254,h:1254};
+    m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
+    m.start={x:89.05,y:165.8};
+    m.goal={x:89.1,y:5.8};
+    m.safeZones={
+      start:{x0:67.5,y0:160.5,x1:110.7,y1:171.8},
+      goal:{x0:84.4,y0:1.8,x1:93.8,y1:10.0}
+    };
+    const M0=[89.05,153.0],M1=[89.05,107.0],M2=[89.05,51.0],G=[89.1,5.8];
+    m.destinyRoads813=[
+      [[72.2,165.8],M0],[[105.9,165.8],M0],
+      [M0,[69,148],[55,138],[60,126],[74,116],M1],
+      [M0,[109,148],[123,138],[118,126],[104,116],M1],
+      [M1,[72,100],[57,88],[55,76],[68,61],M2],
+      [M1,[106,100],[121,88],[123,76],[110,61],M2],
+      [M2,[72,44],[58,34],[55,24],[68,14.5],G],
+      [M2,[106,44],[120,34],[123,24],[110,14.5],G]
+    ];
+    m.routeChoiceProbability813=.50;
+    m.routeChoiceAtEveryJunction813=true;
+    m.naturalMergedJunction813=true;
+    m.qaDestinyGate813=true;
+    m.strictRoadFollow778=true;
+    m.strictNoChord795=true;
+    m.roadFollowMode778='branch-road-hard';
+    m.racingLineMode772='destiny-gate-3x-5050-v8.113';
+  }
+  applyPatch8113();
+
+  function applyPatch812(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.en='Destiny Gate';
+    m.roadFollowMode778='branch-road-hard';
+    m.racingLineMode772='destiny-gate-legacy-pre815';
+    m.qaDestinyGate812=true;
+  }
+  applyPatch812();
+
+
+
+
+  function applyPatch815(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    const S1=[72.2,165.8],S2=[105.9,165.8];
+    const M0=[89.05,131.0],J1=[89.05,113.4],M1=[89.05,82.8],J2=[89.05,60.0],M2=[89.05,18.7],G=[89.1,5.8];
+    m.destinyTopology815={
+      startRoads:[
+        [S1,[66,160],[61,153],[60,147],[64,141],[72,136],[81,132],M0],
+        [S2,[112,160],[117,153],[118,147],[114,141],[106,136],[97,132],M0]
+      ],
+      shared0:[M0,[89.05,123],[89.05,118],J1],
+      branch1:{
+        left:[J1,[76,110],[64,105],[55,98],[51,93],[54,88],[64,84],[76,82],M1],
+        right:[J1,[102,110],[114,105],[123,98],[127,93],[124,88],[114,84],[102,82],M1]
+      },
+      shared1:[M1,[89.05,75],[89.05,67],J2],
+      branch2:{
+        left:[J2,[76,57],[64,53],[55,47],[51,40],[54,33],[64,27],[76,22],M2],
+        right:[J2,[102,57],[114,53],[123,47],[127,40],[124,33],[114,27],[102,22],M2]
+      },
+      shared2:[M2,[89.08,13],G]
+    };
+    m.destinyRoads813=[
+      ...m.destinyTopology815.startRoads,
+      m.destinyTopology815.shared0,
+      m.destinyTopology815.branch1.left,m.destinyTopology815.branch1.right,
+      m.destinyTopology815.shared1,
+      m.destinyTopology815.branch2.left,m.destinyTopology815.branch2.right,
+      m.destinyTopology815.shared2
+    ];
+    // Representative route exists only for generic normalized bookkeeping;
+    // road legality and actual player motion never use it on this map.
+    m.route770=[...m.destinyTopology815.startRoads[0],
+      ...m.destinyTopology815.shared0.slice(1),
+      ...m.destinyTopology815.branch1.left.slice(1),
+      ...m.destinyTopology815.shared1.slice(1),
+      ...m.destinyTopology815.branch2.left.slice(1),
+      ...m.destinyTopology815.shared2.slice(1)];
+    m.widths770=new Array(Math.max(1,m.route770.length-1)).fill(8.4);
+    m.racingSpline770=densifyLine772(m.route770,.34);
+    m.globalOptimal770=m.racingSpline770;
+    m.routeChoiceProbability813=.50;
+    m.routeChoiceCount815=2;
+    m.routeChoiceAtEveryJunction813=true;
+    m.bottomStartLegsFixed815=true;
+    m.actualMovementUsesPersonalPath815=true;
+    m.progressUsesPersonalPath815=true;
+    m.threatFrameUsesPersonalPath815=true;
+    m.noLegacyRouteMask815=true;
+    m.roadFollowMode778='branch-road-hard';
+    m.racingLineMode772='destiny-image-aligned-personal-path-v8.15';
+    m.qaDestinyGate815=true;
+    rebuildRacingSpline770();
+  }
+  applyPatch815();
+
+
+  function applyPatch816(){
+    for(const m of MAP_POOL_770){
+      if(!m)continue;
+      m.startObserverExclusionRadius816=(m.id==='triple_diamond'?15.5:13.0);
+      m.startCollisionProtectionMs816=1000;
+      m.startAiBoostMs816=3000;
+      m.startAiPredictionBoost816=1.35;
+      m.qaStartSafety816=true;
+    }
+  }
+  applyPatch816();
 
   function v36SelfAudit(){
     const issues=[];
@@ -13312,15 +12598,17 @@ function seasonCardHtml(p){
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.roadFollowMode778!=="route-center-hard"))issues.push("하드경로778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="branch-road-hard")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
-      if(!td?.qaTripleDiamond810||td?.id!=="triple_diamond"||!Array.isArray(td?.dualStarts810)||td.dualStarts810.length!==2)issues.push("트리플다이아몬드810");
-      if(td?.image!=="map_triple_diamond_810.png?v=810-triple-diamond")issues.push("트리플다이아몬드이미지810");
-      if(td?.lapRequired775!==false||td?.finishRule775!=="end-gate")issues.push("트리플다이아몬드완주810");
+      if(!td?.qaDestinyGate812||td?.id!=="triple_diamond"||!Array.isArray(td?.dualStarts810)||td.dualStarts810.length!==2)issues.push("데스티니게이트8113");
+      if(td?.image!=="map_destiny_gate_8113.png?v=8113-clean-merged-junctions")issues.push("데스티니게이트이미지8113");
+      if(td?.lapRequired775!==false||td?.finishRule775!=="end-gate")issues.push("데스티니게이트완주8113");
+      if(td?.routeChoiceProbability813!==.50||td?.routeChoiceCount815!==2||!td?.routeChoiceAtEveryJunction813||!Array.isArray(td?.destinyRoads813)||td.destinyRoads813.length!==8)issues.push("데스티니게이트분기815");
+      if(!td?.qaDestinyGate815||!td?.actualMovementUsesPersonalPath815||!td?.progressUsesPersonalPath815||!td?.threatFrameUsesPersonalPath815||!td?.noLegacyRouteMask815)issues.push("데스티니게이트개인경로815");
     }
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
-    if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("4팀스프라이트");
+    if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("유닛스프라이트");
     return {ok:!issues.length,issues,build:BUILD_ID};
   }
 
@@ -13330,9 +12618,9 @@ function seasonCardHtml(p){
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),
     getLastResult:()=>lastMasterResult?clonePlain(lastMasterResult):null,
-    getCurrentState:()=>({build:BUILD_ID,running,paused,currentRound,simClock,
+    getCurrentState:()=>({build:BUILD_ID,matchMode,running,paused,currentRound,simClock,
       mapId:currentMap770().id,mapName:currentMap770().name,observerCount:observers.length,
-      teamScores:{A:teamTotals.A,B:teamTotals.B,C:teamTotals.C,D:teamTotals.D},finished:players.filter(p=>p.done).length}),
+      teamScores:isTeamMode()?{RED:teamTotals.RED,BLUE:teamTotals.BLUE}:null,finished:players.filter(p=>p.done).length}),
     getMapImageStatus791:()=>({complete:!!map.complete,naturalWidth:map.naturalWidth||0,src:map.src||"",fallback:map._fallback791||""}),
     testLateMapLoadSafety791:()=>{const before={running,round:currentRound,mapId:currentMap770().id};map.dispatchEvent(new Event("load"));return {before,after:{running,round:currentRound,mapId:currentMap770().id}};},
     startCurrent:start,resetMatch:reset,
