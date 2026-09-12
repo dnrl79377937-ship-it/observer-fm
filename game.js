@@ -24,16 +24,16 @@
   let MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 130; // max/default observer pool
   function observerCountForMap791(m=currentMap770()){
-    if(m?.id==="double_hairpin") return 40; // 블랙홀
-    if(m?.id==="skyway") return 80;         // 스페이스
-    if(m?.id==="cliff_hanger") return 80;   // 스카이 클리프
-    return OBSERVER_COUNT;
+    if(m?.id==="double_hairpin") return 30; // 블랙홀
+    if(m?.id==="skyway") return 70;         // 스페이스
+    if(m?.id==="cliff_hanger") return 70;   // 스카이 클리프
+    return 100;                             // 나머지 맵
   }
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.0.4";
+  const BUILD_ID = "v1.0.6";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -756,9 +756,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           : {A:league100.ace.A,B:league100.ace.B};
         return `<div class="league-side-set-row-100">
           <b>${setNo===7?"ACE":setNo+"S"}</b>
-          <span class="a">${p.A==null?"-":names[p.A]}</span>
+          <span class="a" title="${p.A==null?"-":names[p.A]}">${p.A==null?"-":names[p.A]}</span>
           <span class="score">${r?`${r.score.A}:${r.score.B}`:"-"}</span>
-          <span class="b">${p.B==null?"-":names[p.B]}</span>
+          <span class="b" title="${p.B==null?"-":names[p.B]}">${p.B==null?"-":names[p.B]}</span>
         </div>`;
       }).join("");
     }
@@ -779,12 +779,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     matchMode="team";
     activeSourceIndexes=[pair.A,pair.B];
-    teamAssignments={0:"RED",1:"BLUE"};
+    teamAssignments={0:"BLUE",1:"RED"};
     playerTournament={};
     activeSourceIndexes.forEach((src,i)=>{
       playerTournament[i]={
         name:names[src],
-        team:i===0?"RED":"BLUE",
+        team:i===0?"BLUE":"RED",
         total:0,rounds:[],sourceIndex:src
       };
     });
@@ -972,11 +972,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(league100?.phase==="racing"){
       const pair=leaguePair100();
       activeSourceIndexes=[pair.A,pair.B];
-      teamAssignments={0:"RED",1:"BLUE"};
+      teamAssignments={0:"BLUE",1:"RED"};
       return;
     }
     activeSourceIndexes=[0,1];
-    teamAssignments={0:"RED",1:"BLUE"};
+    teamAssignments={0:"BLUE",1:"RED"};
   }
   function initTournament(){
     currentRound=1;teamTotals={RED:0,BLUE:0};
@@ -987,6 +987,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     });
   }
 
+
+
+  function leagueTeamColor105(p){
+    if(league100?.phase==="racing"){
+      if(p?.team==="BLUE")return "#4d8dff";
+      if(p?.team==="RED")return "#ff4d4d";
+    }
+    return p?.color||teamColor(p?.team);
+  }
 
   function teamLabel(team){return team==="RED"?"빨강팀":team==="BLUE"?"파랑팀":"개인전";}
 
@@ -8375,13 +8384,13 @@ applyMapSet776();
     const startBoost=startAiBoost816(p,now);
 
     // Emergency scan stays immediate but is limited to a small local bucket.
-    const close=localObservers723(p,startBoost?5.2:3.9);
+    const close=localObservers723(p,startBoost?5.8:4.5);
     for(const o of close){
       const rx=o.x-p.x,ry=o.y-p.y,dist=Math.hypot(rx,ry);
       const f=rx*frame.ux+ry*frame.uy;
       const l=rx*(-frame.uy)+ry*frame.ux;
-      if(dist<(startBoost?2.65:2.30) ||
-         (f>-.20&&f<(startBoost?4.6:3.45)&&Math.abs(l)<2.0)){
+      if(dist<(startBoost?2.80:2.45) ||
+         (f>-.25&&f<(startBoost?5.2:4.05)&&Math.abs(l)<2.15)){
         return {o,t:.12,miss:dist,dist,rx,ry,forward:f,lateral:l,
           minSep:dist,minH:.12,frontBlock:true,emergency:true,source722:"destiny-close182"};
       }
@@ -8390,10 +8399,10 @@ applyMapSet776();
     // The generic AI used 10 candidate actions and global-spline prediction.
     // Destiny only needs a modest scan every ~55 ms because the route itself is fixed.
     if(now<(p._dgNextThreat182||0))return p._dgCachedThreat182||null;
-    p._dgNextThreat182=now+(startBoost?42:72);
+    p._dgNextThreat182=now+(startBoost?32:58);
 
     let best=null,bestScore=Infinity;
-    const nearby=localObservers723(p,startBoost?11.8:9.2);
+    const nearby=localObservers723(p,startBoost?13.0:10.6);
 
     for(const o of nearby){
       const rx=o.x-p.x,ry=o.y-p.y;
@@ -8414,9 +8423,9 @@ applyMapSet776();
         if(d<minSep){minSep=d;minH=h;}
       }
 
-      const frontBlock=forward>-.15&&forward<4.7&&Math.abs(lateral)<2.05;
-      const emergency=dist<2.35||(frontBlock&&dist<3.7)||(minSep<1.42&&minH<.34);
-      const credible=emergency||(minSep<2.65&&dist<9.0);
+      const frontBlock=forward>-.20&&forward<5.25&&Math.abs(lateral)<2.20;
+      const emergency=dist<2.50||(frontBlock&&dist<4.05)||(minSep<1.55&&minH<.38);
+      const credible=emergency||(minSep<2.85&&dist<10.2);
       if(!credible)continue;
 
       const score=minSep*.85+dist*.04+minH*2.1-(emergency?2.0:0);
@@ -8512,12 +8521,12 @@ applyMapSet776();
 
     // Cheap emergency pass every frame: only observers within 4.0.
     const startBoost816=startAiBoost816(p,now);
-    const close=localObservers723(p,startBoost816?5.4:4.0);
+    const close=localObservers723(p,startBoost816?6.0:4.7);
     for(const o of close){
       const ox=o.x-p.x,oy=o.y-p.y,dist=Math.hypot(ox,oy);
       const forward=ox*frame.ux+oy*frame.uy;
       const lateral=ox*(-frame.uy)+oy*frame.ux;
-      if(dist<(startBoost816?2.75:2.35) || (forward>-.25&&forward<(startBoost816?4.8:3.55)&&Math.abs(lateral)<(startBoost816?2.35:1.95))){
+      if(dist<(startBoost816?2.90:2.50) || (forward>-.30&&forward<(startBoost816?5.5:4.25)&&Math.abs(lateral)<(startBoost816?2.45:2.15))){
         return {
           o,t:.12,miss:dist,dist,rx:ox,ry:oy,forward,lateral,
           minSep:dist,minH:.12,frontBlock:true,emergency:true,
@@ -8529,10 +8538,10 @@ applyMapSet776();
     // v7.24(130): normal prediction is capped at 11.1; emergency 4.0 stays immediate.
     if(now<(p._nextThreatScan724||0))
       return p._cachedThreat724||null;
-    p._nextThreatScan724=now+(startBoost816?28:44);
+    p._nextThreatScan724=now+(startBoost816?24:36);
 
     let best=null,bestScore=Infinity;
-    const nearby=localObservers723(p,startBoost816?14.2:11.1);
+    const nearby=localObservers723(p,startBoost816?15.2:12.8);
 
     for(const o of nearby){
       const ox=o.x-p.x,oy=o.y-p.y;
@@ -8557,17 +8566,17 @@ applyMapSet776();
         if(d<minSep){minSep=d;minH=h;}
       }
 
-      const frontBlock=forward>-.25 && forward<4.55 && Math.abs(lateral)<2.05;
+      const frontBlock=forward>-.30 && forward<5.15 && Math.abs(lateral)<2.20;
       const emergency=
-        dist<2.45 ||
-        (frontBlock && dist<3.75) ||
-        (minSep<1.48 && minH<.31) ||
-        (t<.16 && miss<1.90);
+        dist<2.55 ||
+        (frontBlock && dist<4.15) ||
+        (minSep<1.60 && minH<.34) ||
+        (t<.19 && miss<2.02);
 
       const credible=
         emergency ||
-        (minSep<2.72 && minH<.68 && dist<10.2) ||
-        (t<.68 && miss<2.72 && dist<9.6);
+        (minSep<2.90 && minH<.68 && dist<11.6) ||
+        (t<.74 && miss<2.90 && dist<10.8);
 
       if(!credible)continue;
 
@@ -8604,8 +8613,8 @@ applyMapSet776();
         st._detectedAt749=now;
         noteThreatRead749(p,now);
         const clutch759=clutchContext759(p);
-        const emergencyDelay=10+(1-ex.reaction)*86+(1-ex.focus)*24+
-          (1-ex.hand+clutch759.executionPenalty)*26;
+        const emergencyDelay=6+(1-ex.reaction)*68+(1-ex.focus)*18+
+          (1-ex.hand+clutch759.executionPenalty)*20;
         st.reactionReadyAt=now+emergencyDelay;
       }
       if(now<st.reactionReadyAt)return null;
@@ -8613,13 +8622,13 @@ applyMapSet776();
     }
 
     // Detector stays capped at 11.1. Skill changes interpretation, not omniscience.
-    const horizon=.30+ex.awareness*.62;
-    const maxReadDist=6.55+ex.awareness*4.20;
+    const horizon=.38+ex.awareness*.68;
+    const maxReadDist=7.20+ex.awareness*4.60;
     if(eta>horizon || raw.dist>maxReadDist)return null;
 
     const roundKey=(typeof currentRound==="number"?currentRound:0);
     const h=((p.index+1)*37+(id+3)*17+(roundKey+5)*13)%100/100;
-    const readChance=.08+ex.awareness*.72+ex.mental*.12;
+    const readChance=.15+ex.awareness*.70+ex.mental*.12;
     if(h>readChance)return null;
 
     if(st.pendingThreatId!==id){
@@ -8628,8 +8637,8 @@ applyMapSet776();
       noteThreatRead749(p,now);
       const urgency=clamp01720((.52-eta)/.52);
       const clutch759=clutchContext759(p);
-      const delay=(132-ex.reaction*88-ex.focus*20-
-        Math.max(0,ex.hand-clutch759.executionPenalty)*12)*(1-urgency*.58);
+      const delay=(112-ex.reaction*76-ex.focus*18-
+        Math.max(0,ex.hand-clutch759.executionPenalty)*10)*(1-urgency*.62);
       st.reactionReadyAt=now+Math.max(13,delay);
     }
 
@@ -11299,7 +11308,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       marseilleVisualSpin=p.marseilleSide*Math.sin(mt*Math.PI)*1.05;
       ctx.save();
       ctx.globalAlpha=.16+.18*Math.sin(mt*Math.PI);
-      ctx.strokeStyle=p.color||teamColor(p.team);
+      ctx.strokeStyle=leagueTeamColor105(p);
       ctx.lineWidth=Math.max(2,r*.22);
       ctx.lineCap="round";
       ctx.beginPath();
@@ -11315,13 +11324,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const size=r*2.65;
       ctx.save();
       ctx.rotate(p.visualAngle+marseilleVisualSpin);
-      ctx.shadowColor=p.color||"rgba(255,255,255,.45)";
+      ctx.shadowColor=leagueTeamColor105(p)||"rgba(255,255,255,.45)";
       ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
       ctx.restore();
     }else{
       // Sprite-load fallback stays team-colored; collision never changes the icon.
-      ctx.fillStyle=p.color||teamColor(p.team);
+      ctx.fillStyle=leagueTeamColor105(p);
       ctx.strokeStyle="#07111a";
       ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -13871,6 +13880,34 @@ function seasonCardHtml(p){
   }
   applyPatch104();
 
+
+  function applyPatch105(){
+    window.__OBSERVER_FM_V105__={
+      teamColorUnified:true,
+      teamAColor:"BLUE",
+      teamBColor:"RED",
+      bracketShiftLeft:true,
+      liveRedNameRightAligned:true
+    };
+  }
+  applyPatch105();
+
+
+  function applyPatch106(){
+    window.__OBSERVER_FM_V106__={
+      observerCounts:{
+        default:100,
+        blackHole:30,
+        space:70,
+        skyCliff:70
+      },
+      aiFrontReadImproved:true,
+      aiEmergencyReactionImproved:true,
+      destinyThreatReadImproved:true
+    };
+  }
+  applyPatch106();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -13882,10 +13919,10 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.ice_ring?.qaMRouteLock7942||!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780||MAP_DEFINITIONS_770.ice_ring?.roadFollowMode778!=="route-center-hard")issues.push("아이스크라운M도로7942");
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버기본130");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==40)issues.push("블랙홀옵저버40");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==80)issues.push("스페이스옵저버80");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==130)issues.push("기타맵옵저버130");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==80)issues.push("스카이클리프옵저버80");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==30)issues.push("블랙홀옵저버30");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==70)issues.push("스페이스옵저버70");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==100)issues.push("기타맵옵저버100");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==70)issues.push("스카이클리프옵저버70");
     if(TEAM_LEAGUE_RULES_821.heatWinsNeeded!==2||TEAM_LEAGUE_RULES_821.maxHeatsPerSet!==3||TEAM_LEAGUE_RULES_821.regularSets!==6||TEAM_LEAGUE_RULES_821.matchWinsNeeded!==4)issues.push("팀리그규칙821");
     if(TEAM_LEAGUE_ROSTERS_821.A.length!==6||TEAM_LEAGUE_ROSTERS_821.B.length!==6||new Set([...TEAM_LEAGUE_ROSTERS_821.A,...TEAM_LEAGUE_ROSTERS_821.B]).size!==12)issues.push("팀리그로스터821");
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");

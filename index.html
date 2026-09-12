@@ -6,7 +6,7 @@
   <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observer Avoid FM v1.0.4 — Bracket Alignment</title>
+  <title>Observer Avoid FM v1.0.6 — Observer & AI Balance</title>
   <link rel="stylesheet" href="style.css">
 
   <style id="mapSelectStyle774">
@@ -235,12 +235,85 @@
     }
   </style>
 
+
+  <style>
+    /* v1.0.5 bracket centering */
+    .league-schedule-row-100{
+      grid-template-columns:68px minmax(140px,.95fr) minmax(120px,.95fr) 34px minmax(120px,.95fr) 86px!important;
+    }
+    .league-schedule-row-100 .map{
+      padding-right:4px!important;
+    }
+    .league-schedule-row-100 .a{
+      text-align:right!important;
+      padding-right:6px!important;
+      transform:translateX(-4px);
+    }
+    .league-schedule-row-100 .vs{
+      transform:translateX(-4px);
+    }
+    .league-schedule-row-100 .b{
+      text-align:left!important;
+      padding-left:4px!important;
+      transform:translateX(-4px);
+    }
+
+    /* v1.0.5 live side-set rows:
+       B/red nickname is pinned to the far right edge. */
+    .league-side-set-row-100{
+      grid-template-columns:30px minmax(0,1fr) 42px minmax(0,1fr)!important;
+    }
+    .league-side-set-row-100 .a{
+      text-align:left!important;
+      justify-self:start;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .league-side-set-row-100 .score{
+      text-align:center!important;
+      justify-self:center;
+    }
+    .league-side-set-row-100 .b{
+      text-align:right!important;
+      justify-self:stretch;
+      width:100%;
+      padding-right:2px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    /* Explicit team color consistency */
+    .league-side-team-100.a,
+    .league-schedule-row-100 .a,
+    .league-side-set-row-100 .a{
+      color:#4d8dff!important;
+    }
+    .league-side-team-100.b,
+    .league-schedule-row-100 .b,
+    .league-side-set-row-100 .b{
+      color:#ff4d4d!important;
+    }
+
+    @media(max-width:980px){
+      .league-schedule-row-100{
+        grid-template-columns:48px minmax(90px,.9fr) minmax(78px,.9fr) 28px minmax(78px,.9fr) 62px!important;
+      }
+      .league-schedule-row-100 .a,
+      .league-schedule-row-100 .vs,
+      .league-schedule-row-100 .b{
+        transform:translateX(-2px);
+      }
+    }
+  </style>
+
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Observer Avoid FM</h1>
-      <p>v1.0.4 · TEAM LEAGUE</p>
+      <p>v1.0.6 · TEAM LEAGUE</p>
     </div>
     
     <div class="controls">
@@ -261,7 +334,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v1.0.4 · TEAM LEAGUE</span>
+        <span id="cameraLabel">v1.0.6 · TEAM LEAGUE</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <select id="povSelect" class="focus-mode-btn" title="AI 선수 POV"><option value="-1">POV: OFF</option></select>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
@@ -459,6 +532,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=1.0.4-bracket-alignment"></script>
+  <script src="game.js?v=1.0.6-observer-ai-balance"></script>
 </body>
 </html>
