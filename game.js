@@ -24,15 +24,16 @@
   let MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 130; // max/default observer pool
   function observerCountForMap791(m=currentMap770()){
-    if(m?.id==="double_hairpin") return 70;
-    if(m?.id==="skyway") return 100;
+    if(m?.id==="double_hairpin") return 40; // 블랙홀
+    if(m?.id==="skyway") return 80;         // 스페이스
+    if(m?.id==="cliff_hanger") return 80;   // 스카이 클리프
     return OBSERVER_COUNT;
   }
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.185";
+  const BUILD_ID = "v1.0.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -134,7 +135,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       spreadPct:(Math.max(...xs)/Math.min(...xs)-1)*100};
   }
 
-  const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika","HongKey","TaeHyeon","DVA","LiveCam"];
+  const names = ["Angel","Egle","GhostRider","Bacilius","Zino","Chotbul","Kaka","Pika","DVA","Taehyeon","LiveCam","Rodust"];
   if(povSelect){
     povSelect.innerHTML=`<option value="-1">POV: OFF</option>`+names.map((n,i)=>`<option value="${i}">${n} POV</option>`).join("");
     povSelect.addEventListener("change",()=>{povPlayerIndex=+povSelect.value;});
@@ -145,18 +146,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   // Values are fixed for this build so a player's identity does not reroll on refresh.
   // v7.33 FIXED ALL-STAT EXPERIMENT
   const playerStats = [
-    {pace:30,acceleration:30,cornering:30,insideLine:30,routeReading:30,avoidance:30,reaction:30,prediction:30,control:30,stability:30,braking:30,recovery:30,consistency:30,focus:30,aggression:30,riskControl:30,pressure:30,start:30,endurance:30,luck:30}, // Angel · ALL 30
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Egle · ALL 60
-    {pace:90,acceleration:90,cornering:90,insideLine:90,routeReading:90,avoidance:90,reaction:90,prediction:90,control:90,stability:90,braking:90,recovery:90,consistency:90,focus:90,aggression:90,riskControl:90,pressure:90,start:90,endurance:90,luck:90}, // GhostRider · ALL 90
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Bacilius · ALL 60
-    {pace:90,acceleration:90,cornering:90,insideLine:90,routeReading:90,avoidance:90,reaction:90,prediction:90,control:90,stability:90,braking:90,recovery:90,consistency:90,focus:90,aggression:90,riskControl:90,pressure:90,start:90,endurance:90,luck:90}, // Zino · ALL 90
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Chotbul · ALL 60
-    {pace:80,acceleration:80,cornering:80,insideLine:80,routeReading:80,avoidance:80,reaction:80,prediction:80,control:80,stability:80,braking:80,recovery:80,consistency:80,focus:80,aggression:80,riskControl:80,pressure:80,start:80,endurance:80,luck:80}, // Kaka · ALL 80
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // Pika · ALL 60
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // HongKey · ALL 60
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // TaeHyeon · ALL 60
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // DVA · ALL 60
-    {pace:60,acceleration:60,cornering:60,insideLine:60,routeReading:60,avoidance:60,reaction:60,prediction:60,control:60,stability:60,braking:60,recovery:60,consistency:60,focus:60,aggression:60,riskControl:60,pressure:60,start:60,endurance:60,luck:60}, // LiveCam · ALL 60
+    {pace:86,acceleration:82,cornering:86,insideLine:86,routeReading:90,avoidance:72,reaction:84,prediction:90,control:90,stability:77,braking:85,recovery:78,consistency:86,focus:82,aggression:72,riskControl:72,pressure:76,start:86,endurance:87,luck:83}, // Angel · v8.20 RANDOM 70~90
+    {pace:77,acceleration:79,cornering:89,insideLine:86,routeReading:73,avoidance:78,reaction:81,prediction:82,control:81,stability:75,braking:84,recovery:84,consistency:89,focus:81,aggression:71,riskControl:88,pressure:79,start:85,endurance:82,luck:84}, // Egle · v8.20 RANDOM 70~90
+    {pace:74,acceleration:78,cornering:88,insideLine:78,routeReading:82,avoidance:83,reaction:72,prediction:87,control:70,stability:72,braking:86,recovery:82,consistency:90,focus:78,aggression:76,riskControl:78,pressure:90,start:80,endurance:81,luck:84}, // GhostRider · v8.20 RANDOM 70~90
+    {pace:82,acceleration:85,cornering:86,insideLine:78,routeReading:85,avoidance:84,reaction:76,prediction:89,control:82,stability:78,braking:83,recovery:76,consistency:80,focus:89,aggression:87,riskControl:77,pressure:87,start:88,endurance:88,luck:75}, // Bacilius · v8.20 RANDOM 70~90
+    {pace:70,acceleration:77,cornering:78,insideLine:71,routeReading:90,avoidance:74,reaction:88,prediction:87,control:85,stability:81,braking:72,recovery:73,consistency:76,focus:86,aggression:74,riskControl:87,pressure:82,start:80,endurance:71,luck:90}, // Zino · v8.20 RANDOM 70~90
+    {pace:78,acceleration:73,cornering:72,insideLine:80,routeReading:85,avoidance:86,reaction:86,prediction:73,control:80,stability:74,braking:87,recovery:90,consistency:77,focus:84,aggression:84,riskControl:78,pressure:90,start:74,endurance:78,luck:79}, // Chotbul · v8.20 RANDOM 70~90
+    {pace:70,acceleration:84,cornering:86,insideLine:70,routeReading:70,avoidance:79,reaction:81,prediction:85,control:81,stability:71,braking:90,recovery:75,consistency:76,focus:88,aggression:72,riskControl:75,pressure:86,start:77,endurance:82,luck:73}, // Kaka · v8.20 RANDOM 70~90
+    {pace:89,acceleration:88,cornering:71,insideLine:77,routeReading:82,avoidance:74,reaction:90,prediction:71,control:77,stability:80,braking:72,recovery:83,consistency:89,focus:81,aggression:77,riskControl:90,pressure:85,start:76,endurance:72,luck:87}, // Pika · v8.20 RANDOM 70~90
+    {pace:80,acceleration:82,cornering:73,insideLine:70,routeReading:88,avoidance:82,reaction:75,prediction:80,control:85,stability:72,braking:85,recovery:75,consistency:70,focus:79,aggression:90,riskControl:80,pressure:87,start:80,endurance:84,luck:82}, // DVA · v8.20 RANDOM 70~90
+    {pace:73,acceleration:80,cornering:83,insideLine:90,routeReading:70,avoidance:72,reaction:74,prediction:85,control:83,stability:70,braking:78,recovery:76,consistency:90,focus:74,aggression:78,riskControl:78,pressure:76,start:72,endurance:79,luck:70}, // Taehyeon · v8.20 RANDOM 70~90
+    {pace:80,acceleration:83,cornering:82,insideLine:72,routeReading:79,avoidance:78,reaction:84,prediction:88,control:88,stability:87,braking:89,recovery:82,consistency:87,focus:82,aggression:80,riskControl:88,pressure:78,start:73,endurance:75,luck:80}, // LiveCam · v8.20 RANDOM 70~90
+    {pace:77,acceleration:84,cornering:85,insideLine:75,routeReading:84,avoidance:84,reaction:88,prediction:80,control:76,stability:80,braking:86,recovery:76,consistency:78,focus:86,aggression:79,riskControl:81,pressure:84,start:85,endurance:80,luck:77}, // Rodust · v8.20 RANDOM 70~90
   ];
 
   const drivingStyles = [
@@ -357,6 +358,470 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const ROUND_POINTS=[10,7,5,3,2,1,0,-1,-2,-3,-4,-5];
   let currentRound=1;
+
+  // ============================================================
+  // v8.21 TEAM LEAGUE TEST
+  // A vs B / 6 players each / Sets 1~6 unique / Ace set on 3:3
+  // Each set = 1v1 first-to-2 heats -> only 2:0 or 2:1.
+  // ============================================================
+  const TEAM_LEAGUE_RULES_821={
+    bestOfSets:7,
+    matchWinsNeeded:4,
+    regularSets:6,
+    heatWinsNeeded:2,
+    maxHeatsPerSet:3,
+    aceSet:7,
+    regularNoRepeat:true,
+    aceRepeatAllowed:true
+  };
+
+  const TEAM_LEAGUE_ROSTERS_821={
+    A:[0,1,2,3,4,5],
+    B:[6,7,8,9,10,11]
+  };
+
+  let teamLeague821={
+    active:false,
+    setNo:1,
+    heatNo:1,
+    teamScore:{A:0,B:0},
+    setHeatScore:{A:0,B:0},
+    used:{A:[],B:[]},
+    current:{A:null,B:null},
+    sets:[],
+    winner:null
+  };
+
+  function teamLeaguePlayer821(team,setNo=teamLeague821.setNo){
+    const roster=TEAM_LEAGUE_ROSTERS_821[team]||[];
+    if(setNo<=6)return roster[setNo-1]??null;
+    // Ace decision: highest average v8.20 stat; previous appearance is allowed.
+    let best=null,bestAvg=-Infinity;
+    for(const idx of roster){
+      const st=playerStats[idx]||{};
+      const vals=Object.values(st).filter(v=>Number.isFinite(v));
+      const avg=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0;
+      if(avg>bestAvg){bestAvg=avg;best=idx;}
+    }
+    return best;
+  }
+
+  function resetTeamLeague821(){
+    teamLeague821={
+      active:true,
+      setNo:1,
+      heatNo:1,
+      teamScore:{A:0,B:0},
+      setHeatScore:{A:0,B:0},
+      used:{A:[],B:[]},
+      current:{A:teamLeaguePlayer821("A",1),B:teamLeaguePlayer821("B",1)},
+      sets:[],
+      winner:null
+    };
+    return teamLeagueState821();
+  }
+
+  function teamLeagueState821(){
+    const pA=teamLeague821.current.A;
+    const pB=teamLeague821.current.B;
+    return {
+      rules:{...TEAM_LEAGUE_RULES_821},
+      active:teamLeague821.active,
+      setNo:teamLeague821.setNo,
+      heatNo:teamLeague821.heatNo,
+      teamScore:{...teamLeague821.teamScore},
+      setHeatScore:{...teamLeague821.setHeatScore},
+      current:{
+        A:pA==null?null:{index:pA,name:names[pA]},
+        B:pB==null?null:{index:pB,name:names[pB]}
+      },
+      used:{A:[...teamLeague821.used.A],B:[...teamLeague821.used.B]},
+      winner:teamLeague821.winner,
+      sets:teamLeague821.sets.map(x=>({...x,heatScore:{...x.heatScore}}))
+    };
+  }
+
+  function awardTeamLeagueHeat821(team){
+    if(!teamLeague821.active||teamLeague821.winner)return teamLeagueState821();
+    if(team!=="A"&&team!=="B")throw new Error("team must be A or B");
+
+    teamLeague821.setHeatScore[team]++;
+    const wonSet=teamLeague821.setHeatScore[team]>=TEAM_LEAGUE_RULES_821.heatWinsNeeded;
+
+    if(!wonSet){
+      teamLeague821.heatNo++;
+      return teamLeagueState821();
+    }
+
+    const setNo=teamLeague821.setNo;
+    const score={...teamLeague821.setHeatScore};
+    const pA=teamLeague821.current.A,pB=teamLeague821.current.B;
+
+    teamLeague821.teamScore[team]++;
+    if(setNo<=6){
+      if(pA!=null&&!teamLeague821.used.A.includes(pA))teamLeague821.used.A.push(pA);
+      if(pB!=null&&!teamLeague821.used.B.includes(pB))teamLeague821.used.B.push(pB);
+    }
+    teamLeague821.sets.push({
+      setNo,
+      A:pA==null?null:{index:pA,name:names[pA]},
+      B:pB==null?null:{index:pB,name:names[pB]},
+      winner:team,
+      heatScore:score
+    });
+
+    // 4 team points ends the match immediately.
+    if(teamLeague821.teamScore[team]>=TEAM_LEAGUE_RULES_821.matchWinsNeeded){
+      teamLeague821.winner=team;
+      teamLeague821.active=false;
+      return teamLeagueState821();
+    }
+
+    // Sets 1~6 use one unique player per team.
+    if(setNo<6){
+      teamLeague821.setNo++;
+      teamLeague821.heatNo=1;
+      teamLeague821.setHeatScore={A:0,B:0};
+      teamLeague821.current={
+        A:teamLeaguePlayer821("A",teamLeague821.setNo),
+        B:teamLeaguePlayer821("B",teamLeague821.setNo)
+      };
+      return teamLeagueState821();
+    }
+
+    // After Set 6: only 3:3 can continue to the Ace deciding set.
+    if(setNo===6 &&
+       teamLeague821.teamScore.A===3 &&
+       teamLeague821.teamScore.B===3){
+      teamLeague821.setNo=7;
+      teamLeague821.heatNo=1;
+      teamLeague821.setHeatScore={A:0,B:0};
+      teamLeague821.current={
+        A:teamLeaguePlayer821("A",7),
+        B:teamLeaguePlayer821("B",7)
+      };
+      return teamLeagueState821();
+    }
+
+    // Defensive fallback: with a best-of-7 structure, one side should already have 4.
+    const winner=teamLeague821.teamScore.A>teamLeague821.teamScore.B?"A":"B";
+    teamLeague821.winner=winner;
+    teamLeague821.active=false;
+    return teamLeagueState821();
+  }
+
+
+  // ============================================================
+  // v1.0.0 TEAM LEAGUE — NEW MAIN GAME FLOW
+  // 12 players -> random A/B teams (6 each)
+  // Sets 1-6: one unique player each, random appearance order.
+  // Each set is 1v1 first-to-2 heats: only 2:0 or 2:1.
+  // If 3:3 after set 6, set 7 is an ace decider and repeat appearance is allowed.
+  // ============================================================
+  const LEAGUE_RULES_100={
+    teamSize:6,regularSets:6,maxSets:7,setWinsNeeded:4,
+    heatWinsNeeded:2,maxHeatsPerSet:3,
+    aceOnlyAtThreeThree:true,aceRepeatAllowed:true
+  };
+
+  let league100=null;
+
+  function shuffle100(arr){
+    const out=[...arr];
+    for(let i=out.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [out[i],out[j]]=[out[j],out[i]];
+    }
+    return out;
+  }
+
+  function resetLeague100(){
+    const all=shuffle100(names.map((_,i)=>i));
+    const teamA=shuffle100(all.slice(0,6));
+    const teamB=shuffle100(all.slice(6,12));
+    league100={
+      phase:"bracket",
+      setNo:1,
+      heatNo:1,
+      heatScore:{A:0,B:0},
+      teamScore:{A:0,B:0},
+      teamA,teamB,
+      ace:{A:null,B:null},
+      results:[],
+      winner:null
+    };
+    prepareLeaguePair100();
+    renderLeagueBoard100();
+    renderLeagueSide100();
+    showLeagueBoard100();
+    return leagueState100();
+  }
+
+  function leaguePair100(setNo=league100?.setNo||1){
+    if(!league100)return {A:null,B:null};
+    if(setNo<=6)return {A:league100.teamA[setNo-1],B:league100.teamB[setNo-1]};
+    return {A:league100.ace.A,B:league100.ace.B};
+  }
+
+  function prepareLeaguePair100(){
+    if(!league100)return;
+    if(league100.setNo===7){
+      if(league100.ace.A==null)league100.ace.A=league100.teamA[Math.floor(Math.random()*league100.teamA.length)];
+      if(league100.ace.B==null)league100.ace.B=league100.teamB[Math.floor(Math.random()*league100.teamB.length)];
+    }
+    const pair=leaguePair100();
+    league100.current={A:pair.A,B:pair.B};
+  }
+
+  function leagueState100(){
+    if(!league100)return null;
+    const pair=leaguePair100();
+    return {
+      build:BUILD_ID,
+      phase:league100.phase,
+      setNo:league100.setNo,
+      heatNo:league100.heatNo,
+      heatScore:{...league100.heatScore},
+      teamScore:{...league100.teamScore},
+      teams:{
+        A:league100.teamA.map(i=>({index:i,name:names[i]})),
+        B:league100.teamB.map(i=>({index:i,name:names[i]}))
+      },
+      current:{
+        A:pair.A==null?null:{index:pair.A,name:names[pair.A]},
+        B:pair.B==null?null:{index:pair.B,name:names[pair.B]}
+      },
+      ace:{
+        A:league100.ace.A==null?null:{index:league100.ace.A,name:names[league100.ace.A]},
+        B:league100.ace.B==null?null:{index:league100.ace.B,name:names[league100.ace.B]}
+      },
+      results:league100.results.map(r=>({...r,score:{...r.score}})),
+      winner:league100.winner,
+      rules:{...LEAGUE_RULES_100}
+    };
+  }
+
+  function showLeagueBoard100(){
+    const el=document.getElementById("leagueBoard100");
+    if(el)el.classList.remove("hidden");
+  }
+  function hideLeagueBoard100(){
+    const el=document.getElementById("leagueBoard100");
+    if(el)el.classList.add("hidden");
+  }
+
+  function leagueResultForSet100(setNo){
+    return league100?.results?.find(r=>r.setNo===setNo)||null;
+  }
+
+  function renderLeagueBoard100(){
+    if(!league100)return;
+    const rosterA=document.getElementById("leagueRosterA100");
+    const rosterB=document.getElementById("leagueRosterB100");
+    const score=document.getElementById("leagueBoardScore100");
+    const schedule=document.getElementById("leagueSchedule100");
+    const msg=document.getElementById("leagueBoardMessage100");
+    const proceed=document.getElementById("leagueProceed100");
+
+    if(rosterA)rosterA.innerHTML=league100.teamA.map((idx,i)=>
+      `<div class="league-roster-player-100"><span>${i+1}</span><b>${names[idx]}</b></div>`
+    ).join("");
+    if(rosterB)rosterB.innerHTML=league100.teamB.map((idx,i)=>
+      `<div class="league-roster-player-100"><span>${i+1}</span><b>${names[idx]}</b></div>`
+    ).join("");
+    if(score)score.textContent=`${league100.teamScore.A} : ${league100.teamScore.B}`;
+
+    if(schedule){
+      const rows=[];
+      for(let setNo=1;setNo<=6;setNo++){
+        const a=league100.teamA[setNo-1],b=league100.teamB[setNo-1];
+        const r=leagueResultForSet100(setNo);
+        const cls=[
+          "league-schedule-row-100",
+          r?"done":"",
+          !r&&league100.setNo===setNo&&!league100.winner?"current":""
+        ].filter(Boolean).join(" ");
+        rows.push(`<div class="${cls}">
+          <span class="set">${setNo}세트</span>
+          <b class="a">${names[a]}</b>
+          <span class="vs">VS</span>
+          <b class="b">${names[b]}</b>
+          <span class="result">${r?`${r.score.A} : ${r.score.B}`:"-"}</span>
+        </div>`);
+      }
+
+      const aceNeeded=league100.setNo===7||league100.results.some(r=>r.setNo===7)||
+        (league100.results.length>=6&&league100.teamScore.A===3&&league100.teamScore.B===3);
+      if(aceNeeded){
+        prepareLeaguePair100();
+        const r=leagueResultForSet100(7);
+        rows.push(`<div class="league-schedule-row-100 ace ${!r&&league100.setNo===7?"current":""} ${r?"done":""}">
+          <span class="set">7세트<br>ACE</span>
+          <b class="a">${league100.ace.A==null?"-":names[league100.ace.A]}</b>
+          <span class="vs">VS</span>
+          <b class="b">${league100.ace.B==null?"-":names[league100.ace.B]}</b>
+          <span class="result">${r?`${r.score.A} : ${r.score.B}`:"-"}</span>
+        </div>`);
+      }
+      schedule.innerHTML=rows.join("");
+    }
+
+    if(msg){
+      if(league100.winner){
+        msg.textContent=`${league100.winner} TEAM 승리 · 최종 ${league100.teamScore.A} : ${league100.teamScore.B}`;
+      }else if(league100.results.length){
+        const last=league100.results[league100.results.length-1];
+        msg.textContent=`${last.setNo}세트 ${last.winner} TEAM 승리 (${last.score.A}:${last.score.B}) · 팀 스코어 ${league100.teamScore.A}:${league100.teamScore.B}`;
+      }else{
+        msg.textContent="12명 랜덤 팀 배정 · 출전 순서 랜덤 완료";
+      }
+    }
+
+    if(proceed){
+      if(league100.winner){
+        proceed.textContent="경기 종료";
+        proceed.disabled=true;
+      }else{
+        proceed.disabled=false;
+        proceed.textContent=league100.setNo===7?"에이스 결정전 진행하기":`${league100.setNo}세트 진행하기`;
+      }
+    }
+  }
+
+  function renderLeagueSide100(){
+    if(!league100)return;
+    const score=document.getElementById("leagueSideScore100");
+    const current=document.getElementById("leagueSideCurrent100");
+    const sets=document.getElementById("leagueSideSets100");
+    const pair=leaguePair100();
+
+    if(score)score.innerHTML=`
+      <div class="league-side-team-100 a"><span>A TEAM</span><strong>${league100.teamScore.A}</strong></div>
+      <em>VS</em>
+      <div class="league-side-team-100 b"><span>B TEAM</span><strong>${league100.teamScore.B}</strong></div>`;
+
+    if(current){
+      if(league100.winner){
+        current.innerHTML=`<small>FINAL RESULT</small><div class="league-side-heat-100">${league100.winner} TEAM WIN</div>`;
+      }else{
+        current.innerHTML=`<small>${league100.setNo===7?"ACE DECIDER":`${league100.setNo} SET`} · ${league100.heatNo}번째 경기</small>
+          <div class="league-side-current-row-100">
+            <b class="a">${pair.A==null?"-":names[pair.A]}</b><i>VS</i><b class="b">${pair.B==null?"-":names[pair.B]}</b>
+          </div>
+          <div class="league-side-heat-100">${league100.heatScore.A} : ${league100.heatScore.B}</div>`;
+      }
+    }
+
+    if(sets){
+      const max=league100.setNo===7||leagueResultForSet100(7)?7:6;
+      sets.innerHTML=Array.from({length:max},(_,i)=>{
+        const setNo=i+1,r=leagueResultForSet100(setNo);
+        const p=setNo<=6
+          ? {A:league100.teamA[setNo-1],B:league100.teamB[setNo-1]}
+          : {A:league100.ace.A,B:league100.ace.B};
+        return `<div class="league-side-set-row-100">
+          <b>${setNo===7?"ACE":setNo+"S"}</b>
+          <span class="a">${p.A==null?"-":names[p.A]}</span>
+          <span class="score">${r?`${r.score.A}:${r.score.B}`:"-"}</span>
+          <span class="b">${p.B==null?"-":names[p.B]}</span>
+        </div>`;
+      }).join("");
+    }
+  }
+
+  function setupLeagueHeat100(){
+    const pair=leaguePair100();
+    if(pair.A==null||pair.B==null)return false;
+
+    matchMode="team";
+    activeSourceIndexes=[pair.A,pair.B];
+    teamAssignments={0:"RED",1:"BLUE"};
+    playerTournament={};
+    activeSourceIndexes.forEach((src,i)=>{
+      playerTournament[i]={
+        name:names[src],
+        team:i===0?"RED":"BLUE",
+        total:0,rounds:[],sourceIndex:src
+      };
+    });
+
+    // Unit rotation follows heat count but never affects league score rules.
+    currentRound=((league100.setNo+league100.heatNo-2)%5)+1;
+    resetRound();
+    renderLeagueSide100();
+    return true;
+  }
+
+  function beginLeagueSet100(){
+    if(!league100||league100.winner||league100.phase==="racing")return;
+    prepareLeaguePair100();
+    league100.phase="racing";
+    league100.heatNo=1;
+    league100.heatScore={A:0,B:0};
+    hideLeagueBoard100();
+    setupLeagueHeat100();
+    start();
+  }
+
+  function continueLeagueHeat100(){
+    if(!league100||league100.winner)return;
+    league100.phase="racing";
+    setupLeagueHeat100();
+    start();
+  }
+
+  function finishLeagueSet100(winner){
+    const setNo=league100.setNo;
+    const pair=leaguePair100();
+    const result={
+      setNo,
+      A:pair.A,B:pair.B,
+      winner,
+      score:{...league100.heatScore}
+    };
+    league100.results.push(result);
+    league100.teamScore[winner]++;
+
+    if(league100.teamScore[winner]>=4){
+      league100.winner=winner;
+      league100.phase="complete";
+    }else if(setNo<6){
+      league100.setNo++;
+      league100.phase="bracket";
+      league100.heatNo=1;
+      league100.heatScore={A:0,B:0};
+      prepareLeaguePair100();
+    }else if(setNo===6&&league100.teamScore.A===3&&league100.teamScore.B===3){
+      league100.setNo=7;
+      league100.phase="bracket";
+      league100.heatNo=1;
+      league100.heatScore={A:0,B:0};
+      prepareLeaguePair100();
+    }else{
+      league100.winner=league100.teamScore.A>league100.teamScore.B?"A":"B";
+      league100.phase="complete";
+    }
+
+    running=false;
+    renderLeagueBoard100();
+    renderLeagueSide100();
+    showLeagueBoard100();
+  }
+
+  function awardLeagueHeat100(winner){
+    if(!league100||league100.phase!=="racing"||league100.winner)return;
+    league100.heatScore[winner]++;
+    renderLeagueSide100();
+
+    if(league100.heatScore[winner]>=2){
+      finishLeagueSet100(winner);
+      return;
+    }
+
+    league100.heatNo++;
+    setTimeout(()=>continueLeagueHeat100(),650);
+  }
+
   let teamAssignments={};
   let activeSourceIndexes=[];
   let matchMode="individual";
@@ -372,7 +837,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function clonePlain(v){ return JSON.parse(JSON.stringify(v)); }
 
   const STAT_EXPERIMENT_733={
-    Angel:30,GhostRider:90,Zino:90,Kaka:80,default:60
+    mode:"disabled-v8.20",
+    note:"12-player roster uses fixed random attributes 70~90"
   };
 
   function engineCoreRules(){
@@ -382,7 +848,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       playerCollision:false,safeZoneInvulnerability:true,
       baseSpeedMultiplier:1.566903319,
       statExperiment733:{...STAT_EXPERIMENT_733},
-      statLabRoster739:["Angel","GhostRider","Zino","Kaka","Egle","Bacilius","Chotbul","Pika"],
+      statLabRoster739:[...names],
       personalityEngine:"Driver Personality Engine FINAL v7.59",
       unitEngine:"Unit Engine FINAL v7.69",
       mapEngine:"Active 9 Map Geometry · v7.943",
@@ -443,9 +909,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return lastMasterResult;
   }
   function createTeams(){
-    activeSourceIndexes=[0,2,4,6,1,3,5,7];
-    teamAssignments={};
-    activeSourceIndexes.forEach((src,pos)=>{teamAssignments[pos]=isTeamMode()?(pos<4?"RED":"BLUE"):null;});
+    if(league100?.phase==="racing"){
+      const pair=leaguePair100();
+      activeSourceIndexes=[pair.A,pair.B];
+      teamAssignments={0:"RED",1:"BLUE"};
+      return;
+    }
+    activeSourceIndexes=[0,1];
+    teamAssignments={0:"RED",1:"BLUE"};
   }
   function initTournament(){
     currentRound=1;teamTotals={RED:0,BLUE:0};
@@ -10146,6 +10617,28 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
   function finalizeIndividualClear(finishers,now){
     if(roundTransitioning) return; roundTransitioning=true;
+
+    if(league100?.phase==="racing"){
+      const bestMs=Math.round(finishers[0].finishTime);
+      const tied=finishers.filter(p=>Math.round(p.finishTime)===bestMs);
+
+      // Exact tie: replay the same heat, no point awarded.
+      if(tied.length!==1){
+        running=false;
+        roundTransitioning=false;
+        setTimeout(()=>continueLeagueHeat100(),650);
+        return;
+      }
+
+      const winnerPlayer=tied[0];
+      const pair=leaguePair100();
+      const winner=winnerPlayer.sourceIndex===pair.A?"A":"B";
+      running=false;
+      roundTransitioning=false;
+      awardLeagueHeat100(winner);
+      return;
+    }
+
     const bestMs=Math.round(finishers[0].finishTime);
     const tied=finishers.filter(p=>Math.round(p.finishTime)===bestMs);
     tied.forEach(p=>{
@@ -10166,7 +10659,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function restartSameIndividualRound(){
     if(roundTransitioning) return; roundTransitioning=true;
     const r=currentRound;
-    setBroadcastStory(`all-dead-${r}`,"ALL OUT",`${ROUND_UNIT_NAMES[r]} 전원 사망`,`같은 라운드 재시작`,gameNow(),900);
+    setBroadcastStory(`all-dead-${r}`,"ALL OUT",`${ROUND_UNIT_NAMES[r]} 전원 사망`,`같은 경기 재시작`,gameNow(),900);
+    if(league100?.phase==="racing"){
+      setTimeout(()=>{roundTransitioning=false;continueLeagueHeat100();},700);
+      return;
+    }
     setTimeout(()=>{currentRound=r;resetRound();start();},900);
   }
 
@@ -11281,17 +11778,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   function renderRanking(){
-    const ordered=[...players].sort((a,b)=>{
-      if(a.done&&b.done)return a.finishTime-b.finishTime;
-      if(a.done)return -1;if(b.done)return 1;
-      if(a.dead!==b.dead)return a.dead?1:-1;
-      const diff=currentProgress(b)-currentProgress(a);
-      if(Math.abs(diff)<.20)return a.index-b.index;
-      return diff;
-    });
-    if(!ordered.length)return;
-    renderBroadcastCenter814(ordered);
+    if(league100)renderLeagueSide100();
   }
+
 
 
   function statLabel(k){
@@ -12495,21 +12984,10 @@ function seasonCardHtml(p){
       }
     });
   }
-
-  const matchModeSelect=document.getElementById("matchModeSelect");
-  if(matchModeSelect){
-    matchModeSelect.value=matchMode;
-    matchModeSelect.addEventListener("change",()=>{
-      matchMode=matchModeSelect.value==="team"?"team":"individual";
-      reset();
-      const resultTitle=document.getElementById("resultTitle");
-      if(resultTitle)resultTitle.textContent=isTeamMode()?"팀전 4 vs 4 · 경기 통계":"8인 개인전 · 경기 통계";
-      renderTeamScore();renderRanking();
-    });
-  }
-
   if(pauseBtn) pauseBtn.addEventListener("click",togglePause);
-  startBtn.addEventListener("click",start);
+  const leagueProceed100=document.getElementById("leagueProceed100");
+  if(leagueProceed100)leagueProceed100.addEventListener("click",beginLeagueSet100);
+  startBtn.addEventListener("click",()=>{if(league100?.phase==="bracket")beginLeagueSet100();else start();});
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("replayBtn").addEventListener("click",openReplay);
   document.getElementById("replayClose").addEventListener("click",()=>{
@@ -13247,6 +13725,33 @@ function seasonCardHtml(p){
   }
   applyPatch8185();
 
+
+  function applyPatch820(){
+    window.__OBSERVER_FM_ROSTER_820__=names.map((name,index)=>({
+      index,
+      name,
+      stats:{...playerStats[index]}
+    }));
+  }
+  applyPatch820();
+
+
+  function applyPatch821(){
+    window.__OBSERVER_FM_TEAM_LEAGUE_821__={
+      rules:{...TEAM_LEAGUE_RULES_821},
+      rosters:{
+        A:TEAM_LEAGUE_ROSTERS_821.A.map(index=>({index,name:names[index]})),
+        B:TEAM_LEAGUE_ROSTERS_821.B.map(index=>({index,name:names[index]}))
+      }
+    };
+  }
+  applyPatch821();
+
+  function applyPatch100(){
+    window.__OBSERVER_FM_V100__={mode:"team-league",rules:{...LEAGUE_RULES_100}};
+  }
+  applyPatch100();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -13258,9 +13763,12 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.ice_ring?.qaMRouteLock7942||!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780||MAP_DEFINITIONS_770.ice_ring?.roadFollowMode778!=="route-center-hard")issues.push("아이스크라운M도로7942");
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버기본130");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==70)issues.push("블랙홀옵저버70");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==100)issues.push("스페이스옵저버100");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==40)issues.push("블랙홀옵저버40");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==80)issues.push("스페이스옵저버80");
     if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==130)issues.push("기타맵옵저버130");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==80)issues.push("스카이클리프옵저버80");
+    if(TEAM_LEAGUE_RULES_821.heatWinsNeeded!==2||TEAM_LEAGUE_RULES_821.maxHeatsPerSet!==3||TEAM_LEAGUE_RULES_821.regularSets!==6||TEAM_LEAGUE_RULES_821.matchWinsNeeded!==4)issues.push("팀리그규칙821");
+    if(TEAM_LEAGUE_ROSTERS_821.A.length!==6||TEAM_LEAGUE_ROSTERS_821.B.length!==6||new Set([...TEAM_LEAGUE_ROSTERS_821.A,...TEAM_LEAGUE_ROSTERS_821.B]).size!==12)issues.push("팀리그로스터821");
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
     if(!MAP_POOL_770.every(m=>m.geometryReady&&m.route770&&m.racingSpline770))issues.push("9맵지오메트리");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&(m.extraRoads771||[]).length))issues.push("임의지름길");
@@ -13302,6 +13810,20 @@ function seasonCardHtml(p){
     schema:"observer-fm-race-result@1",
     getRules:()=>clonePlain(engineCoreRules()),
     getLastResult:()=>lastMasterResult?clonePlain(lastMasterResult):null,
+    getRoster820:()=>names.map((name,index)=>({index,name,stats:{...playerStats[index]}})),
+    getLeagueState100:()=>clonePlain(leagueState100()),
+    resetLeague100:()=>clonePlain(resetLeague100()),
+    proceedLeague100:()=>{beginLeagueSet100();return clonePlain(leagueState100());},
+    getTeamLeagueRules821:()=>({
+      rules:{...TEAM_LEAGUE_RULES_821},
+      rosters:{
+        A:TEAM_LEAGUE_ROSTERS_821.A.map(index=>({index,name:names[index]})),
+        B:TEAM_LEAGUE_ROSTERS_821.B.map(index=>({index,name:names[index]}))
+      }
+    }),
+    resetTeamLeague821:()=>resetTeamLeague821(),
+    getTeamLeagueState821:()=>teamLeagueState821(),
+    awardTeamLeagueHeat821:(team)=>awardTeamLeagueHeat821(team),
     getCurrentState:()=>({build:BUILD_ID,matchMode,running,paused,currentRound,simClock,
       mapId:currentMap770().id,mapName:currentMap770().name,observerCount:observers.length,
       teamScores:isTeamMode()?{RED:teamTotals.RED,BLUE:teamTotals.BLUE}:null,finished:players.filter(p=>p.done).length}),
@@ -13409,4 +13931,7 @@ function seasonCardHtml(p){
   }
 
   window.ObserverFMStats = { advancedStats697, getAll:()=>players.map(p=>({name:p.name,...(advancedStats697(p)||{})})) };
+
+  // v1.0.0 starts on the randomized matchup board, never directly on Neon Drift.
+  resetLeague100();
 })();

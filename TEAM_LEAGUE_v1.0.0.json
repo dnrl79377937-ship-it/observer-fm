@@ -1,0 +1,19 @@
+{
+  "version": "v1.0.0",
+  "note": "New version line; unrelated to historical v1 builds.",
+  "players": 12,
+  "teamAssignment": "Random 6 vs 6 on page load/reset.",
+  "appearanceOrder": "Random per team; Sets 1-6 use each team member once.",
+  "setFormat": "1v1, first to 2 race wins. Valid set scores: 2-0 or 2-1.",
+  "matchFormat": "First team to 4 set wins.",
+  "ace": "If team score is 3-3 after Set 6, Set 7 ace decider. Repeat appearance allowed; ace is randomly selected in v1.0.0.",
+  "flow": [
+    "Start on matchup board",
+    "Press 진행하기",
+    "Play entire current set automatically until one player reaches 2 race wins",
+    "Return to updated matchup board",
+    "Press 진행하기 for next set"
+  ],
+  "ui": "Old right-side Race Broadcast Center removed; compact live team matchup summary shown instead.",
+  "averageStatsVisible": false
+}

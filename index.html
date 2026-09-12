@@ -6,7 +6,7 @@
   <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observer Avoid FM v8.185 — Destiny Merge Smooth</title>
+  <title>Observer Avoid FM v1.0.0 — Team League</title>
   <link rel="stylesheet" href="style.css">
 
   <style id="mapSelectStyle774">
@@ -101,12 +101,112 @@
     @media(max-width:1100px){.broadcast-center-814{width:285px;min-width:285px}.bc814-rank-strip{grid-template-columns:repeat(4,minmax(0,1fr));height:58px}.broadcast{padding-bottom:68px}}
   </style>
 
+
+  <style>
+    /* ==========================================================
+       v1.0.0 TEAM LEAGUE
+       ========================================================== */
+    #bc814RankStrip,.bc814-rank-strip,#teamScoreBoard,#personalScoreBoard{display:none!important}
+    .match-mode-box{display:none!important}
+    #startBtn,#restartBtn,#resultBtn,#eloBtn,#balanceBtn,#replayBtn,#seasonResetBtn{display:none!important}
+
+    .layout{grid-template-columns:minmax(0,1fr) 315px!important}
+    .league-side-100{
+      width:315px;min-width:315px;padding:14px!important;
+      display:flex;flex-direction:column;gap:10px;
+      background:linear-gradient(180deg,#061522 0%,#081d2d 100%)!important;
+      border-left:1px solid rgba(104,190,239,.22);
+    }
+    .league-side-head-100{padding:2px 3px 9px;border-bottom:1px solid rgba(120,200,245,.16)}
+    .league-side-head-100 span{font-size:9px;font-weight:1000;letter-spacing:.15em;color:#69d9ff}
+    .league-side-head-100 h2{margin:2px 0 0;font-size:18px}
+    .league-side-score-100{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;
+      padding:13px 10px;border:1px solid rgba(135,206,245,.18);border-radius:11px;background:rgba(3,14,24,.55)}
+    .league-side-team-100{text-align:center}
+    .league-side-team-100 span{display:block;font-size:10px;font-weight:900}
+    .league-side-team-100 strong{font-size:29px}
+    .league-side-team-100.a{color:#57baff}.league-side-team-100.b{color:#ff6b74}
+    .league-side-score-100 em{font-style:normal;color:#7e9caf;font-size:10px;font-weight:1000}
+    .league-side-current-100,.league-side-sets-100{border:1px solid rgba(135,206,245,.16);border-radius:11px;background:rgba(3,14,24,.45);padding:10px}
+    .league-side-current-100 small{display:block;color:#7497ae;font-size:9px;margin-bottom:6px}
+    .league-side-current-row-100{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
+    .league-side-current-row-100 b{font-size:12px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .league-side-current-row-100 i{font-style:normal;font-size:9px;color:#718ca0}
+    .league-side-heat-100{text-align:center;font-size:22px;font-weight:1000;margin-top:8px}
+    .league-side-set-row-100{display:grid;grid-template-columns:30px 1fr auto 1fr;gap:5px;align-items:center;
+      min-height:29px;border-bottom:1px solid rgba(255,255,255,.05);font-size:9px}
+    .league-side-set-row-100:last-child{border-bottom:none}
+    .league-side-set-row-100 b{font-size:10px}
+    .league-side-set-row-100 .a{color:#67c3ff}.league-side-set-row-100 .b{color:#ff7b83}
+    .league-side-set-row-100 .score{font-size:11px;font-weight:1000;color:#ffe875}
+
+    .league-board-overlay-100{
+      position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;
+      background:
+        radial-gradient(circle at 25% 25%,rgba(0,119,255,.13),transparent 32%),
+        radial-gradient(circle at 75% 25%,rgba(255,40,65,.12),transparent 32%),
+        rgba(1,7,13,.975);
+      padding:22px;overflow:auto;
+    }
+    .league-board-overlay-100.hidden{display:none}
+    .league-board-100{width:min(1180px,96vw);padding:22px;border:1px solid rgba(102,195,247,.35);
+      border-radius:15px;background:linear-gradient(180deg,rgba(7,24,39,.98),rgba(4,14,24,.99));
+      box-shadow:0 24px 80px rgba(0,0,0,.55)}
+    .league-board-title-100{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+    .league-board-title-100 span{font-size:10px;letter-spacing:.16em;font-weight:1000;color:#6bd9ff}
+    .league-board-title-100 h2{margin:2px 0;font-size:28px;letter-spacing:.04em}
+    .league-board-title-100 h2 em{font-style:normal;color:#718da0;font-size:18px;padding:0 9px}
+    .league-board-title-100>b{font-size:34px;color:#fff}
+
+    .league-rosters-100{display:grid;grid-template-columns:1fr 80px 1fr;gap:12px;align-items:stretch;margin-bottom:16px}
+    .league-roster-100{padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.11)}
+    .league-roster-100.team-a{background:linear-gradient(135deg,rgba(0,95,170,.23),rgba(4,21,35,.75))}
+    .league-roster-100.team-b{background:linear-gradient(225deg,rgba(175,25,45,.22),rgba(4,21,35,.75))}
+    .league-roster-100 h3{margin:0 0 8px;font-size:15px}
+    .league-roster-player-100{display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 7px;
+      border-bottom:1px solid rgba(255,255,255,.055);font-size:11px}
+    .league-roster-player-100:last-child{border-bottom:none}
+    .league-roster-player-100 b{font-size:11px}
+    .team-a .league-roster-player-100 b{color:#65c5ff}
+    .team-b .league-roster-player-100 b{color:#ff7780}
+    .league-vs-100{display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:1000;color:#a9bdca}
+
+    .league-schedule-wrap-100{border:1px solid rgba(103,195,245,.20);border-radius:12px;overflow:hidden}
+    .league-schedule-head-100{display:flex;justify-content:space-between;gap:15px;padding:10px 12px;background:rgba(7,36,57,.75)}
+    .league-schedule-head-100 b{font-size:14px}.league-schedule-head-100 span{font-size:9px;color:#8ca9bc}
+    .league-schedule-100{display:flex;flex-direction:column}
+    .league-schedule-row-100{display:grid;grid-template-columns:70px 1fr 38px 1fr 95px;align-items:center;min-height:42px;
+      border-top:1px solid rgba(255,255,255,.06);font-size:11px}
+    .league-schedule-row-100>span,.league-schedule-row-100>b{padding:0 10px}
+    .league-schedule-row-100 .set{font-weight:1000;color:#aec5d3}
+    .league-schedule-row-100 .a{color:#67c6ff;font-weight:900}
+    .league-schedule-row-100 .b{color:#ff7d85;font-weight:900}
+    .league-schedule-row-100 .vs{text-align:center;color:#718b9d;padding:0}
+    .league-schedule-row-100 .result{text-align:center;font-weight:1000;color:#ffe76a}
+    .league-schedule-row-100.current{background:rgba(45,136,195,.10);box-shadow:inset 3px 0 #50c4ff}
+    .league-schedule-row-100.done{background:rgba(255,255,255,.025)}
+    .league-schedule-row-100.ace{border:1px solid rgba(255,217,72,.22);background:rgba(111,82,0,.11)}
+    .league-board-message-100{text-align:center;min-height:24px;margin:13px 0 5px;color:#a7c4d7;font-size:12px;font-weight:800}
+    .league-proceed-100{display:block;margin:10px auto 0;min-width:230px;height:46px;border:1px solid #61c9ff!important;
+      border-radius:9px!important;background:linear-gradient(180deg,#0d6eae,#084b79)!important;color:#fff!important;
+      font-size:14px!important;font-weight:1000!important;box-shadow:0 8px 22px rgba(0,119,195,.22)}
+    .league-proceed-100:disabled{opacity:.45;cursor:not-allowed}
+
+    @media(max-width:980px){
+      .layout{grid-template-columns:1fr!important}
+      .league-side-100{width:auto;min-width:0}
+      .league-rosters-100{grid-template-columns:1fr}
+      .league-vs-100{height:30px}
+      .league-schedule-row-100{grid-template-columns:55px 1fr 28px 1fr 72px;font-size:9px}
+    }
+  </style>
+
 </head>
 <body>
   <header class="topbar">
     <div>
       <h1>Observer Avoid FM</h1>
-      <p>v8.183 · 9 MAP · DESTINY DEDICATED LOOP</p>
+      <p>v1.0.0 · TEAM LEAGUE</p>
     </div>
     
     <div class="controls">
@@ -116,14 +216,7 @@
         <span class="map-picker-label-774">맵 선택</span>
         <select id="mapSelect774" class="map-picker-select-774" aria-label="레이싱 맵 선택"></select>
       </div>
-      <div class="match-mode-box">
-        <span>경기 방식</span>
-        <select id="matchModeSelect" aria-label="경기 방식">
-          <option value="individual">8인 개인전</option>
-          <option value="team">팀전 4 vs 4</option>
-        </select>
-      </div>
-      <button id="startBtn">LIVE 시작</button>
+<button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
       <button id="resultBtn">경기 통계</button> <button id="eloBtn" class="secondaryBtn">ELO 랭킹</button> <button id="balanceBtn" class="secondaryBtn">밸런스 테스트</button> <button id="replayBtn" class="secondaryBtn">리플레이</button>
       <button id="seasonResetBtn">시즌 초기화</button>
@@ -134,7 +227,7 @@
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v8.183 · 9 MAP · DESTINY DEDICATED LOOP</span>
+        <span id="cameraLabel">v1.0.0 · TEAM LEAGUE</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <select id="povSelect" class="focus-mode-btn" title="AI 선수 POV"><option value="-1">POV: OFF</option></select>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
@@ -150,38 +243,52 @@
       <div id="bc814RankStrip" class="bc814-rank-strip"></div>
     </section>
 
-    <aside class="ranking broadcast-center-814">
-      <div class="bc814-head">
-        <div><span class="bc814-kicker">LIVE RACE CENTER</span><h2>레이스 중계센터</h2></div>
-        <span id="bc814Mode">개인전</span>
+    <aside class="ranking league-side-100">
+      <div class="league-side-head-100">
+        <span>TEAM LEAGUE</span>
+        <h2>현재 대진</h2>
       </div>
-
-      <section id="bc814TeamScore" class="bc814-team-score hidden"></section>
-
-      <section class="bc814-card">
-        <div class="bc814-section-head"><b>TOP 3</b><span>실시간 선두권</span></div>
-        <div id="bc814Top3" class="bc814-top3"></div>
-      </section>
-
-      <section class="bc814-card bc814-dynamic">
-        <div id="bc814EventsWrap">
-          <div class="bc814-section-head"><b>LIVE EVENT</b><span>최근 경기 흐름</span></div>
-          <div id="bc814Events" class="bc814-events"></div>
-        </div>
-        <div id="bc814Focus" class="bc814-focus hidden"></div>
-      </section>
-
-      <section class="bc814-card bc814-metrics">
-        <div class="bc814-section-head"><b>LIVE 지표</b><span>현재 경기</span></div>
-        <div id="bc814Metrics" class="bc814-metric-grid"></div>
-      </section>
-
-      <!-- legacy targets retained hidden so older helper functions cannot break -->
-      <div id="recordBoard" style="display:none"></div>
-      <div id="rankingList" style="display:none"></div>
-      <div id="liveRatingList" style="display:none"></div>
+      <div id="leagueSideScore100" class="league-side-score-100"></div>
+      <div id="leagueSideCurrent100" class="league-side-current-100"></div>
+      <div id="leagueSideSets100" class="league-side-sets-100"></div>
     </aside>
   </main>
+
+
+  <div id="leagueBoard100" class="league-board-overlay-100">
+    <div class="league-board-100">
+      <div class="league-board-title-100">
+        <div>
+          <span>OBSERVER FM · TEAM LEAGUE</span>
+          <h2>A TEAM <em>VS</em> B TEAM</h2>
+        </div>
+        <b id="leagueBoardScore100">0 : 0</b>
+      </div>
+
+      <div class="league-rosters-100">
+        <section class="league-roster-100 team-a">
+          <h3>A TEAM</h3>
+          <div id="leagueRosterA100"></div>
+        </section>
+        <div class="league-vs-100">VS</div>
+        <section class="league-roster-100 team-b">
+          <h3>B TEAM</h3>
+          <div id="leagueRosterB100"></div>
+        </section>
+      </div>
+
+      <section class="league-schedule-wrap-100">
+        <div class="league-schedule-head-100">
+          <b>대진표</b>
+          <span>1~6세트 중복 출전 없음 · 세트별 2선승 · 3:3 시 에이스 결정전</span>
+        </div>
+        <div id="leagueSchedule100" class="league-schedule-100"></div>
+      </section>
+
+      <div id="leagueBoardMessage100" class="league-board-message-100"></div>
+      <button id="leagueProceed100" class="league-proceed-100" type="button">1세트 진행하기</button>
+    </div>
+  </div>
 
   <div id="eloPanel" class="overlay hidden"><div class="modalCard elo-card"><button id="eloClose" class="closeBtn">×</button>
   <div class="elo-title"><div><span>ELO POWER RANKING</span><h2>ELO 랭킹</h2></div><small>평균순위 최우선 · 전체 누적 경기 데이터</small></div>
@@ -232,7 +339,7 @@
         </div>
       </section>
 
-      <div class="qa-final-strip">v8.183 · 9 MAP · DESTINY DEDICATED LOOP</div>
+      <div class="qa-final-strip">v1.0.0 · TEAM LEAGUE</div>
       <div class="highlight-title">선수 경기 평점</div>
       <div id="matchRatings" class="match-ratings"></div>
       <div class="highlight-title">경기 분석 리포트</div>
@@ -318,6 +425,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=8.185-destiny-merge-smooth"></script>
+  <script src="game.js?v=1.0.0-team-league"></script>
 </body>
 </html>
