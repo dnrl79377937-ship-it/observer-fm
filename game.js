@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.184";
+  const BUILD_ID = "v8.185";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4755,7 +4755,11 @@ function calibratedFastCorridor79(si){
       destinyPath813(leader);
       const cq=destinyPoint813(leader,Math.max(0,Number(leader._dgProg813)||0));
       const targetY=cq.y; // ignore lateral dodge movement for camera composition
-      smoothCamera665(dt,centerX,targetY);
+      const total185=Math.max(1,leader._dgSegs813?.total||1);
+      const frac185=(Number(leader._dgProg813)||0)/total185;
+      // Final merge has the strongest direction change: damp camera only there.
+      const camDt185=frac185>.84?dt*.72:dt;
+      smoothCamera665(camDt185,centerX,targetY);
       camX=centerX;
       return;
     }
@@ -7340,7 +7344,7 @@ applyMapSet776();
       // v8.184: round hard waypoint corners first, then use moderate arc sampling.
       // This removes the visible "tiny stop / snap" at each polyline corner.
       const smoothPts=smoothDestinyWaypoints184(pts);
-      const dense=densifyLine772(smoothPts,.72);
+      const dense=densifyLine772(smoothPts,.60);
       const segs813=[];let total=0;
       for(let i=0;i<dense.length-1;i++){
         const a=dense[i],b=dense[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
@@ -7399,6 +7403,32 @@ applyMapSet776();
     const t=Math.max(0,Math.min(1,(pr-s.start)/s.L));
     return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy,segIndex:idx};
   }
+
+  function destinyMergeEase185(p,progress,total,targetOff){
+    if(!p||!p._dgSegs813?.length)return targetOff;
+    const frac=Math.max(0,Math.min(1,progress/Math.max(1,total)));
+
+    // Three merge zones:
+    // lower split merge, upper split merge, and final approach to GOAL.
+    // Start recentering a little BEFORE each neck so there is no one-frame snap.
+    const zones=[
+      [.285,.335],  // first merge
+      [.590,.645],  // second merge
+      [.885,.955]   // final merge -> 12 o'clock GOAL
+    ];
+
+    let scale=1;
+    for(const [a,b] of zones){
+      if(frac>=a&&frac<=b){
+        const t=(frac-a)/Math.max(.0001,b-a);
+        // smoothstep 1 -> 0
+        const s=t*t*(3-2*t);
+        scale=Math.min(scale,1-s);
+      }
+    }
+    return targetOff*scale;
+  }
+
   function advanceDestinySafe818(p,distance,targetOff=0,mode="NORMAL"){
     if(!p||currentMap770().id!=='triple_diamond')return false;
     destinyPath813(p);
@@ -7411,17 +7441,24 @@ applyMapSet776();
     const q=destinyPoint813(p,next);
     const nx=-q.uy,ny=q.ux;
 
-    // Faster racing line: normal driving hugs the safe inside bias,
-    // while EVADE may temporarily use more width without touching exterior terrain.
     const maxLane=mode==="EVADE"?2.45:mode==="REJOIN"?1.55:2.05;
     if(mode!=="EVADE"&&p._raceState720)p._raceState720._dgEvadeLane182=NaN;
-    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
+
+    // v8.185: start moving toward the center BEFORE a branch merge.
+    const easedTarget=destinyMergeEase185(p,next,total,Number(targetOff)||0);
+    const wanted=Math.max(-maxLane,Math.min(maxLane,easedTarget));
     const prev=Number(p._dgLaneOff818)||0;
 
-    // v8.184: physical lateral steering rate limit.
-    // Lane changes remain responsive, but they can never jump sideways in one sim tick.
+    const frac185=next/Math.max(1,total);
+    const nearMerge185=
+      (frac185>.285&&frac185<.335)||
+      (frac185>.590&&frac185<.645)||
+      (frac185>.885&&frac185<.955);
+
+    // Near merge points use an even smaller lateral step to remove the last tiny hitch.
     const rawDelta=wanted-prev;
-    const maxDelta=Math.max(.035,Math.min(.085,(Number(distance)||0)*.24));
+    const baseDelta=Math.max(.030,Math.min(.078,(Number(distance)||0)*.22));
+    const maxDelta=nearMerge185?Math.min(.046,baseDelta):baseDelta;
     const delta=Math.max(-maxDelta,Math.min(maxDelta,rawDelta));
     let lane=prev+delta;
 
@@ -12995,10 +13032,11 @@ function seasonCardHtml(p){
       },
       shared1:[M1,[89.0,67],J2],
       branch2:{
-        left:[J2,[78,57],[68,52],[60,46],[57,39],[61,32],[70,27],[80,22],M2],
-        right:[J2,[100,57],[110,52],[118,46],[121,39],[117,32],[108,27],[98,22],M2]
+        // v8.185: enter the common neck earlier and with shallower angles.
+        left:[J2,[78,57],[68,52],[60,46],[58,40],[62,34],[71,28],[80,23],[85,20],M2],
+        right:[J2,[100,57],[110,52],[118,46],[120,40],[116,34],[107,28],[98,23],[93,20],M2]
       },
-      shared2:[M2,[89.0,14],[89.0,10],[89.0,5.8]]
+      shared2:[M2,[89.0,16.0],[89.0,12.0],[89.0,8.5],[89.0,5.8]]
     };
     m.destinyRoads813=[
       ...m.destinyTopology815.startRoads,
@@ -13195,6 +13233,20 @@ function seasonCardHtml(p){
   }
   applyPatch8184();
 
+
+  function applyPatch8185(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m._destinyPathCache8181=Object.create(null); // topology changed: rebuild cache
+    m.destinyMergePreCenter185=true;
+    m.destinyMergeLaneRate185=.046;
+    m.destinyFinalNeckExtended185=true;
+    m.destinyFinalCameraDamp185=true;
+    m.racingLineMode772='destiny-merge-smooth-v8.185';
+    m.qaDestiny8185=true;
+  }
+  applyPatch8185();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -13224,6 +13276,7 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="dedicated-smooth-motion")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny8185||!td?.destinyMergePreCenter185||!td?.destinyFinalNeckExtended185||!td?.destinyFinalCameraDamp185)issues.push("데스티니8185");
       if(!td?.qaDestiny8184||!td?.destinyRoundedPath184||!td?.destinyEvadePlanHold184||!td?.destinyCameraCenterlineY184||!td?.destinyTelemetry25Hz184)issues.push("데스티니8184");
       if(!td?.qaDestiny8183||!td?.destinyDedicatedUpdateLoop183||!td?.destinyNoLegacyPlanner183||!td?.destinySingleInterpolation183||!td?.destinyNoDoubleCorrection183)issues.push("데스티니8183");
       if(!td?.qaDestiny8182||!td?.destinyDedicatedAvoidAi182||!td?.destinyThreatPersonalPath182||!td?.destinyThreeLaneDecision182||!td?.destinyNoGenericEvadeCandidates182||!td?.destinyRenderSmoothing182)issues.push("데스티니8182");
