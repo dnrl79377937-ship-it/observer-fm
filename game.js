@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.0.9";
+  const BUILD_ID = "v1.1.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8448,13 +8448,13 @@ applyMapSet776();
     const startBoost=startAiBoost816(p,now);
 
     // Emergency scan stays immediate but is limited to a small local bucket.
-    const close=localObservers723(p,startBoost?6.4:5.1);
+    const close=localObservers723(p,startBoost?7.0:5.8);
     for(const o of close){
       const rx=o.x-p.x,ry=o.y-p.y,dist=Math.hypot(rx,ry);
       const f=rx*frame.ux+ry*frame.uy;
       const l=rx*(-frame.uy)+ry*frame.ux;
-      if(dist<(startBoost?2.80:2.45) ||
-         (f>-.25&&f<(startBoost?5.2:4.05)&&Math.abs(l)<2.15)){
+      if(dist<(startBoost?3.20:2.85) ||
+         (f>-.35&&f<(startBoost?6.2:5.0)&&Math.abs(l)<2.55)){
         return {o,t:.12,miss:dist,dist,rx,ry,forward:f,lateral:l,
           minSep:dist,minH:.12,frontBlock:true,emergency:true,source722:"destiny-close182"};
       }
@@ -8537,7 +8537,7 @@ applyMapSet776();
     // Only three legal choices: inside/current lane/other safe lane.
     // No backcon, stop, cross-road chord or global-spline candidate evaluation.
     const current=Math.max(-2.15,Math.min(2.15,Number(p._dgLaneOff818)||0));
-    const opts=[-2.05,0,2.05];
+    const opts=[-2.65,-1.8,0,1.8,2.65];
 
     let best=null;
     for(const off of opts){
@@ -8660,6 +8660,114 @@ applyMapSet776();
     return Math.max(-3.2,Math.min(3.2,off));
   }
 
+
+  function hardCloseThreat110(p,now){
+    if(!p||safeAt(p.x,p.y))return null;
+
+    const prog=Number.isFinite(p._splineProg720)
+      ? p._splineProg720
+      : nearestSplineProgress720(p.x,p.y);
+    const frame=splinePointAt720(prog);
+
+    // Very cheap local scan, done every tick.
+    const near=localObservers723(p,6.6);
+    let best=null,bestScore=Infinity;
+
+    for(const o of near){
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const dist=Math.hypot(rx,ry);
+      const forward=rx*frame.ux+ry*frame.uy;
+      const lateral=rx*(-frame.uy)+ry*frame.ux;
+
+      // Anything close and in/near the forward corridor is a guaranteed threat.
+      const direct =
+        dist<3.35 ||
+        (forward>-.55&&forward<5.8&&Math.abs(lateral)<2.85);
+
+      if(!direct)continue;
+
+      const ovx=Number(o.vx)||0,ovy=Number(o.vy)||0;
+      let minSep=dist,minH=0;
+      for(const h of [.12,.24,.40,.58]){
+        const q=splinePointAt720(
+          Math.min(RACING_SPLINE_SEGS_720.total,prog+Math.max(6.5,p.speed||9.7)*h)
+        );
+        const d=Math.hypot(q.x-(o.x+ovx*h),q.y-(o.y+ovy*h));
+        if(d<minSep){minSep=d;minH=h;}
+      }
+
+      const score=minSep*.6+Math.max(0,forward)*.05+dist*.03;
+      if(score<bestScore){
+        bestScore=score;
+        best={
+          o,dist,forward,lateral,minSep,minH,
+          frontBlock:true,
+          emergency:true,
+          sparse:near.length<=3,
+          source722:"hard-close110"
+        };
+      }
+    }
+    return best;
+  }
+
+  function chooseHardCloseDodge110(p,now,threat){
+    const prog=Number.isFinite(p._splineProg720)
+      ? p._splineProg720
+      : nearestSplineProgress720(p.x,p.y);
+
+    const frame=splinePointAt720(prog);
+    const nearby=localObservers723(p,9.8);
+
+    // Wide candidate set. Survival has near-total priority over line efficiency.
+    const candidates=[-3.6,-3.0,-2.4,-1.6,0,1.6,2.4,3.0,3.6];
+    let best=null;
+
+    for(const off of candidates){
+      let risk=0,minClear=999;
+
+      for(const h of [.10,.22,.38,.56,.78]){
+        const q=splinePointAt720(
+          Math.min(RACING_SPLINE_SEGS_720.total,prog+Math.max(6.5,p.speed||9.7)*h)
+        );
+        const nx=-q.uy,ny=q.ux;
+        const x=q.x+nx*off,y=q.y+ny*off;
+
+        for(const o of nearby){
+          const ox=o.x+(Number(o.vx)||0)*h;
+          const oy=o.y+(Number(o.vy)||0)*h;
+          const d=Math.hypot(x-ox,y-oy);
+          minClear=Math.min(minClear,d);
+          if(d<5.8){
+            const w=(5.8-d)/5.8;
+            risk+=w*w*(1.45-h*.25);
+          }
+        }
+      }
+
+      // Almost no penalty for taking a wide line.
+      let score=risk*28 + Math.max(0,2.8-minClear)*24 + Math.abs(off)*.012;
+
+      // If the obstacle is on one side, strongly prefer the opposite side.
+      const preferred = threat?.lateral>=0 ? -1 : 1;
+      if(Math.sign(off)===preferred)score-=.35;
+
+      if(!best||score<best.score)best={off,score,minClear};
+    }
+
+    if(!best){
+      const side=threat?.lateral>=0?-1:1;
+      best={off:side*3.0,minClear:3.0,score:0};
+    }
+
+    return {
+      kind:"hard-close-dodge110",
+      laneOffset:best.off,
+      speedMul:.84,
+      minClear:best.minClear
+    };
+  }
+
   function survivalThreat109(p,now){
     if(!p||safeAt(p.x,p.y))return null;
 
@@ -8669,7 +8777,7 @@ applyMapSet776();
     const frame=splinePointAt720(prog);
 
     // Sparse situations should be EASY to read, not harder.
-    const nearby=localObservers723(p,11.5);
+    const nearby=localObservers723(p,13.5);
     if(!nearby.length)return null;
 
     let best=null,bestScore=Infinity;
@@ -8679,21 +8787,21 @@ applyMapSet776();
       const lateral=rx*(-frame.uy)+ry*frame.ux;
       const dist=Math.hypot(rx,ry);
 
-      if(forward<-1.0||forward>9.8||Math.abs(lateral)>4.1)continue;
+      if(forward<-1.2||forward>11.2||Math.abs(lateral)>4.8)continue;
 
       const ovx=Number(o.vx)||0,ovy=Number(o.vy)||0;
       let minSep=dist,minH=0;
-      for(const h of [.20,.42,.68,.96]){
+      for(const h of [.16,.34,.56,.82,1.08]){
         const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+Math.max(6.5,p.speed||9.7)*h));
         const d=Math.hypot(q.x-(o.x+ovx*h),q.y-(o.y+ovy*h));
         if(d<minSep){minSep=d;minH=h;}
       }
 
       const sparse=nearby.length<=3;
-      const front=forward>-.35&&forward<(sparse?7.0:5.8)&&Math.abs(lateral)<(sparse?2.9:2.45);
-      const emergency=dist<(sparse?3.25:2.65) ||
-        (front&&dist<(sparse?5.0:4.25)) ||
-        (minSep<(sparse?2.10:1.70)&&minH<.48);
+      const front=forward>-.45&&forward<(sparse?8.5:6.8)&&Math.abs(lateral)<(sparse?3.3:2.8);
+      const emergency=dist<(sparse?3.65:2.95) ||
+        (front&&dist<(sparse?6.0:4.9)) ||
+        (minSep<(sparse?2.45:1.95)&&minH<.58);
 
       const credible=emergency ||
         (minSep<(sparse?3.35:2.95)&&dist<(sparse?10.8:9.8));
@@ -8765,7 +8873,10 @@ applyMapSet776();
     if(currentMap770().id==='triple_diamond')return destinyThreat182(p,now);
     if(!p || safeAt(p.x,p.y)) return null;
 
-    // v1.0.9: survival-first pre-read has priority over racing-line optimization.
+    // v1.1.0: obvious nearby danger is deterministic, not probabilistic.
+    const hard110=hardCloseThreat110(p,now);
+    if(hard110)return hard110;
+
     const survival109=survivalThreat109(p,now);
     if(survival109)return survival109;
 
@@ -8944,6 +9055,10 @@ applyMapSet776();
   function chooseEvadeAction720(p,now,threat){
     if(currentMap770().id==='triple_diamond')return chooseDestinyEvade182(p,now,threat);
 
+    if(threat?.source722==="hard-close110"){
+      return chooseHardCloseDodge110(p,now,threat);
+    }
+
     if(threat?.source722==="survival109"||threat?.source722==="survival-sparse109"){
       return chooseSurvivalDodge109(p,now,threat);
     }
@@ -9074,7 +9189,11 @@ applyMapSet776();
     const choice=chooseEvadeAction720(p,now,threat);
       if(Number.isFinite(choice?.laneOffset)){
         p.desiredOffset=choice.laneOffset;
-        p._survivalOverrideUntil109=now+(threat?.emergency?620:460);
+        p._survivalOverrideUntil109=now+(threat?.source722==="hard-close110"?900:(threat?.emergency?720:520));
+        if(threat?.source722==="hard-close110"){
+          p._hardDodgeLane110=plan?.laneOffset ?? action?.laneOffset ?? p.desiredOffset;
+          p._hardDodgeUntil110=now+900;
+        }
       }
     if(currentMap770().id==='triple_diamond'&&choice?.laneOffset!=null){
       st._dgEvadeLane182=choice.laneOffset;
@@ -10440,7 +10559,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
     // v5.17 debug HUD data uses the actual final movement vector.
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
-    if(now<(p._survivalOverrideUntil109||0)&&Number.isFinite(p.desiredOffset)){
+    if(now<(p._hardDodgeUntil110||0)&&Number.isFinite(p._hardDodgeLane110)){
+      targetOff=p._hardDodgeLane110;
+      p.desiredOffset=p._hardDodgeLane110;
+    }else if(now<(p._survivalOverrideUntil109||0)&&Number.isFinite(p.desiredOffset)){
       targetOff=p.desiredOffset;
     }
     const preMoveX719=p.x, preMoveY719=p.y;
@@ -14240,6 +14362,18 @@ function seasonCardHtml(p){
     };
   }
   applyPatch109();
+
+
+  function applyPatch110(){
+    window.__OBSERVER_FM_V110__={
+      targetSurvivalMultiplier:"3x-5x",
+      deterministicCloseThreat:true,
+      hardCloseEveryTick:true,
+      widerEmergencyDodge:true,
+      survivalOverInsideLine:true
+    };
+  }
+  applyPatch110();
 
   function v36SelfAudit(){
     const issues=[];
