@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.17";
+  const BUILD_ID = "v8.171";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -559,8 +559,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const dgStartIndex813=(map810.id==='triple_diamond')
         ? ((i < Math.ceil(activeSourceIndexes.length/2)) ? 0 : 1) : -1;
       const dgChoices813=(map810.id==='triple_diamond')
-        ? [Math.random()<(map810.routeChoiceProbability813??.5)?-1:1,
-           Math.random()<(map810.routeChoiceProbability813??.5)?-1:1]
+        ? [
+            Math.random()<(map810.routeChoiceProbability813??.5)?-1:1, // lower split
+            Math.random()<(map810.routeChoiceProbability813??.5)?-1:1  // upper split, independent re-choice
+          ]
         : null;
       const laneSig=laneSignatures[i];
       const name=names[src];
@@ -6502,11 +6504,15 @@ applyMapSet776();
     const m=currentMap770();
     if(m.id==='triple_diamond'){
       destinyPath813(p);
-      if(mode!=='NORMAL' && !mapRoadSegment789(m,[p.x,p.y],[t.x,t.y],-.70)){
-        const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
-        const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+(mode==='EVADE'?2.1:2.8)));
+      const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
+      const look=mode==='NORMAL'?1.9:(mode==='EVADE'?2.1:2.4);
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+look));
+
+      // Any tactical target outside the selected branch corridor is rejected before movement.
+      if(!mapRoadSegment789(m,[p.x,p.y],[t.x,t.y],-.20) ||
+         !mapCourseMask771(m,t.x,t.y,-.05)){
         p._noChordGuards795=(p._noChordGuards795||0)+1;
-        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-destiny815'};
+        return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-destiny-hard8171'};
       }
       return t;
     }
@@ -7259,50 +7265,87 @@ applyMapSet776();
   function destinyPath813(p){
     const m=currentMap770();
     if(m.id!=='triple_diamond')return null;
-    if(Array.isArray(p?._dgPath813)&&p._dgPath813.length>4)return p._dgPath813;
-    if(!Array.isArray(p?._dgChoices813))p._dgChoices813=[
-      Math.random()<(m.routeChoiceProbability813??.5)?-1:1,
-      Math.random()<(m.routeChoiceProbability813??.5)?-1:1
-    ];
+
+    if(!Array.isArray(p._dgChoices813) || p._dgChoices813.length!==2){
+      p._dgChoices813=[
+        Math.random()<(m.routeChoiceProbability813??.5)?-1:1,
+        Math.random()<(m.routeChoiceProbability813??.5)?-1:1
+      ];
+    }
+
     const topo=m.destinyTopology815;
     if(!topo)return null;
+
     const si=(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813===1)?1:0;
+    const signature=`${si}:${p._dgChoices813[0]}:${p._dgChoices813[1]}`;
+    if(Array.isArray(p._dgPath813)&&p._dgPath813.length>4&&p._dgPathSig817===signature){
+      return p._dgPath813;
+    }
+
     const pts=[];
     const add=(arr,skipFirst=false)=>{
       if(!Array.isArray(arr))return;
       arr.forEach((q,i)=>{if(skipFirst&&i===0)return;pts.push([q[0],q[1]]);});
     };
+
     add(topo.startRoads[si]);
     add(topo.shared0,true);
+
+    // branch 1 is locked once chosen
     add(p._dgChoices813[0]<0?topo.branch1.left:topo.branch1.right,true);
     add(topo.shared1,true);
+
+    // branch 2 is also independently chosen once and locked
     add(p._dgChoices813[1]<0?topo.branch2.left:topo.branch2.right,true);
     add(topo.shared2,true);
 
-    const dense=densifyLine772(pts,.34);
+    const dense=densifyLine772(pts,.24);
     const segs813=[];let total=0;
     for(let i=0;i<dense.length-1;i++){
       const a=dense[i],b=dense[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
-      segs813.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});total+=L;
+      segs813.push({a,b,dx,dy,L,ux:dx/L,uy:dy/L,start:total});
+      total+=L;
     }
     segs813.total=total;
-    p._dgPath813=dense;p._dgSegs813=segs813;
+    p._dgPath813=dense;
+    p._dgSegs813=segs813;
+    p._dgPathSig817=signature;
     p._dgProg813=Math.max(0,Math.min(total,Number(p._dgProg813)||0));
     return dense;
   }
-
   function destinyNearest813(p,x,y,hint=NaN){
     destinyPath813(p);
-    const ss=p._dgSegs813||[];if(!ss.length)return 0;
-    let bestD=Infinity,bestP=0;
+    const ss=p._dgSegs813||[];
+    if(!ss.length)return 0;
+
+    const old=Number.isFinite(hint)?Math.max(0,hint):0;
+    const total=ss.total||0;
+
+    // Only inspect a forward-local window around current progress so another branch
+    // cannot become the "nearest" path after the split.
+    const backLimit=Math.max(0,old-5.0);
+    const fwdLimit=Math.min(total,old+18.0);
+
+    let bestD=Infinity,bestP=old;
     for(const s of ss){
+      const segEnd=s.start+s.L;
+      if(segEnd<backLimit||s.start>fwdLimit)continue;
       const den=s.L*s.L||1;
       const t=Math.max(0,Math.min(1,((x-s.a[0])*s.dx+(y-s.a[1])*s.dy)/den));
-      const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t,d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
-      if(d<bestD){bestD=d;bestP=s.start+s.L*t;}
+      const qx=s.a[0]+s.dx*t,qy=s.a[1]+s.dy*t;
+      const d=(x-qx)*(x-qx)+(y-qy)*(y-qy);
+      const pr=s.start+s.L*t;
+      if(d<bestD){
+        bestD=d;
+        bestP=pr;
+      }
     }
-    return Number.isFinite(hint)?Math.max(Math.min(hint,ss.total),bestP):bestP;
+
+    // Never permit a large backward snap and never jump far forward onto another loop.
+    bestP=Math.max(old-1.25,Math.min(old+10.0,bestP));
+    return Math.max(0,Math.min(total,bestP));
   }
+
   function destinyPoint813(p,progress){
     destinyPath813(p);
     const ss=p._dgSegs813||[];if(!ss.length)return {x:p.x,y:p.y,ux:0,uy:-1};
@@ -7312,16 +7355,24 @@ applyMapSet776();
     const t=Math.max(0,Math.min(1,(pr-s.start)/s.L));
     return {x:s.a[0]+s.dx*t,y:s.a[1]+s.dy*t,ux:s.ux,uy:s.uy};
   }
-
   function advanceDestinyPath815(p,distance){
     if(!p||!(distance>0))return false;
     destinyPath813(p);
     const total=Math.max(0,p._dgSegs813?.total||0);
     if(!total)return false;
-    const old=destinyNearest813(p,p.x,p.y,p._dgProg813);
-    const next=Math.min(total,Math.max(old,p._dgProg813||0)+distance);
+
+    const old=Math.max(0,Number(p._dgProg813)||0);
+    const projected=destinyNearest813(p,p.x,p.y,old);
+    const base=Math.max(old,projected);
+    const next=Math.min(total,base+distance);
     const q=destinyPoint813(p,next);
-    p.x=q.x;p.y=q.y;p._dgPrevProg815=Number(p._dgProg813)||0;p._dgProg813=next;
+
+    // v8.17 path lock: position is always written back to the selected branch centerline.
+    p.x=q.x;
+    p.y=q.y;
+    p._dgPrevProg815=old;
+    p._dgProg813=next;
+
     const frac=next/Math.max(1,total);
     p._splineProg720=frac*Math.max(1,RACING_SPLINE_SEGS_720.total||1);
     p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
@@ -7329,10 +7380,49 @@ applyMapSet776();
     p._lineOffset720=0;
     return true;
   }
+  function enforceDestinyRoad817(p){
+    if(!p||currentMap770().id!=='triple_diamond')return;
+    destinyPath813(p);
+    const old=Math.max(0,Number(p._dgProg813)||0);
+    const prog=destinyNearest813(p,p.x,p.y,old);
+    const q=destinyPoint813(p,prog);
+    const ss=p._dgSegs813||[];
+    if(!ss.length)return;
+
+    let seg=ss[ss.length-1];
+    for(const s of ss){
+      if(prog<=s.start+s.L){seg=s;break;}
+    }
+
+    const nx=-seg.uy, ny=seg.ux;
+    const dx=p.x-q.x,dy=p.y-q.y;
+    const lateral=dx*nx+dy*ny;
+
+    // Normal legal road width. A very small edge allowance remains so racers can
+    // skim the outermost road edge naturally without entering exterior terrain.
+    const baseHalf=4.55;
+    const edgeFlex=0.70;
+    const limit=baseHalf+edgeFlex;
+    const clamped=Math.max(-limit,Math.min(limit,lateral));
+
+    const cx=q.x+nx*clamped;
+    const cy=q.y+ny*clamped;
+    const outside=Math.abs(lateral)>limit || !mapCourseMask771(currentMap770(),p.x,p.y,-.05);
+
+    if(outside){
+      // Same-frame hard boundary: the rendered racer never occupies the exterior.
+      p.x=cx;p.y=cy;
+      p._dgProg813=Math.max(old,prog);
+      p._lineOffset720=clamped;
+      p._destinyHardBoundary8171=(p._destinyHardBoundary8171||0)+1;
+    }
+  }
+
 
   function syncDestinyProgress813(p){
     if(currentMap770().id!=='triple_diamond')return;
     destinyPath813(p);
+    enforceDestinyRoad817(p);
     p._dgPrevProg815=Number(p._dgProg813)||0;
     const prog=destinyNearest813(p,p.x,p.y,p._dgProg813);
     p._dgProg813=Math.max(p._dgProg813||0,prog);
@@ -7984,30 +8074,24 @@ applyMapSet776();
     }
     return st;
   }
-
   function rejoinTarget720(p,now){
     if(currentMap770().id==='triple_diamond'){
       destinyPath813(p);
-      const old=Number.isFinite(p._dgProg813)?p._dgProg813:0;
+      enforceDestinyRoad817(p);
+      const old=Math.max(0,Number(p._dgProg813)||0);
       const projected=destinyNearest813(p,p.x,p.y,old);
       const prog=Math.max(old,projected);
       p._dgProg813=prog;
-      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+3.3));
-      return {x:q.x,y:q.y,kind:"race720-rejoin-destiny813"};
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+2.4));
+      return {x:q.x,y:q.y,kind:"race720-rejoin-destiny817"};
     }
-    const ex=driverExecution720(p);
-    const old=Number.isFinite(p._splineProg720)?p._splineProg720:0;
-    const projected=nearestSplineProgressLocal734(p.x,p.y,old,36);
-    const base=Math.max(old,Number(p._splineFloor754)||0,projected);
-    const look=4.0+ex.rejoinSkill*2.8;
-    for(let d=look;d>=2.2;d-=.35){
-      const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,base+d));
-      const t={x:q.x,y:q.y,kind:"race720-rejoin"};
-      if(actualRoadTarget719(p,p.seg||0,t))return t;
-    }
-    const q=executedSplinePoint720(p,base);
+    const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+    const prog=Math.max(old,Number(p._splineFloor754)||0);
+    const look=currentMap770().optimizedSplineAuthority783?5.20:(currentMap770().strictRoadFollow778?2.35:8.0);
+    const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
     return {x:q.x,y:q.y,kind:"race720-rejoin"};
   }
+
 
   function syncNormalEntryOffset759(p){
     if(!p)return;
@@ -8080,16 +8164,16 @@ applyMapSet776();
     if(st.mode==="NORMAL")st.pendingThreatId=-1;
     return {st,threat:null};
   }
-
   function normalTarget720(p){
     if(currentMap770().id==='triple_diamond'){
       destinyPath813(p);
-      const old=Number.isFinite(p._dgProg813)?p._dgProg813:0;
+      enforceDestinyRoad817(p);
+      const old=Math.max(0,Number(p._dgProg813)||0);
       const projected=destinyNearest813(p,p.x,p.y,old);
       const prog=Math.max(old,projected);
       p._dgProg813=prog;
-      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+2.35));
-      return {x:q.x,y:q.y,kind:"race720-normal-destiny813"};
+      const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+1.9));
+      return {x:q.x,y:q.y,kind:"race720-normal-destiny817"};
     }
     const old=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
     const prog=Math.max(old,Number(p._splineFloor754)||0);
@@ -8097,6 +8181,7 @@ applyMapSet776();
     const q=executedSplinePoint720(p,Math.min(RACING_SPLINE_SEGS_720.total,prog+look));
     return {x:q.x,y:q.y,kind:"race720-normal"};
   }
+
 
   function strictLocalRoadTarget778(p,si,target){
     if(!target||!currentMap770().strictRoadFollow778||!segs.length)return target;
@@ -9174,6 +9259,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
       noTeleportGuard754(p,preMoveX719,preMoveY719,move,act754);
     }
 
+    // v8.171 Destiny Gate: exterior terrain is never a legal movement space.
+    // Clamp in the same simulation frame; this is a boundary, not a "leave and recover" mechanic.
+    if(currentMap770().id==='triple_diamond')enforceDestinyRoad817(p);
+
     // v7.80: only explicitly marked obstacle zones are physically non-drivable.
     enforceHardForbidden780(p,preMoveX719,preMoveY719);
 
@@ -9183,8 +9272,8 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const q897f=splinePointAt720(Math.max(0,Math.min(RACING_SPLINE_SEGS_720.total,Number(p._splineProg720)||0)));
       p.x=q897f.x; p.y=q897f.y; p._lineOffset720=0;
     }else{
-      // v7.89: far exterior wandering is not an AI route.
-      softOuterRecovery789(p,now);
+      // v8.171 Destiny uses a same-frame hard road boundary, never exterior recovery.
+      if(currentMap770().id!=='triple_diamond')softOuterRecovery789(p,now);
     }
 
     // v7.34: the final Racing Spline / EVADE engine already supplies legal targets.
@@ -9289,7 +9378,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const dgTotal815=destinyFinish815?Math.max(1,p._dgSegs813?.total||1):1;
     const dgFrac815=destinyFinish815?Math.max(0,Math.min(1,(Number(p._dgProg813)||0)/dgTotal815)):0;
     const finishGate775=destinyFinish815
-      ? (dgFrac815>=.985 && finishDx*finishDx+finishDy*finishDy<49.0)
+      ? (dgFrac815>=.992 && finishDx*finishDx+finishDy*finishDy<30.25)
       : (p.seg>=segs.length-1 && (finishAlong>=fs.L*0.88 || finishDx*finishDx+finishDy*finishDy<38.44));
     const finishEligible775=!lapRule775.lapRequired || !!p._lapArmed775;
 
@@ -12400,7 +12489,7 @@ function seasonCardHtml(p){
     m.miniCrop={x:0,y:0,w:178,h:178};
     m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
     m.start={x:89.05,y:165.8};
-    m.goal={x:89.1,y:5.8};
+    m.goal={x:89.0,y:5.8};
     m.safeZones={start:{x0:67.5,y0:160.5,x1:110.7,y1:171.8},goal:{x0:84.4,y0:1.8,x1:93.8,y1:10.0}};
     m.route770=[
       [80,165],[69,158],[58,149],[50,138],[55,128],[66,118],[78,111],[89,106],
@@ -12437,7 +12526,7 @@ function seasonCardHtml(p){
     m.qaDestinyGate811=true;
     m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
     m.start={x:89.05,y:165.8};
-    m.goal={x:89.1,y:5.8};
+    m.goal={x:89.0,y:5.8};
     m.strictRoadFollow778=true;
     m.roadFollowMode778='route-center-hard';
     m.strictNoChord795=true;
@@ -12462,7 +12551,7 @@ function seasonCardHtml(p){
     m.imageSize={w:1254,h:1254};
     m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
     m.start={x:89.05,y:165.8};
-    m.goal={x:89.1,y:5.8};
+    m.goal={x:89.0,y:5.8};
     m.safeZones={
       start:{x0:67.5,y0:160.5,x1:110.7,y1:171.8},
       goal:{x0:84.4,y0:1.8,x1:93.8,y1:10.0}
@@ -12506,7 +12595,7 @@ function seasonCardHtml(p){
     const m=MAP_DEFINITIONS_770.triple_diamond;
     if(!m)return;
     const S1=[72.2,165.8],S2=[105.9,165.8];
-    const M0=[89.05,131.0],J1=[89.05,113.4],M1=[89.05,82.8],J2=[89.05,60.0],M2=[89.05,18.7],G=[89.1,5.8];
+    const M0=[89.05,131.0],J1=[89.05,113.4],M1=[89.05,82.8],J2=[89.05,60.0],M2=[89.05,18.7],G=[89.0,5.8];
     m.destinyTopology815={
       startRoads:[
         [S1,[66,160],[61,153],[60,147],[64,141],[72,136],[81,132],M0],
@@ -12522,7 +12611,7 @@ function seasonCardHtml(p){
         left:[J2,[76,57],[64,53],[55,47],[51,40],[54,33],[64,27],[76,22],M2],
         right:[J2,[102,57],[114,53],[123,47],[127,40],[124,33],[114,27],[102,22],M2]
       },
-      shared2:[M2,[89.08,13],G]
+      shared2:[M2,[89.05,14.0],[89.08,9.5],G]
     };
     m.destinyRoads813=[
       ...m.destinyTopology815.startRoads,
@@ -12584,6 +12673,41 @@ function seasonCardHtml(p){
   }
   applyPatch816();
 
+
+  function applyPatch817PathLock(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.branchChoiceLocked817=true;
+    m.personalPathHardLock817=true;
+    m.outerRoadEscapeBlocked817=true;
+    m.finalGoalTopCenter817=true;
+    m.goal={x:89.0,y:5.8};
+    m.safeZones={...(m.safeZones||{}),goal:{x0:84.8,y0:1.8,x1:93.2,y1:10.2}};
+    m.roadFollowMode778='branch-road-hard-lock';
+    m.racingLineMode772='destiny-locked-branch-topgoal-v8.17';
+    m.qaDestinyPath817=true;
+  }
+  applyPatch817PathLock();
+
+
+  function applyPatch8171(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.routeChoiceProbability813=.50;
+    m.routeChoiceCount815=2;
+    m.branchChoiceScope8171='per-junction-segment';
+    m.branch2Independent8171=true;
+    m.exteriorNeverLegal8171=true;
+    m.edgeFlex8171=.70;
+    m.hardRoadHalfWidth8171=4.55;
+    m.roadFollowMode778='branch-hard-boundary';
+    m.racingLineMode772='destiny-per-junction-5050-hard-road-v8.171';
+    m.qaDestiny8171=true;
+  }
+  applyPatch8171();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -12613,6 +12737,8 @@ function seasonCardHtml(p){
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="branch-road-hard")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny8171||td.routeChoiceProbability813!==.50||td.routeChoiceCount815!==2||!td.branch2Independent8171||!td.exteriorNeverLegal8171)issues.push("데스티니8171");
+      if(!td?.qaDestinyPath817||!td?.branchChoiceLocked817||!td?.personalPathHardLock817||!td?.outerRoadEscapeBlocked817||!td?.finalGoalTopCenter817)issues.push("데스티니경로817");
       if(!td?.qaDestinyGate812||td?.id!=="triple_diamond"||!Array.isArray(td?.dualStarts810)||td.dualStarts810.length!==2)issues.push("데스티니게이트8113");
       if(td?.image!=="map_destiny_gate_8113.png?v=817-destiny-gate"||!td?.qaDestinyAsset817)issues.push("데스티니게이트이미지817");
       if(td?.lapRequired775!==false||td?.finishRule775!=="end-gate")issues.push("데스티니게이트완주8113");
