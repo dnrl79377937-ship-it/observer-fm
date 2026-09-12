@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.0.7";
+  const BUILD_ID = "v1.0.8";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -526,6 +526,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   let league100=null;
 
+
+  function neonDriftMapId108(){
+    const entries=Object.entries(MAP_DEFINITIONS_770||{});
+    for(const [id,m] of entries){
+      const nm=(m?.name||"").toLowerCase();
+      const en=(m?.en||"").toLowerCase();
+      if(id==="neon_city"||id==="neon_drift"||nm.includes("네온")||en.includes("neon"))return id;
+    }
+    // Defensive fallback: keep league usable even if map id is renamed later.
+    return MAP_POOL_770?.[0]?.id || null;
+  }
+
   function shuffle100(arr){
     const out=[...arr];
     for(let i=out.length-1;i>0;i--){
@@ -549,12 +561,33 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       ace:{A:null,B:null},
       results:[],
       winner:null,
-      // v1.0.3: one map is assigned to each SET in advance and shown on the bracket.
-      // Seven slots are prepared; Set 7 remains hidden/??? until a 3:3 tie activates it.
-      setMaps:shuffle100(MAP_POOL_770.map(m=>m.id)).slice(0,7),
+      bannedMaps:{A:null,B:null},
+      setMaps:[],
       mapHistory:[],
       currentMapId:null
     };
+
+    // v1.0.8 map draft:
+    // 9 maps total / each team bans 1 / Neon Drift cannot be banned.
+    // Set 1 is always Neon Drift. Remaining set maps are randomized.
+    const neon108=neonDriftMapId108();
+    const banPool108=shuffle100(MAP_POOL_770.map(m=>m.id).filter(id=>id!==neon108));
+
+    league100.bannedMaps.A=banPool108[0]??null;
+    league100.bannedMaps.B=banPool108.find(id=>id!==league100.bannedMaps.A)??banPool108[1]??null;
+
+    const available108=shuffle100(
+      MAP_POOL_770.map(m=>m.id).filter(id=>
+        id!==league100.bannedMaps.A &&
+        id!==league100.bannedMaps.B &&
+        id!==neon108
+      )
+    );
+
+    league100.setMaps=[
+      neon108,
+      ...available108.slice(0,6)
+    ];
     prepareLeaguePair100();
     renderLeagueBoard100();
     renderLeagueSide100();
@@ -615,6 +648,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       },
       results:league100.results.map(r=>({...r,score:{...r.score}})),
       winner:league100.winner,
+      bans:{
+        A:league100.bannedMaps?.A?{
+          id:league100.bannedMaps.A,
+          name:MAP_DEFINITIONS_770[league100.bannedMaps.A]?.name||league100.bannedMaps.A
+        }:null,
+        B:league100.bannedMaps?.B?{
+          id:league100.bannedMaps.B,
+          name:MAP_DEFINITIONS_770[league100.bannedMaps.B]?.name||league100.bannedMaps.B
+        }:null
+      },
       rules:{...LEAGUE_RULES_100}
     };
   }
@@ -638,6 +681,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const rosterB=document.getElementById("leagueRosterB100");
     const score=document.getElementById("leagueBoardScore100");
     const schedule=document.getElementById("leagueSchedule100");
+    const bans=document.getElementById("leagueBans100");
     const msg=document.getElementById("leagueBoardMessage100");
     const proceed=document.getElementById("leagueProceed100");
 
@@ -648,6 +692,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       `<div class="league-roster-player-100"><span>${i+1}</span><b>${names[idx]}</b></div>`
     ).join("");
     if(score)score.textContent=`${league100.teamScore.A} : ${league100.teamScore.B}`;
+
+    if(bans){
+      const banA=league100.bannedMaps?.A?(MAP_DEFINITIONS_770[league100.bannedMaps.A]?.name||league100.bannedMaps.A):"-";
+      const banB=league100.bannedMaps?.B?(MAP_DEFINITIONS_770[league100.bannedMaps.B]?.name||league100.bannedMaps.B):"-";
+      bans.innerHTML=`
+        <div class="league-ban-a-100"><em>A TEAM BAN</em><strong>${banA}</strong></div>
+        <div class="league-ban-b-100"><em>B TEAM BAN</em><strong>${banB}</strong></div>`;
+    }
 
     if(schedule){
       const rows=[];
@@ -14004,6 +14056,18 @@ function seasonCardHtml(p){
     };
   }
   applyPatch107();
+
+
+  function applyPatch108(){
+    const neon=neonDriftMapId108();
+    window.__OBSERVER_FM_V108__={
+      mapBanEnabled:true,
+      neonBanProtected:true,
+      set1NeonFixed:true,
+      neonMapId:neon
+    };
+  }
+  applyPatch108();
 
   function v36SelfAudit(){
     const issues=[];
