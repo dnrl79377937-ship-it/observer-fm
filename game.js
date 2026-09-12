@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.1.1";
+  const BUILD_ID = "v1.1.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1583,7 +1583,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     prevCamX730=camX; prevCamY730=camY;
     renderAlpha730=1;
-    players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;p._dgRenderX182=p.x;p._dgRenderY182=p.y;});
+    players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;p._dgRenderX182=p.x;p._dgRenderY182=p.y;p._actualLane113=0;});
     observers.forEach(o=>{o.simPrevX=o.x;o.simPrevY=o.y;});
     roundTransitioning=false;
     startBtn.textContent=`${currentRound}R 시작`;
@@ -8260,6 +8260,69 @@ applyMapSet776();
     return {...q,executionOffset720:0};
   }
 
+
+  function advanceOnSplineLane113(p,distance,targetOff,mode="NORMAL"){
+    if(!p||!(distance>0))return false;
+
+    const total=Math.max(1,RACING_SPLINE_SEGS_720.total||1);
+    let prog=Number.isFinite(p._splineProg720)
+      ? p._splineProg720
+      : nearestSplineProgress720(p.x,p.y);
+
+    prog=Math.max(Number(p._splineFloor754)||0,prog);
+    const next=Math.min(total,prog+distance);
+    const q=splinePointAt720(next);
+    const nx=-q.uy,ny=q.ux;
+
+    const segIndex=Math.max(0,Math.min(widths.length-1,p.seg||0));
+    const roadHalf=Math.max(1.75,(widths[segIndex]||3.5)*.78);
+
+    // Survival may use a wider share of the road than ordinary racing.
+    const maxLane=Math.min(4.0,roadHalf);
+    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
+    const prev=Number(p._actualLane113);
+    const current=Number.isFinite(prev)
+      ? prev
+      : (Number(p._lineOffset720)||0);
+
+    // Natural steering rate: emergency faster, normal variations slower.
+    const emergency=mode==="EVADE"||
+      (gameNow()<(p._hardDodgeUntil110||0))||
+      (gameNow()<(p._survivalOverrideUntil109||0));
+
+    const maxDelta=emergency
+      ? Math.max(.10,Math.min(.24,distance*.72))
+      : Math.max(.045,Math.min(.11,distance*.34));
+
+    let lane=current+Math.max(-maxDelta,Math.min(maxDelta,wanted-current));
+    lane=Math.max(-maxLane,Math.min(maxLane,lane));
+
+    // Try requested lane, then gracefully shrink toward center if the map geometry
+    // says that exact offset is outside legal road. Never snap back to centerline.
+    let x=q.x+nx*lane,y=q.y+ny*lane;
+    if(!courseContainsPoint(x,y,0)){
+      let found=false;
+      for(const f of [.82,.64,.46,.28,0]){
+        const test=lane*f;
+        const tx=q.x+nx*test,ty=q.y+ny*test;
+        if(courseContainsPoint(tx,ty,0)){
+          lane=test;x=tx;y=ty;found=true;break;
+        }
+      }
+      if(!found){lane=0;x=q.x;y=q.y;}
+    }
+
+    p.x=x;p.y=y;
+    p._actualLane113=lane;
+    p._lineOffset720=lane;
+    p._splineProg720=next;
+    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,next);
+
+    const frac=next/total;
+    p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
+    return true;
+  }
+
   function advanceOnSpline720(p,distance){
     if(!p || !(distance>0)) return false;
     if(currentMap770().id==='triple_diamond')return advanceDestinyPath815(p,distance);
@@ -8643,7 +8706,7 @@ applyMapSet776();
 
     // Mild independent wandering when no threat exists.
     const wave=Math.sin((now||0)*.00115+(p.sourceIndex??p.index??0)*2.1);
-    off+=wave*.48*ai.variation;
+    off+=wave*.72*ai.variation;
 
     // Rare deliberate variation: wider line / feint / short zigzag.
     if(!Number.isFinite(p._variantUntil109) || now>=p._variantUntil109){
@@ -8661,6 +8724,102 @@ applyMapSet776();
   }
 
 
+
+  function controlVariant112(p,now){
+    const ai=ensureAiPersonality109(p);
+
+    // Threat logic always cancels variants immediately.
+    if(now<(p._survivalOverrideUntil109||0) || now<(p._hardDodgeUntil110||0)){
+      p._variantMode112="none";
+      p._variantUntil112=0;
+      p._variantOffset112=0;
+      return 0;
+    }
+
+    if(!p._variantMode112)p._variantMode112="none";
+
+    if(now>=(p._variantUntil112||0)){
+      p._variantMode112="none";
+      p._variantOffset112=0;
+
+      // Low probability: roughly one brief variant every several seconds.
+      const roll=Math.random();
+      if(roll<.0075){
+        const modes=["zigzag","wide","hold-left","hold-right","feint"];
+        p._variantMode112=modes[Math.floor(Math.random()*modes.length)];
+        p._variantUntil112=now+480+Math.random()*900;
+
+        if(p._variantMode112==="wide")
+          p._variantOffset112=(Math.random()<.5?-1:1)*(1.8+Math.random()*1.2);
+        else if(p._variantMode112==="hold-left")
+          p._variantOffset112=-1.8-Math.random()*.7;
+        else if(p._variantMode112==="hold-right")
+          p._variantOffset112=1.8+Math.random()*.7;
+        else if(p._variantMode112==="feint")
+          p._variantOffset112=(Math.random()<.5?-1:1)*(1.2+Math.random()*.6);
+      }
+    }
+
+    switch(p._variantMode112){
+      case "zigzag":
+        return Math.sin(now*.0085+(p.index||0)*1.9)*1.65;
+      case "wide":
+      case "hold-left":
+      case "hold-right":
+        return p._variantOffset112||0;
+      case "feint":{
+        const remain=Math.max(0,(p._variantUntil112||0)-now);
+        const total=900;
+        const phase=1-Math.min(1,remain/total);
+        const sign=phase<.5?1:-.65;
+        return (p._variantOffset112||0)*sign;
+      }
+      default:
+        return 0;
+    }
+  }
+
+  function forwardSafetyField112(p,now){
+    if(!p||safeAt(p.x,p.y))return null;
+
+    const prog=Number.isFinite(p._splineProg720)
+      ? p._splineProg720
+      : nearestSplineProgress720(p.x,p.y);
+    const speed=Math.max(6.5,Number(p.speed)||9.7);
+
+    const nearby=localObservers723(p,12.5);
+    if(!nearby.length)return null;
+
+    // Evaluate five broad lanes. This is deliberately survival-biased.
+    const lanes=[-3.4,-2.0,0,2.0,3.4];
+    let best=null;
+
+    for(const lane of lanes){
+      let risk=0,minClear=999;
+      for(const h of [.12,.28,.48,.72,.98]){
+        const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+speed*h));
+        const nx=-q.uy,ny=q.ux;
+        const x=q.x+nx*lane,y=q.y+ny*lane;
+
+        for(const o of nearby){
+          const ox=o.x+(Number(o.vx)||0)*h;
+          const oy=o.y+(Number(o.vy)||0)*h;
+          const d=Math.hypot(x-ox,y-oy);
+          minClear=Math.min(minClear,d);
+          if(d<6.0){
+            const w=(6.0-d)/6.0;
+            risk+=w*w*(1.55-h*.22);
+          }
+        }
+      }
+
+      const score=risk*34 + Math.max(0,3.0-minClear)*30 + Math.abs(lane)*.01;
+      if(!best||score<best.score)best={lane,score,minClear};
+    }
+
+    return best;
+  }
+
   function hardCloseThreat110(p,now){
     if(!p||safeAt(p.x,p.y))return null;
 
@@ -8670,7 +8829,7 @@ applyMapSet776();
     const frame=splinePointAt720(prog);
 
     // Very cheap local scan, done every tick.
-    const near=localObservers723(p,6.6);
+    const near=localObservers723(p,8.2);
     let best=null,bestScore=Infinity;
 
     for(const o of near){
@@ -8681,8 +8840,8 @@ applyMapSet776();
 
       // Anything close and in/near the forward corridor is a guaranteed threat.
       const direct =
-        dist<3.35 ||
-        (forward>-.55&&forward<5.8&&Math.abs(lateral)<2.85);
+        dist<4.05 ||
+        (forward>-.70&&forward<7.2&&Math.abs(lateral)<3.35);
 
       if(!direct)continue;
 
@@ -8720,7 +8879,7 @@ applyMapSet776();
     const nearby=localObservers723(p,9.8);
 
     // Wide candidate set. Survival has near-total priority over line efficiency.
-    const candidates=[-3.6,-3.0,-2.4,-1.6,0,1.6,2.4,3.0,3.6];
+    const candidates=[-4.0,-3.4,-2.7,-1.8,0,1.8,2.7,3.4,4.0];
     let best=null;
 
     for(const off of candidates){
@@ -8746,11 +8905,15 @@ applyMapSet776();
       }
 
       // Almost no penalty for taking a wide line.
-      let score=risk*28 + Math.max(0,2.8-minClear)*24 + Math.abs(off)*.012;
+      let score=risk*34 + Math.max(0,3.0-minClear)*30 + Math.abs(off)*.010;
 
       // If the obstacle is on one side, strongly prefer the opposite side.
       const preferred = threat?.lateral>=0 ? -1 : 1;
-      if(Math.sign(off)===preferred)score-=.35;
+      if(Math.sign(off)===preferred)score-=.42;
+
+      // Break mirrored choices between the two racers.
+      const ai112=ensureAiPersonality109(p);
+      if(Math.sign(off)===ai112.dodgeBias)score-=.12;
 
       if(!best||score<best.score)best={off,score,minClear};
     }
@@ -8763,7 +8926,7 @@ applyMapSet776();
     return {
       kind:"hard-close-dodge110",
       laneOffset:best.off,
-      speedMul:.84,
+      speedMul:.78,
       minClear:best.minClear
     };
   }
@@ -8977,6 +9140,12 @@ applyMapSet776();
     const eta=Math.min(raw.t,raw.minH??raw.t);
 
     if(raw.emergency){
+      // v1.1.3: deterministic close danger is acted on immediately.
+      // Driver stats still influence non-emergency prediction/technique.
+      if(raw.source722==="hard-close110" || raw.dist<2.35){
+        if(st.pendingThreatId!==id){st._detectedAt749=now;noteThreatRead749(p,now);}
+        st.pendingThreatId=id;st.reactionReadyAt=now;return raw;
+      }
       if(raw.dist<1.20){
         if(st.pendingThreatId!==id){st._detectedAt749=now;noteThreatRead749(p,now);}
         st.pendingThreatId=id;st.reactionReadyAt=now;return raw;
@@ -9189,7 +9358,7 @@ applyMapSet776();
     const choice=chooseEvadeAction720(p,now,threat);
       if(Number.isFinite(choice?.laneOffset)){
         p.desiredOffset=choice.laneOffset;
-        p._survivalOverrideUntil109=now+(threat?.source722==="hard-close110"?900:(threat?.emergency?720:520));
+        p._survivalOverrideUntil109=now+(threat?.source722==="hard-close110"?1250:(threat?.emergency?900:620));
         if(threat?.source722==="hard-close110"){
           // v1.1.1: `choice` is the actual evade plan in this scope.
           // v1.1.0 incorrectly referenced undefined `plan` / `action`,
@@ -9197,7 +9366,7 @@ applyMapSet776();
           p._hardDodgeLane110=Number.isFinite(choice?.laneOffset)
             ? choice.laneOffset
             : p.desiredOffset;
-          p._hardDodgeUntil110=now+900;
+          p._hardDodgeUntil110=now+1250;
         }
       }
     if(currentMap770().id==='triple_diamond'&&choice?.laneOffset!=null){
@@ -9551,8 +9720,10 @@ function updateDestinyPlayer183(p,now,dt){
         // Calm racers return smoothly to lane center instead of running legacy tactical lines.
         const current=Number(p._dgLaneOff818)||0;
         const ai109=ensureAiPersonality109(p);
-        const personal109=Math.max(-1.25,Math.min(1.25,ai109.lane*.55));
-        laneTarget=Math.abs(current-personal109)<.05?personal109:(current*.72+personal109*.28);
+        const personal109=Math.max(-1.55,Math.min(1.55,ai109.lane*.68));
+        const variant112=controlVariant112(p,now)*.45;
+        const calmTarget112=Math.max(-2.0,Math.min(2.0,personal109+variant112));
+        laneTarget=Math.abs(current-calmTarget112)<.05?calmTarget112:(current*.66+calmTarget112*.34);
         speedMul=1;
       }
     }
@@ -9699,6 +9870,21 @@ function updatePlayer(p, now, dt){
       p.finalStraightSeg508=-1;
     }
     let targetOff=survivalLane109(p,optimalOffsetFor(p),now);
+
+    // v1.1.2 proactive survival field:
+    // even without an emergency, move toward the safest broad lane.
+    const safety112=forwardSafetyField112(p,now);
+    if(safety112&&safety112.minClear<4.7){
+      targetOff=safety112.lane;
+      p._safetyLane112=safety112.lane;
+      p._safetyLaneUntil112=now+760;
+      p._variantMode112="none";
+      p._variantUntil112=0;
+    }else if(now<(p._safetyLaneUntil112||0)&&Number.isFinite(p._safetyLane112)){
+      targetOff=p._safetyLane112;
+    }else{
+      targetOff+=controlVariant112(p,now);
+    }
     const plannedOff=plannedRacingOffset(p,si,now);
     const packOff=0;
     // Players are non-solid. Pack logic only adds subtle tactical route variety.
@@ -9707,7 +9893,22 @@ function updatePlayer(p, now, dt){
     const identityOff=(p.routeIdentityBias||0)*Math.max(1.8,widths[si]*.54);
     // v4.10: globally trust the shortest optimized line more, while keeping enough
     // personality/pack weight for racers to remain recognisably different.
-    targetOff=targetOff*.065+plannedOff*(.84-packWeight-identityWeight)+packOff*packWeight+identityOff*identityWeight;
+    const survivalAuthority113=
+      now<(p._hardDodgeUntil110||0) ||
+      now<(p._survivalOverrideUntil109||0) ||
+      now<(p._safetyLaneUntil112||0);
+
+    if(survivalAuthority113){
+      // v1.1.3: danger-selected lane owns the racing line.
+      // Planned inside/shortest line may not drag the racer back toward danger.
+      targetOff=targetOff*.94+identityOff*.06;
+    }else{
+      // Calm road still keeps racing skill, but player personality/variants are now visible.
+      targetOff=targetOff*.46+
+        plannedOff*(.38-packWeight*.35-identityWeight*.25)+
+        packOff*(packWeight*.35)+
+        identityOff*(identityWeight*.25);
+    }
       // Legacy pre-v4.64 corner shaping is retained only while an observer field is
       // active. On clear road, Racing Line 2.1 + Cornering Physics 2.0 owns the line.
       const legacyCornerShaping=false;
@@ -10565,7 +10766,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     recordDriveDebug519(p,si,now,routeTarget516,steerTarget516,moveDirX,moveDirY,liveEvade);
 
     if(now<(p._hardDodgeUntil110||0)&&Number.isFinite(p._hardDodgeLane110)){
-      const safeHardLane111=Math.max(-3.6,Math.min(3.6,p._hardDodgeLane110));
+      const safeHardLane111=Math.max(-4.0,Math.min(4.0,p._hardDodgeLane110));
       targetOff=safeHardLane111;
       p.desiredOffset=safeHardLane111;
     }else if(now<(p._survivalOverrideUntil109||0)&&Number.isFinite(p.desiredOffset)){
@@ -10599,14 +10800,16 @@ targetOff=clampRoadOffset(si,targetOff,p);
         const q896=splinePointAt720(Number(p._splineProg720)||0);
         p.x=q896.x; p.y=q896.y;
       }
-    }else if(st723.mode==="NORMAL" && shortestCalm719 && /race720-normal/.test(racing529?.kind||"") && move>0){
-      // v7.20 NORMAL: actual rendered position advances on the rounded racing spline.
-      if(!advanceOnSpline720(p,move)){
+    }else if(move>0){
+      // v1.1.3: actual lane request now owns rendered movement.
+      // This applies to calm personal lines, variant controls, proactive safety lanes,
+      // and emergency avoidance. No late center-spline overwrite.
+      if(!advanceOnSplineLane113(p,move,targetOff,st723.mode)){
         p.x=preMoveX719+moveDirX*move;
         p.y=preMoveY719+moveDirY*move;
       }
     }else{
-      // v7.20 EVADE / REJOIN: shortest-line lock is released.
+      // Reverse/back controls retain physical vector movement.
       p.x += moveDirX*move;
       p.y += moveDirY*move;
       if(engineAuthority719)syncEvadeSplineProgress754(p,preMoveX719,preMoveY719);
@@ -14390,6 +14593,31 @@ function seasonCardHtml(p){
     };
   }
   applyPatch111();
+
+
+  function applyPatch112(){
+    window.__OBSERVER_FM_V112__={
+      proactiveSafetyField:true,
+      hardCloseRangeBoost:true,
+      hardDodgeLockMs:1250,
+      variantControls:true,
+      variantCancelsOnThreat:true,
+      mirroredPathReduction:true
+    };
+  }
+  applyPatch112();
+
+
+  function applyPatch113(){
+    window.__OBSERVER_FM_V113__={
+      actualLaneMovement:true,
+      survivalLaneAuthority:true,
+      noCenterSplineOverwrite:true,
+      immediateCloseReaction:true,
+      visibleControlVariety:true
+    };
+  }
+  applyPatch113();
 
   function v36SelfAudit(){
     const issues=[];
