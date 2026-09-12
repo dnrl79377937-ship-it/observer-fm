@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.171";
+  const BUILD_ID = "v8.172";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -973,7 +973,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     diagFrames=0; diagFps=0; diagLastFpsTs=0; diagFrameMs=0; diagMaxFrameMs=0;
     fpsProtectLevel=0; fpsLowSince=0; fpsGoodSince=0; raceLeaderChanges=0; raceTotalOvertakes=0; lastCloseBattleKey=""; lastCloseBattleEventAt=0;
     seasonRecorded=false; prevRanks=new Map();
-    {const sp770=mapStart770();camX=sp770.x;camY=sp770.y;}
+    {
+      const sp770=mapStart770();
+      camX=currentMap770().id==='triple_diamond'
+        ? (Number(currentMap770().destinyCameraCenterX8172)||89.0)
+        : sp770.x;
+      camY=sp770.y;
+    }
     prevCamX730=camX; prevCamY730=camY;
     renderAlpha730=1;
     players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;});
@@ -4738,12 +4744,23 @@ function calibratedFastCorridor79(si){
 
   function broadcastCamera695(now,dt,leader,cache){
     if(!leader) return;
+
+    // v8.172 Destiny Gate broadcast camera:
+    // keep horizontal center fixed so left/right routes stay in one frame.
+    // only vertical position follows the live leader.
+    if(currentMap770().id==='triple_diamond'){
+      const centerX=Number(currentMap770().destinyCameraCenterX8172)||89.0;
+      const targetY=leader.y;
+      smoothCamera665(dt,centerX,targetY);
+      camX=centerX;
+      return;
+    }
+
     const s=segs[Math.max(0,Math.min(segs.length-1,leader.seg||0))];
     let frame=closeBattleFrame662(leader,cache);
     frame=overtakeFrame663(leader,cache,now,frame);
     frame=packFrame664(leader,cache,frame);
 
-    // P1/leader stays the anchor. Add a small look-ahead in travel direction.
     if(s){
       const lead=1.15;
       const fx=leader.x+s.ux*lead, fy=leader.y+s.uy*lead;
@@ -6510,7 +6527,7 @@ applyMapSet776();
 
       // Any tactical target outside the selected branch corridor is rejected before movement.
       if(!mapRoadSegment789(m,[p.x,p.y],[t.x,t.y],-.20) ||
-         !mapCourseMask771(m,t.x,t.y,-.05)){
+         !genericCourseMask771(m,t.x,t.y,-.05)){
         p._noChordGuards795=(p._noChordGuards795||0)+1;
         return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-destiny-hard8171'};
       }
@@ -7407,7 +7424,7 @@ applyMapSet776();
 
     const cx=q.x+nx*clamped;
     const cy=q.y+ny*clamped;
-    const outside=Math.abs(lateral)>limit || !mapCourseMask771(currentMap770(),p.x,p.y,-.05);
+    const outside=Math.abs(lateral)>limit || !genericCourseMask771(currentMap770(),p.x,p.y,-.05);
 
     if(outside){
       // Same-frame hard boundary: the rendered racer never occupies the exterior.
@@ -9715,7 +9732,13 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const pov=players[povPlayerIndex];
     if(povPlayerIndex>=0 && pov && !pov.done && !pov.dead){
       cameraLeaderId=pov.index;
-      smoothCamera665(dt,pov.x,pov.y);
+      if(currentMap770().id==='triple_diamond'){
+        const centerX=Number(currentMap770().destinyCameraCenterX8172)||89.0;
+        smoothCamera665(dt,centerX,pov.y);
+        camX=centerX;
+      }else{
+        smoothCamera665(dt,pov.x,pov.y);
+      }
       return;
     }
 
@@ -12708,6 +12731,21 @@ function seasonCardHtml(p){
   }
   applyPatch8171();
 
+
+  function applyPatch8172(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.name='데스티니 게이트';
+    m.destinyCameraCenterX8172=89.0;
+    m.cameraHorizontalLock8172=true;
+    m.cameraVerticalLeaderFollow8172=true;
+    m.runtimeRoadMaskFixed8172=true;
+    m.roadFollowMode778='branch-hard-boundary';
+    m.racingLineMode772='destiny-hard-road-center-camera-v8.172';
+    m.qaDestiny8172=true;
+  }
+  applyPatch8172();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -12734,15 +12772,16 @@ function seasonCardHtml(p){
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="branch-road-hard")issues.push("하드경로778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="branch-hard-boundary")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny8172||!td?.runtimeRoadMaskFixed8172||!td?.cameraHorizontalLock8172||!td?.cameraVerticalLeaderFollow8172)issues.push("데스티니8172");
       if(!td?.qaDestiny8171||td.routeChoiceProbability813!==.50||td.routeChoiceCount815!==2||!td.branch2Independent8171||!td.exteriorNeverLegal8171)issues.push("데스티니8171");
       if(!td?.qaDestinyPath817||!td?.branchChoiceLocked817||!td?.personalPathHardLock817||!td?.outerRoadEscapeBlocked817||!td?.finalGoalTopCenter817)issues.push("데스티니경로817");
       if(!td?.qaDestinyGate812||td?.id!=="triple_diamond"||!Array.isArray(td?.dualStarts810)||td.dualStarts810.length!==2)issues.push("데스티니게이트8113");
       if(td?.image!=="map_destiny_gate_8113.png?v=817-destiny-gate"||!td?.qaDestinyAsset817)issues.push("데스티니게이트이미지817");
       if(td?.lapRequired775!==false||td?.finishRule775!=="end-gate")issues.push("데스티니게이트완주8113");
-      if(td?.routeChoiceProbability813!==.50||td?.routeChoiceCount815!==2||!td?.routeChoiceAtEveryJunction813||!Array.isArray(td?.destinyRoads813)||td.destinyRoads813.length!==8)issues.push("데스티니게이트분기815");
+      if(td?.routeChoiceProbability813!==.50||td?.routeChoiceCount815!==2||!td?.routeChoiceAtEveryJunction813||!Array.isArray(td?.destinyRoads813)||td.destinyRoads813.length!==9)issues.push("데스티니게이트분기815");
       if(!td?.qaDestinyGate815||!td?.actualMovementUsesPersonalPath815||!td?.progressUsesPersonalPath815||!td?.threatFrameUsesPersonalPath815||!td?.noLegacyRouteMask815)issues.push("데스티니게이트개인경로815");
     }
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
