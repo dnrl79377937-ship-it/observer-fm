@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.1.5";
+  const BUILD_ID = "v1.1.6";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1581,7 +1581,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     prevCamX730=camX; prevCamY730=camY;
     renderAlpha730=1;
-    players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;p._dgRenderX182=p.x;p._dgRenderY182=p.y;p._actualLane113=0;p._latVel114=0;});
+    players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;p._dgRenderX182=p.x;p._dgRenderY182=p.y;p._actualLane113=0;p._latVel114=0;p._stableSeg116=Number.isInteger(p.seg)?p.seg:0;});
     observers.forEach(o=>{o.simPrevX=o.x;o.simPrevY=o.y;});
     roundTransitioning=false;
     startBtn.textContent=`${currentRound}R 시작`;
@@ -8259,6 +8259,40 @@ applyMapSet776();
   }
 
 
+
+  function smoothSplineFrame116(progress){
+    const total=Math.max(1,RACING_SPLINE_SEGS_720.total||1);
+    const pr=Math.max(0,Math.min(total,Number(progress)||0));
+
+    const q0=splinePointAt720(pr);
+    const qb=splinePointAt720(Math.max(0,pr-.55));
+    const qa=splinePointAt720(Math.min(total,pr+.55));
+
+    let ux=(qb.ux||q0.ux||0)*.20+(q0.ux||0)*.60+(qa.ux||q0.ux||0)*.20;
+    let uy=(qb.uy||q0.uy||-1)*.20+(q0.uy||-1)*.60+(qa.uy||q0.uy||-1)*.20;
+    const L=Math.hypot(ux,uy)||1;
+    ux/=L; uy/=L;
+
+    return {x:q0.x,y:q0.y,ux,uy};
+  }
+
+  function stableSegFromProgress116(p,progress,total){
+    const raw=Math.max(0,Math.min(segs.length-1,
+      Math.floor((progress/Math.max(1,total))*Math.max(1,segs.length-1))
+    ));
+
+    if(!Number.isInteger(p._stableSeg116)){
+      p._stableSeg116=raw;
+      return raw;
+    }
+
+    // Never jump several logical segments in a single simulation tick.
+    if(raw>p._stableSeg116+1)p._stableSeg116++;
+    else if(raw<p._stableSeg116-1)p._stableSeg116--;
+    else p._stableSeg116=raw;
+
+    return Math.max(0,Math.min(segs.length-1,p._stableSeg116));
+  }
   function advanceOnSplineLane113(p,distance,targetOff,mode="NORMAL"){
     if(!p||!(distance>0))return false;
 
@@ -8268,61 +8302,65 @@ applyMapSet776();
       : nearestSplineProgress720(p.x,p.y);
 
     prog=Math.max(Number(p._splineFloor754)||0,prog);
-    const safeDistance=Math.max(0,Math.min(Number(distance)||0,.42));
+
+    // v1.1.6: tighter per-tick forward cap around corners.
+    const qNow=smoothSplineFrame116(prog);
+    const qAhead=smoothSplineFrame116(Math.min(total,prog+.75));
+    const dot=Math.max(-1,Math.min(1,qNow.ux*qAhead.ux+qNow.uy*qAhead.uy));
+    const turn=Math.acos(dot); // radians
+
+    const cornerFactor=Math.max(.58,1-Math.min(1,turn/.75)*.34);
+    const safeDistance=Math.max(0,Math.min(Number(distance)||0,.30))*cornerFactor;
     const next=Math.min(total,prog+safeDistance);
-    const q=splinePointAt720(next);
+
+    const q=smoothSplineFrame116(next);
     const nx=-q.uy,ny=q.ux;
 
-    const segIndex=Math.max(0,Math.min(widths.length-1,p.seg||0));
+    // Stable segment selection so width / road authority does not jump on corners.
+    const segIndex=stableSegFromProgress116(p,next,total);
     const roadHalf=Math.max(1.75,(widths[segIndex]||3.5)*.78);
 
-    // Survival may use a wider share of the road than ordinary racing.
     const maxLane=Math.min(4.0,roadHalf);
     const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
     const prev=Number(p._actualLane113);
-    const current=Number.isFinite(prev)
-      ? prev
-      : (Number(p._lineOffset720)||0);
+    const current=Number.isFinite(prev)?prev:(Number(p._lineOffset720)||0);
 
-    // Natural steering rate: emergency faster, normal variations slower.
     const emergency=mode==="EVADE"||
       (gameNow()<(p._hardDodgeUntil110||0))||
       (gameNow()<(p._survivalOverrideUntil109||0));
 
-    const desiredDelta=wanted-current;
-
-    // v1.1.4: lateral velocity is rate-limited and acceleration-limited.
-    // Prevents a large one-tick side jump when evade target suddenly changes.
-    const targetLatVel=Math.max(-.115,Math.min(.115,desiredDelta*.32));
+    // Cornering reduces lateral aggressiveness so lane movement cannot jerk sideways
+    // at the same time the path tangent rotates.
+    const targetLatVel=Math.max(-.095,Math.min(.095,(wanted-current)*.26));
     const prevLatVel=Number(p._latVel114)||0;
-    const maxLatAccel=emergency?.032:.018;
-    const latVel=prevLatVel+Math.max(
+    const cornerLatScale=Math.max(.48,1-Math.min(1,turn/.75)*.42);
+    const maxLatAccel=(emergency?.026:.014)*cornerLatScale;
+
+    let latVel=prevLatVel+Math.max(
       -maxLatAccel,
       Math.min(maxLatAccel,targetLatVel-prevLatVel)
     );
+
+    // Damp lateral momentum through sharp turns.
+    latVel*=Math.max(.72,cornerFactor);
     p._latVel114=latVel;
 
-    const maxDelta=emergency
-      ? Math.max(.055,Math.min(.125,distance*.42))
-      : Math.max(.028,Math.min(.070,distance*.22));
-
+    const maxDelta=(emergency?.105:.058)*cornerLatScale;
     const laneStep=Math.max(-maxDelta,Math.min(maxDelta,latVel));
     let lane=current+laneStep;
     lane=Math.max(-maxLane,Math.min(maxLane,lane));
 
-    // Try requested lane, then gracefully shrink toward center if the map geometry
-    // says that exact offset is outside legal road. Never snap back to centerline.
     let x=q.x+nx*lane,y=q.y+ny*lane;
 
-    // v1.1.5: road-mask tests were expensive at 50Hz.
-    // Validate only near outer lane limits or periodically.
+    // Lighter road validation, but force a check on meaningful corners.
     const needRoadCheck=
+      turn>.18 ||
       Math.abs(lane)>maxLane*.72 ||
-      ((p._roadCheckTick115=(p._roadCheckTick115||0)+1)%4===0);
+      ((p._roadCheckTick115=(p._roadCheckTick115||0)+1)%5===0);
 
     if(needRoadCheck && !courseContainsPoint(x,y,0)){
       let found=false;
-      for(const f of [.68,.38,0]){
+      for(const f of [.72,.48,.25,0]){
         const test=lane*f;
         const tx=q.x+nx*test,ty=q.y+ny*test;
         if(courseContainsPoint(tx,ty,0)){
@@ -8330,6 +8368,7 @@ applyMapSet776();
         }
       }
       if(!found){lane=0;x=q.x;y=q.y;}
+      p._latVel114*=.35;
     }
 
     p.x=x;p.y=y;
@@ -8337,11 +8376,11 @@ applyMapSet776();
     p._lineOffset720=lane;
     p._splineProg720=next;
     p._splineFloor754=Math.max(Number(p._splineFloor754)||0,next);
+    p.seg=segIndex;
 
-    const frac=next/total;
-    p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
     return true;
   }
+
 
   function advanceOnSpline720(p,distance){
     if(!p || !(distance>0)) return false;
@@ -9797,7 +9836,12 @@ function updateDestinyPlayer183(p,now,dt){
       speedMul*=.78+.22*ease;
     }
 
-    const move=Math.max(0,p.speed*speedMul*dt/1000);
+    const turnFrame116=smoothSplineFrame116(Number(p._splineProg720)||0);
+    const turnAhead116=smoothSplineFrame116((Number(p._splineProg720)||0)+.85);
+    const turnDot116=Math.max(-1,Math.min(1,turnFrame116.ux*turnAhead116.ux+turnFrame116.uy*turnAhead116.uy));
+    const turnAngle116=Math.acos(turnDot116);
+    const cornerSpeed116=Math.max(.80,1-Math.min(1,turnAngle116/.8)*.14);
+    const move=Math.max(0,p.speed*speedMul*cornerSpeed116*dt/1000);
     advanceDestinySafe818(p,move,laneTarget,st.mode);
 
     // Personal-path progress is already authoritative. No second projection/clamp pass.
@@ -9924,9 +9968,24 @@ function updatePlayer(p, now, dt){
     // even without an emergency, move toward the safest broad lane.
     const safety112=forwardSafetyField112(p,now);
     if(safety112&&safety112.minClear<4.7){
-      targetOff=safety112.lane;
-      p._safetyLane112=safety112.lane;
-      p._safetyLaneUntil112=now+760;
+      let safeLane116=safety112.lane;
+      const sf116=smoothSplineFrame116(Number(p._splineProg720)||0);
+      const sa116=smoothSplineFrame116((Number(p._splineProg720)||0)+.8);
+      const sd116=Math.max(-1,Math.min(1,sf116.ux*sa116.ux+sf116.uy*sa116.uy));
+      const sharp116=Math.acos(sd116)>.28;
+
+      if(
+        sharp116 &&
+        Number.isFinite(p._safetyLane112) &&
+        now<(p._safetyLaneUntil112||0) &&
+        Math.sign(safeLane116)!==Math.sign(p._safetyLane112)
+      ){
+        safeLane116=p._safetyLane112;
+      }
+
+      targetOff=safeLane116;
+      p._safetyLane112=safeLane116;
+      p._safetyLaneUntil112=now+840;
       p._variantMode112="none";
       p._variantUntil112=0;
     }else if(now<(p._safetyLaneUntil112||0)&&Number.isFinite(p._safetyLane112)){
@@ -11743,7 +11802,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
   function simulateStep(now,dt){
     // v1.1.4: cap one simulation step so a stalled browser frame
     // cannot be repaid as a giant movement burst / apparent 2x speed.
-    dt=Math.max(0,Math.min(34,Number(dt)||0));
+    dt=Math.max(0,Math.min(24,Number(dt)||0));
 
     updateObservers(now,dt);
     playerNearbyFrameSerial++;
@@ -14701,6 +14760,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch115();
+
+
+  function applyPatch116(){
+    window.__OBSERVER_FM_V116__={
+      cornerTangentSmoothing:true,
+      stableSegmentTransition:true,
+      cornerLaneDamping:true,
+      dtClampMs:24,
+      maxCatchupStepsPerFrame:2,
+      backlogFastForwardBlocked:true,
+      cornerSpeedSmoothing:true
+    };
+  }
+  applyPatch116();
 
   function v36SelfAudit(){
     const issues=[];
