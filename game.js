@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.183";
+  const BUILD_ID = "v8.184";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -4752,7 +4752,9 @@ function calibratedFastCorridor79(si){
     // only vertical position follows the live leader.
     if(currentMap770().id==='triple_diamond'){
       const centerX=Number(currentMap770().destinyCameraCenterX8172)||89.0;
-      const targetY=leader.y;
+      destinyPath813(leader);
+      const cq=destinyPoint813(leader,Math.max(0,Number(leader._dgProg813)||0));
+      const targetY=cq.y; // ignore lateral dodge movement for camera composition
       smoothCamera665(dt,centerX,targetY);
       camX=centerX;
       return;
@@ -7276,6 +7278,28 @@ applyMapSet776();
       rival:c.rival?.name||null,rivalGap:c.gap,pressureLoad:c.load
     };
   }
+
+  function smoothDestinyWaypoints184(points){
+    if(!Array.isArray(points)||points.length<3)return points||[];
+    let cur=points.map(q=>[q[0],q[1]]);
+
+    // Gentle Chaikin corner cutting. Endpoints stay fixed.
+    // Two light passes round the racing line without inventing a shortcut.
+    for(let pass=0;pass<2;pass++){
+      const out=[[cur[0][0],cur[0][1]]];
+      for(let i=0;i<cur.length-1;i++){
+        const a=cur[i],b=cur[i+1];
+        const q=[a[0]*.78+b[0]*.22,a[1]*.78+b[1]*.22];
+        const r=[a[0]*.22+b[0]*.78,a[1]*.22+b[1]*.78];
+        if(i>0)out.push(q);
+        out.push(r);
+      }
+      out[out.length-1]=[cur[cur.length-1][0],cur[cur.length-1][1]];
+      cur=out;
+    }
+    return cur;
+  }
+
   function destinyPath813(p){
     const m=currentMap770();
     if(m.id!=='triple_diamond')return null;
@@ -7313,8 +7337,10 @@ applyMapSet776();
       add(p._dgChoices813[1]<0?topo.branch2.left:topo.branch2.right,true);
       add(topo.shared2,true);
 
-      // v8.181: 0.62 is visually smooth enough and far cheaper than the old 0.24.
-      const dense=densifyLine772(pts,.62);
+      // v8.184: round hard waypoint corners first, then use moderate arc sampling.
+      // This removes the visible "tiny stop / snap" at each polyline corner.
+      const smoothPts=smoothDestinyWaypoints184(pts);
+      const dense=densifyLine772(smoothPts,.72);
       const segs813=[];let total=0;
       for(let i=0;i<dense.length-1;i++){
         const a=dense[i],b=dense[i+1],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1;
@@ -7391,8 +7417,13 @@ applyMapSet776();
     if(mode!=="EVADE"&&p._raceState720)p._raceState720._dgEvadeLane182=NaN;
     const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
     const prev=Number(p._dgLaneOff818)||0;
-    const blend=mode==="EVADE"?.28:.18;
-    let lane=prev+(wanted-prev)*blend;
+
+    // v8.184: physical lateral steering rate limit.
+    // Lane changes remain responsive, but they can never jump sideways in one sim tick.
+    const rawDelta=wanted-prev;
+    const maxDelta=Math.max(.035,Math.min(.085,(Number(distance)||0)*.24));
+    const delta=Math.max(-maxDelta,Math.min(maxDelta,rawDelta));
+    let lane=prev+delta;
 
     // Hard numeric corridor; no genericCourseMask scan every frame.
     lane=Math.max(-maxLane,Math.min(maxLane,lane));
@@ -8498,15 +8529,25 @@ function updateDestinyPlayer183(p,now,dt){
     let speedMul=1;
 
     if(threat){
-      const plan=chooseDestinyEvade182(p,now,threat);
+      const sameThreat=st.activeThreatId===(threat?.o?.id??-1);
+      const canReuse=Number.isFinite(st._dgEvadeLane182)&&now<(st._dgPlanHoldUntil184||0)&&sameThreat;
+
+      let plan=null;
+      if(canReuse){
+        plan={laneOffset:st._dgEvadeLane182,speedMul:threat.emergency?.92:.985};
+      }else{
+        plan=chooseDestinyEvade182(p,now,threat);
+        st._dgEvadeLane182=Number(plan?.laneOffset)||0;
+        st._dgPlanHoldUntil184=now+(threat.emergency?150:260);
+      }
+
       st.mode="EVADE";
       st.since=now;
       st.lastThreatAt=now;
       st.activeThreatId=threat?.o?.id??-1;
-      st._dgEvadeLane182=Number(plan?.laneOffset)||0;
-      st._dgEvadeUntil183=now+(threat.emergency?260:340);
+      st._dgEvadeUntil183=now+(threat.emergency?280:380);
       laneTarget=st._dgEvadeLane182;
-      speedMul=Math.max(.86,Math.min(1,Number(plan?.speedMul)||.97));
+      speedMul=Math.max(.88,Math.min(1,Number(plan?.speedMul)||.985));
       p.liveEvadeDanger=threat.emergency?1:.58;
       p.liveEvadeThreat=threat?.o?.id??-1;
       p.liveEvadeAction="lane";
@@ -10046,7 +10087,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
       cameraLeaderId=pov.index;
       if(currentMap770().id==='triple_diamond'){
         const centerX=Number(currentMap770().destinyCameraCenterX8172)||89.0;
-        smoothCamera665(dt,centerX,pov.y);
+        destinyPath813(pov);
+        const cq=destinyPoint813(pov,Math.max(0,Number(pov._dgProg813)||0));
+        smoothCamera665(dt,centerX,cq.y);
         camX=centerX;
       }else{
         smoothCamera665(dt,pov.x,pov.y);
@@ -10433,7 +10476,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
       if(currentMap770().id!=='triple_diamond'||simTickCounter%3===0)
         stabilityAudit698(players[i],now);
     }
-    telemetryStep696(now,dt);
+    if(currentMap770().id==='triple_diamond'){
+      if(simTickCounter%2===0)telemetryStep696(now,dt*2);
+    }else{
+      telemetryStep696(now,dt);
+    }
     rebuildRaceFrameCache668(now);
     prevCamX730=camX; prevCamY730=camY;
     updateCamera(dt);
@@ -10695,7 +10742,9 @@ targetOff=clampRoadOffset(si,targetOff,p);
   let lastMiniMapRender=0;
   function renderMiniMap(force=false){
     const now=performance.now();
-    const miniInterval=fpsProtectLevel>=2?200:125;
+    const miniInterval=currentMap770().id==='triple_diamond'
+      ? (fpsProtectLevel>=2?360:250)
+      : (fpsProtectLevel>=2?200:125);
     if(!force&&now-lastMiniMapRender<miniInterval)return;
     lastMiniMapRender=now;
     const mc=document.getElementById("miniMap");
@@ -10810,7 +10859,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
 
     const view=getView();
     ctx.imageSmoothingEnabled=true;
-    ctx.imageSmoothingQuality="high";
+    ctx.imageSmoothingQuality=currentMap770().id==='triple_diamond'?"medium":"high";
     ctx.drawImage(map,view.sx*MAP_IMAGE_SCALE_X,view.sy*MAP_IMAGE_SCALE_Y,view.viewW*MAP_IMAGE_SCALE_X,view.viewH*MAP_IMAGE_SCALE_Y,0,0,W,H);
     drawStartFinish775(view);
 
@@ -13129,6 +13178,23 @@ function seasonCardHtml(p){
   }
   applyPatch8183();
 
+
+  function applyPatch8184(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m._destinyPathCache8181=Object.create(null); // rebuild with rounded paths
+    m.destinyRoundedPath184=true;
+    m.destinyLaneRateLimit184=.085;
+    m.destinyEvadePlanHold184=true;
+    m.destinyCameraCenterlineY184=true;
+    m.destinyTelemetry25Hz184=true;
+    m.destinyMiniMap250ms184=true;
+    m.roadFollowMode778='dedicated-smooth-motion';
+    m.racingLineMode772='destiny-rounded-rate-limited-v8.184';
+    m.qaDestiny8184=true;
+  }
+  applyPatch8184();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -13155,9 +13221,10 @@ function seasonCardHtml(p){
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="dedicated-personal-loop")issues.push("하드경로778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="dedicated-smooth-motion")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny8184||!td?.destinyRoundedPath184||!td?.destinyEvadePlanHold184||!td?.destinyCameraCenterlineY184||!td?.destinyTelemetry25Hz184)issues.push("데스티니8184");
       if(!td?.qaDestiny8183||!td?.destinyDedicatedUpdateLoop183||!td?.destinyNoLegacyPlanner183||!td?.destinySingleInterpolation183||!td?.destinyNoDoubleCorrection183)issues.push("데스티니8183");
       if(!td?.qaDestiny8182||!td?.destinyDedicatedAvoidAi182||!td?.destinyThreatPersonalPath182||!td?.destinyThreeLaneDecision182||!td?.destinyNoGenericEvadeCandidates182||!td?.destinyRenderSmoothing182)issues.push("데스티니8182");
       if(!td?.qaDestiny8181||!td?.destinyCachedPaths8181||!td?.destinyBinaryLookup8181||!td?.destinyNoFrameMaskScan8181||!td?.optimizedInsideLine8181||!td?.centerMerge8181)issues.push("데스티니8181");
