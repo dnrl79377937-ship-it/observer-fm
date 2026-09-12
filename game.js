@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.1.4";
+  const BUILD_ID = "v1.1.5";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -343,18 +343,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function lerp730(a,b,t){ return a+(b-a)*t; }
   function renderPlayerPos730(p){
     const a=running?renderAlpha730:1;
-    let px=Number.isFinite(p.simPrevX)?p.simPrevX:p.x;
-    let py=Number.isFinite(p.simPrevY)?p.simPrevY:p.y;
-
-    // v1.1.4: bound visual catch-up distance.
-    // Physics stays authoritative, but a missed frame cannot display a huge jump.
-    const dx=p.x-px,dy=p.y-py;
-    const d=Math.hypot(dx,dy);
-    if(d>1.25){
-      const k=1.25/d;
-      px=p.x-dx*k;
-      py=p.y-dy*k;
-    }
+    const px=Number.isFinite(p.simPrevX)?p.simPrevX:p.x;
+    const py=Number.isFinite(p.simPrevY)?p.simPrevY:p.y;
     return {x:lerp730(px,p.x,a),y:lerp730(py,p.y,a)};
   }
   function renderObserverPos730(o){
@@ -8323,9 +8313,16 @@ applyMapSet776();
     // Try requested lane, then gracefully shrink toward center if the map geometry
     // says that exact offset is outside legal road. Never snap back to centerline.
     let x=q.x+nx*lane,y=q.y+ny*lane;
-    if(!courseContainsPoint(x,y,0)){
+
+    // v1.1.5: road-mask tests were expensive at 50Hz.
+    // Validate only near outer lane limits or periodically.
+    const needRoadCheck=
+      Math.abs(lane)>maxLane*.72 ||
+      ((p._roadCheckTick115=(p._roadCheckTick115||0)+1)%4===0);
+
+    if(needRoadCheck && !courseContainsPoint(x,y,0)){
       let found=false;
-      for(const f of [.82,.64,.46,.28,0]){
+      for(const f of [.68,.38,0]){
         const test=lane*f;
         const tx=q.x+nx*test,ty=q.y+ny*test;
         if(courseContainsPoint(tx,ty,0)){
@@ -8765,9 +8762,12 @@ applyMapSet776();
       p._variantMode112="none";
       p._variantOffset112=0;
 
-      // Low probability: roughly one brief variant every several seconds.
+      if(now<(p._nextVariantCheck115||0))return 0;
+      p._nextVariantCheck115=now+250;
+
+      // v1.1.5: same low-probability feel, but don't roll RNG every simulation tick.
       const roll=Math.random();
-      if(roll<.0075){
+      if(roll<.085){
         const modes=["zigzag","wide","hold-left","hold-right","feint"];
         p._variantMode112=modes[Math.floor(Math.random()*modes.length)];
         p._variantUntil112=now+480+Math.random()*900;
@@ -8801,25 +8801,36 @@ applyMapSet776();
         return 0;
     }
   }
-
   function forwardSafetyField112(p,now){
     if(!p||safeAt(p.x,p.y))return null;
+
+    // v1.1.5: cache proactive safety planning.
+    // Hard-close emergency scan still runs every tick separately.
+    if(now<(p._nextSafetyField115||0)){
+      return p._cachedSafetyField115||null;
+    }
+    p._nextSafetyField115=now+90;
 
     const prog=Number.isFinite(p._splineProg720)
       ? p._splineProg720
       : nearestSplineProgress720(p.x,p.y);
     const speed=Math.max(6.5,Number(p.speed)||9.7);
+    const nearby=localObservers723(p,10.8);
 
-    const nearby=localObservers723(p,12.5);
-    if(!nearby.length)return null;
+    if(!nearby.length){
+      p._cachedSafetyField115=null;
+      return null;
+    }
 
-    // Evaluate five broad lanes. This is deliberately survival-biased.
-    const lanes=[-3.4,-2.0,0,2.0,3.4];
+    // 5 lanes -> 3 lanes, 5 horizons -> 3 horizons.
+    // Enough for proactive avoidance without the old per-tick cost.
+    const lanes=[-3.0,0,3.0];
+    const horizons=[.20,.50,.82];
     let best=null;
 
     for(const lane of lanes){
       let risk=0,minClear=999;
-      for(const h of [.12,.28,.48,.72,.98]){
+      for(const h of horizons){
         const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+speed*h));
         const nx=-q.uy,ny=q.ux;
         const x=q.x+nx*lane,y=q.y+ny*lane;
@@ -8829,19 +8840,21 @@ applyMapSet776();
           const oy=o.y+(Number(o.vy)||0)*h;
           const d=Math.hypot(x-ox,y-oy);
           minClear=Math.min(minClear,d);
-          if(d<6.0){
-            const w=(6.0-d)/6.0;
-            risk+=w*w*(1.55-h*.22);
+          if(d<5.6){
+            const w=(5.6-d)/5.6;
+            risk+=w*w*(1.35-h*.18);
           }
         }
       }
 
-      const score=risk*34 + Math.max(0,3.0-minClear)*30 + Math.abs(lane)*.01;
+      const score=risk*30 + Math.max(0,2.8-minClear)*26 + Math.abs(lane)*.008;
       if(!best||score<best.score)best={lane,score,minClear};
     }
 
+    p._cachedSafetyField115=best;
     return best;
   }
+
 
   function hardCloseThreat110(p,now){
     if(!p||safeAt(p.x,p.y))return null;
@@ -8852,7 +8865,7 @@ applyMapSet776();
     const frame=splinePointAt720(prog);
 
     // Very cheap local scan, done every tick.
-    const near=localObservers723(p,8.2);
+    const near=localObservers723(p,7.4);
     let best=null,bestScore=Infinity;
 
     for(const o of near){
@@ -8870,7 +8883,7 @@ applyMapSet776();
 
       const ovx=Number(o.vx)||0,ovy=Number(o.vy)||0;
       let minSep=dist,minH=0;
-      for(const h of [.12,.24,.40,.58]){
+      for(const h of [.16,.38,.62]){
         const q=splinePointAt720(
           Math.min(RACING_SPLINE_SEGS_720.total,prog+Math.max(6.5,p.speed||9.7)*h)
         );
@@ -9097,7 +9110,7 @@ applyMapSet776();
     // v7.24(130): normal prediction is capped at 11.1; emergency 4.0 stays immediate.
     if(now<(p._nextThreatScan724||0))
       return p._cachedThreat724||null;
-    p._nextThreatScan724=now+(isSpaceMap107()?(startBoost816?18:26):(startBoost816?24:36));
+    p._nextThreatScan724=now+(isSpaceMap107()?(startBoost816?24:34):(startBoost816?30:46));
 
     let best=null,bestScore=Infinity;
     const nearby=localObservers723(p,isSpaceMap107()?(startBoost816?16.5:14.6):(startBoost816?15.2:12.8));
@@ -11754,7 +11767,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     if(currentMap770().id==='triple_diamond'){
       if(simTickCounter%2===0)telemetryStep696(now,dt*2);
     }else{
-      telemetryStep696(now,dt);
+      if(league100?.phase!=="racing" || simTickCounter%2===0)telemetryStep696(now,dt*2);
     }
     rebuildRaceFrameCache668(now);
     prevCamX730=camX; prevCamY730=camY;
@@ -12527,7 +12540,11 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   function renderRanking(){
-    if(league100)renderLeagueSide100();
+    if(!league100)return;
+    const now115=performance.now();
+    if(now115<(renderRanking._next115||0))return;
+    renderRanking._next115=now115+80;
+    renderLeagueSide100();
   }
 
 
@@ -14670,6 +14687,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch114();
+
+
+  function applyPatch115(){
+    window.__OBSERVER_FM_V115__={
+      safetyFieldCacheMs:90,
+      safetyFieldLanes:3,
+      safetyFieldHorizons:3,
+      roadMaskThrottle:true,
+      rankingRenderThrottleMs:80,
+      variantCheckMs:250,
+      performancePass:true
+    };
+  }
+  applyPatch115();
 
   function v36SelfAudit(){
     const issues=[];
