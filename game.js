@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.0.3";
+  const BUILD_ID = "v1.0.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -665,7 +665,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
         rows.push(`<div class="${cls}">
           <span class="set">${setNo}세트</span>
-          <b class="a">${mapName} · ${names[a]}</b>
+          <span class="map">${mapName}</span>
+          <b class="a">${names[a]}</b>
           <span class="vs">VS</span>
           <b class="b">${names[b]}</b>
           <span class="result">${r?`${r.score.A} : ${r.score.B}`:"-"}</span>
@@ -689,7 +690,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
       rows.push(`<div class="league-schedule-row-100 ace ${!aceResult&&league100.setNo===7?"current":""} ${aceResult?"done":""}">
         <span class="set">7세트<br>ACE</span>
-        <b class="a">${aceMapName} · ${aceA}</b>
+        <span class="map">${aceMapName}</span>
+        <b class="a">${aceA}</b>
         <span class="vs">VS</span>
         <b class="b">${aceB}</b>
         <span class="result">${aceResult?`${aceResult.score.A} : ${aceResult.score.B}`:"-"}</span>
@@ -13859,6 +13861,15 @@ function seasonCardHtml(p){
     };
   }
   applyPatch103();
+
+  function applyPatch104(){
+    window.__OBSERVER_FM_V104__={
+      greenBracketMapNames:true,
+      bluePlayerAlignedToVs:true,
+      redPlayerAlignedToVs:true
+    };
+  }
+  applyPatch104();
 
   function v36SelfAudit(){
     const issues=[];

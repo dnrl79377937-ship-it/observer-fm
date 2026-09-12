@@ -1,0 +1,25 @@
+{
+  "version": "v1.0.4",
+  "note": "New version line; unrelated to historical v1 builds.",
+  "players": 12,
+  "teamAssignment": "Random 6 vs 6 on page load/reset.",
+  "appearanceOrder": "Random per team; Sets 1-6 use each team member once.",
+  "setFormat": "1v1, first to 2 race wins. Valid set scores: 2-0 or 2-1.",
+  "matchFormat": "First team to 4 set wins.",
+  "ace": "If team score is 3-3 after Set 6, Set 7 ace decider. Repeat appearance allowed; ace is randomly selected in v1.0.0.",
+  "flow": [
+    "Start on matchup board",
+    "Press 진행하기",
+    "Play entire current set automatically until one player reaches 2 race wins",
+    "Return to updated matchup board",
+    "Press 진행하기 for next set"
+  ],
+  "ui": "Old right-side Race Broadcast Center removed; compact live team matchup summary shown instead.",
+  "averageStatsVisible": false,
+  "heatEnd": "First player to clear wins the heat immediately.",
+  "mapOrder": "All 9 maps are shuffled. Each heat uses the next map. After all 9 are used, the deck reshuffles.",
+  "bracketMapDisplay": "Sets 1-6 show a preassigned random map next to the player matchup.",
+  "aceDisplay": "Set 7 is always visible as ??? vs ???. If Sets 1-6 finish 3-3, ??? is replaced by randomly selected ace player names.",
+  "mapAssignment": "One random map per set; all races inside that set use the same assigned map.",
+  "bracketLayout": "Map name is green. Blue/A player is right-aligned immediately left of VS; Red/B player is immediately right of VS."
+}
