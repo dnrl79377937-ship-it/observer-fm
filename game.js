@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.1.3";
+  const BUILD_ID = "v1.1.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -343,10 +343,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function lerp730(a,b,t){ return a+(b-a)*t; }
   function renderPlayerPos730(p){
     const a=running?renderAlpha730:1;
-    const px=Number.isFinite(p.simPrevX)?p.simPrevX:p.x;
-    const py=Number.isFinite(p.simPrevY)?p.simPrevY:p.y;
-    // v8.183: one interpolation layer only. Extra Destiny render smoothing caused
-    // lag/catch-up cycles that could look like tiny teleports after a frame hitch.
+    let px=Number.isFinite(p.simPrevX)?p.simPrevX:p.x;
+    let py=Number.isFinite(p.simPrevY)?p.simPrevY:p.y;
+
+    // v1.1.4: bound visual catch-up distance.
+    // Physics stays authoritative, but a missed frame cannot display a huge jump.
+    const dx=p.x-px,dy=p.y-py;
+    const d=Math.hypot(dx,dy);
+    if(d>1.25){
+      const k=1.25/d;
+      px=p.x-dx*k;
+      py=p.y-dy*k;
+    }
     return {x:lerp730(px,p.x,a),y:lerp730(py,p.y,a)};
   }
   function renderObserverPos730(o){
@@ -1583,7 +1591,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
     prevCamX730=camX; prevCamY730=camY;
     renderAlpha730=1;
-    players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;p._dgRenderX182=p.x;p._dgRenderY182=p.y;p._actualLane113=0;});
+    players.forEach(p=>{p.simPrevX=p.x;p.simPrevY=p.y;p._renderLastX730=p.x;p._renderLastY730=p.y;p._dgRenderX182=p.x;p._dgRenderY182=p.y;p._actualLane113=0;p._latVel114=0;});
     observers.forEach(o=>{o.simPrevX=o.x;o.simPrevY=o.y;});
     roundTransitioning=false;
     startBtn.textContent=`${currentRound}R 시작`;
@@ -8270,7 +8278,8 @@ applyMapSet776();
       : nearestSplineProgress720(p.x,p.y);
 
     prog=Math.max(Number(p._splineFloor754)||0,prog);
-    const next=Math.min(total,prog+distance);
+    const safeDistance=Math.max(0,Math.min(Number(distance)||0,.42));
+    const next=Math.min(total,prog+safeDistance);
     const q=splinePointAt720(next);
     const nx=-q.uy,ny=q.ux;
 
@@ -8290,11 +8299,25 @@ applyMapSet776();
       (gameNow()<(p._hardDodgeUntil110||0))||
       (gameNow()<(p._survivalOverrideUntil109||0));
 
-    const maxDelta=emergency
-      ? Math.max(.10,Math.min(.24,distance*.72))
-      : Math.max(.045,Math.min(.11,distance*.34));
+    const desiredDelta=wanted-current;
 
-    let lane=current+Math.max(-maxDelta,Math.min(maxDelta,wanted-current));
+    // v1.1.4: lateral velocity is rate-limited and acceleration-limited.
+    // Prevents a large one-tick side jump when evade target suddenly changes.
+    const targetLatVel=Math.max(-.115,Math.min(.115,desiredDelta*.32));
+    const prevLatVel=Number(p._latVel114)||0;
+    const maxLatAccel=emergency?.032:.018;
+    const latVel=prevLatVel+Math.max(
+      -maxLatAccel,
+      Math.min(maxLatAccel,targetLatVel-prevLatVel)
+    );
+    p._latVel114=latVel;
+
+    const maxDelta=emergency
+      ? Math.max(.055,Math.min(.125,distance*.42))
+      : Math.max(.028,Math.min(.070,distance*.22));
+
+    const laneStep=Math.max(-maxDelta,Math.min(maxDelta,latVel));
+    let lane=current+laneStep;
     lane=Math.max(-maxLane,Math.min(maxLane,lane));
 
     // Try requested lane, then gracefully shrink toward center if the map geometry
@@ -8750,11 +8773,11 @@ applyMapSet776();
         p._variantUntil112=now+480+Math.random()*900;
 
         if(p._variantMode112==="wide")
-          p._variantOffset112=(Math.random()<.5?-1:1)*(1.8+Math.random()*1.2);
+          p._variantOffset112=(Math.random()<.5?-1:1)*(1.4+Math.random()*.9);
         else if(p._variantMode112==="hold-left")
-          p._variantOffset112=-1.8-Math.random()*.7;
+          p._variantOffset112=-1.45-Math.random()*.55;
         else if(p._variantMode112==="hold-right")
-          p._variantOffset112=1.8+Math.random()*.7;
+          p._variantOffset112=1.45+Math.random()*.55;
         else if(p._variantMode112==="feint")
           p._variantOffset112=(Math.random()<.5?-1:1)*(1.2+Math.random()*.6);
       }
@@ -8762,7 +8785,7 @@ applyMapSet776();
 
     switch(p._variantMode112){
       case "zigzag":
-        return Math.sin(now*.0085+(p.index||0)*1.9)*1.65;
+        return Math.sin(now*.0072+(p.index||0)*1.9)*1.30;
       case "wide":
       case "hold-left":
       case "hold-right":
@@ -9357,15 +9380,28 @@ applyMapSet776();
     const st=ensureRaceState720(p,now);
     const choice=chooseEvadeAction720(p,now,threat);
       if(Number.isFinite(choice?.laneOffset)){
-        p.desiredOffset=choice.laneOffset;
+        const incomingLane114=choice.laneOffset;
+
+        // v1.1.4: if an emergency dodge is already active, do not instantly
+        // reverse direction on the next threat scan.
+        if(
+          threat?.source722==="hard-close110" &&
+          now<(p._hardDodgeUntil110||0) &&
+          Number.isFinite(p._hardDodgeLane110) &&
+          Math.sign(incomingLane114)!==Math.sign(p._hardDodgeLane110)
+        ){
+          p.desiredOffset=p._hardDodgeLane110;
+        }else{
+          p.desiredOffset=incomingLane114;
+        }
         p._survivalOverrideUntil109=now+(threat?.source722==="hard-close110"?1250:(threat?.emergency?900:620));
         if(threat?.source722==="hard-close110"){
           // v1.1.1: `choice` is the actual evade plan in this scope.
           // v1.1.0 incorrectly referenced undefined `plan` / `action`,
           // causing a ReferenceError and freezing the game loop.
-          p._hardDodgeLane110=Number.isFinite(choice?.laneOffset)
-            ? choice.laneOffset
-            : p.desiredOffset;
+          p._hardDodgeLane110=Number.isFinite(p.desiredOffset)
+            ? p.desiredOffset
+            : choice?.laneOffset;
           p._hardDodgeUntil110=now+1250;
         }
       }
@@ -11692,6 +11728,10 @@ targetOff=clampRoadOffset(si,targetOff,p);
   }
 
   function simulateStep(now,dt){
+    // v1.1.4: cap one simulation step so a stalled browser frame
+    // cannot be repaid as a giant movement burst / apparent 2x speed.
+    dt=Math.max(0,Math.min(34,Number(dt)||0));
+
     updateObservers(now,dt);
     playerNearbyFrameSerial++;
     simTickCounter++;
@@ -14618,6 +14658,18 @@ function seasonCardHtml(p){
     };
   }
   applyPatch113();
+
+
+  function applyPatch114(){
+    window.__OBSERVER_FM_V114__={
+      dtClampMs:34,
+      forwardStepClamp:.42,
+      lateralAccelerationLimit:true,
+      emergencyDirectionLock:true,
+      visualCatchupClamp:true
+    };
+  }
+  applyPatch114();
 
   function v36SelfAudit(){
     const issues=[];
