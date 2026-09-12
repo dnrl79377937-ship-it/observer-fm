@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.182";
+  const BUILD_ID = "v8.183";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -344,31 +344,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const a=running?renderAlpha730:1;
     const px=Number.isFinite(p.simPrevX)?p.simPrevX:p.x;
     const py=Number.isFinite(p.simPrevY)?p.simPrevY:p.y;
-    const baseX=lerp730(px,p.x,a),baseY=lerp730(py,p.y,a);
-
-    if(currentMap770().id==='triple_diamond'&&running){
-      if(!Number.isFinite(p._dgRenderX182)){p._dgRenderX182=baseX;p._dgRenderY182=baseY;}
-      const dx=baseX-p._dgRenderX182,dy=baseY-p._dgRenderY182;
-      const dist=Math.hypot(dx,dy);
-
-      // Smooth visual catch-up only. Simulation/collision/progress remain untouched.
-      // Larger deltas receive stronger damping so a GC/frame hitch no longer looks like teleporting.
-      const alpha=dist>1.1?.36:dist>.55?.48:.64;
-      p._dgRenderX182+=dx*alpha;
-      p._dgRenderY182+=dy*alpha;
-
-      // Never let rendering lag absurdly far behind the real racer.
-      const lag=Math.hypot(baseX-p._dgRenderX182,baseY-p._dgRenderY182);
-      if(lag>2.2){
-        const k=2.2/lag;
-        p._dgRenderX182=baseX-(baseX-p._dgRenderX182)*k;
-        p._dgRenderY182=baseY-(baseY-p._dgRenderY182)*k;
-      }
-      return {x:p._dgRenderX182,y:p._dgRenderY182};
-    }
-
-    p._dgRenderX182=baseX;p._dgRenderY182=baseY;
-    return {x:baseX,y:baseY};
+    // v8.183: one interpolation layer only. Extra Destiny render smoothing caused
+    // lag/catch-up cycles that could look like tiny teleports after a frame hitch.
+    return {x:lerp730(px,p.x,a),y:lerp730(py,p.y,a)};
   }
   function renderObserverPos730(o){
     const a=running?renderAlpha730:1;
@@ -7817,7 +7795,7 @@ applyMapSet776();
     // The generic AI used 10 candidate actions and global-spline prediction.
     // Destiny only needs a modest scan every ~55 ms because the route itself is fixed.
     if(now<(p._dgNextThreat182||0))return p._dgCachedThreat182||null;
-    p._dgNextThreat182=now+(startBoost?34:56);
+    p._dgNextThreat182=now+(startBoost?42:72);
 
     let best=null,bestScore=Infinity;
     const nearby=localObservers723(p,startBoost?11.8:9.2);
@@ -7835,7 +7813,7 @@ applyMapSet776();
       const ovy=Number.isFinite(o.vy)?o.vy:0;
 
       let minSep=dist,minH=0;
-      for(const h of [.22,.48,.72]){
+      for(const h of [.26,.58]){
         const future=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+speed*h));
         const d=Math.hypot(future.x-(o.x+ovx*h),future.y-(o.y+ovy*h));
         if(d<minSep){minSep=d;minH=h;}
@@ -7863,7 +7841,7 @@ applyMapSet776();
     let minClear=99,risk=0;
     const speed=Math.max(6.5,Number(p.speed)||9.72);
 
-    for(const h of [.18,.38,.62]){
+    for(const h of [.22,.52]){
       const q=destinyPoint813(p,Math.min(p._dgSegs813.total,prog+speed*h));
       const nx=-q.uy,ny=q.ux;
       const x=q.x+nx*offset,y=q.y+ny*offset;
@@ -8487,7 +8465,181 @@ applyMapSet776();
     return t?{...t,kind:(t.kind||"race720")+"-636"}:null;
   }
 
+
+function updateDestinyPlayer183(p,now,dt){
+    if(!p||p.done||p.dead)return;
+
+    p.simPrevX=p.x;p.simPrevY=p.y;
+
+    // Preserve the normal launch reaction timing.
+    if(raceStart&&now-raceStart<p.startReactionMs)return;
+
+    // Observer-hit stop/recovery behavior remains unchanged.
+    if(now<p.stunUntil){
+      p.continuousRunMs=0;p.continuousRunMul=1;
+      return;
+    }
+    if(p.stunUntil){
+      p.stunUntil=0;
+      p.invUntil=now+INV_MS;
+      p.lastAdvanceAt=now;
+      p.lastProgress=currentProgress(p);
+      const recovery=driverSkill739(p).recovery;
+      p.resumeEaseUntil=now+(520-recovery*230);
+    }
+
+    destinyPath813(p);
+    const st=ensureRaceState720(p,now);
+    const threat=destinyThreat182(p,now);
+
+    // v8.183: one small state machine only.
+    // No generic corner planner / virtual mouse / global spline / legacy route discipline.
+    let laneTarget=0;
+    let speedMul=1;
+
+    if(threat){
+      const plan=chooseDestinyEvade182(p,now,threat);
+      st.mode="EVADE";
+      st.since=now;
+      st.lastThreatAt=now;
+      st.activeThreatId=threat?.o?.id??-1;
+      st._dgEvadeLane182=Number(plan?.laneOffset)||0;
+      st._dgEvadeUntil183=now+(threat.emergency?260:340);
+      laneTarget=st._dgEvadeLane182;
+      speedMul=Math.max(.86,Math.min(1,Number(plan?.speedMul)||.97));
+      p.liveEvadeDanger=threat.emergency?1:.58;
+      p.liveEvadeThreat=threat?.o?.id??-1;
+      p.liveEvadeAction="lane";
+    }else{
+      p.liveEvadeDanger=0;
+      p.liveEvadeThreat=-1;
+      p.liveEvadeAction="none";
+
+      if(st.mode==="EVADE"&&now<(st._dgEvadeUntil183||0)){
+        laneTarget=Number(st._dgEvadeLane182)||0;
+        speedMul=.985;
+      }else{
+        st.mode="NORMAL";
+        st.action="none";
+        st.target=null;
+        st.activeThreatId=-1;
+        st._dgEvadeLane182=NaN;
+
+        // The personal path itself is already the optimized inside racing line.
+        // Calm racers return smoothly to lane center instead of running legacy tactical lines.
+        const current=Number(p._dgLaneOff818)||0;
+        laneTarget=Math.abs(current)<.05?0:current*.72;
+        speedMul=1;
+      }
+    }
+
+    // Short opening protection/boost remains useful without invoking the generic planner.
+    if(startAiBoost816(p,now)&&threat)speedMul=Math.max(speedMul,.92);
+
+    // Continuous running bonus, same spirit as the rest of the game.
+    if(speedMul>.72){
+      p.continuousRunMs=Math.min(2600,(p.continuousRunMs||0)+dt);
+    }else{
+      p.continuousRunMs=0;
+    }
+    const runFactor=Math.max(0,Math.min(1,(p.continuousRunMs||0)/2600));
+    p.continuousRunMul=1+runFactor*.03;
+    speedMul*=p.continuousRunMul;
+
+    // Resume from a hit gently, but do not stop at walls/branch joints.
+    if(now<(p.resumeEaseUntil||0)){
+      const left=Math.max(0,p.resumeEaseUntil-now);
+      const ease=1-Math.min(1,left/520);
+      speedMul*=.78+.22*ease;
+    }
+
+    const move=Math.max(0,p.speed*speedMul*dt/1000);
+    advanceDestinySafe818(p,move,laneTarget,st.mode);
+
+    // Personal-path progress is already authoritative. No second projection/clamp pass.
+    const total=Math.max(1,p._dgSegs813?.total||1);
+    const frac=Math.max(0,Math.min(1,(Number(p._dgProg813)||0)/total));
+    p._splineProg720=frac*Math.max(1,RACING_SPLINE_SEGS_720.total||1);
+    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,p._splineProg720);
+    p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
+
+    // Lightweight telemetry only.
+    const moved=Math.hypot(p.x-p.match.lastX,p.y-p.match.lastY);
+    p.match.distance+=moved;
+    p.match.lastX=p.x;p.match.lastY=p.y;
+
+    if(now-(p.match.lastTraceAt||0)>=300){
+      p.match.lastTraceAt=now;
+      if(p.match.trace.length<220)p.match.trace.push([+p.x.toFixed(2),+p.y.toFixed(2)]);
+    }
+
+    // Near-miss / danger exposure: tiny local observer query only.
+    if(!safeAt(p.x,p.y)&&!startProtectionActive816(p,now)){
+      let nearestSq=Infinity;
+      for(const o of playerNearbyObservers(p,3.2)){
+        const dx=p.x-o.x,dy=p.y-o.y,d2=dx*dx+dy*dy;
+        if(d2<nearestSq)nearestSq=d2;
+      }
+      if(nearestSq<10.24)p.match.dangerExposureMs+=dt;
+      const hitR=playerHitRadius764(p),hitSq=hitR*hitR;
+      if(nearestSq>hitSq&&nearestSq<1.1664&&now-(p.match.lastNearMissAt||0)>420){
+        p.match.nearMisses++;
+        if(nearestSq<.3844)p.match.extremeNearMisses++;
+        p.match.lastNearMissAt=now;
+        addAutoHighlight("NEAR_MISS",`NEAR MISS · ${p.name}`,now,p.index,nearestSq<.3844?2:1);
+      }
+    }
+
+    // Observer collision only.
+    if(!safeAt(p.x,p.y)&&!startProtectionActive816(p,now)&&now>=p.invUntil&&now>=p.collisionLockUntil){
+      const hitR=playerHitRadius764(p);
+      for(const o of playerNearbyObservers(p,hitR+1.0)){
+        if(playerObserverHit(p,o)){
+          p.hits++;
+          p.hitFxUntil=0;
+          p.dead=true;
+          p.match.collisions++;
+          pushRaceEvent(`OBSERVER HIT · ${p.name}`,now,p.index,"COLLISION");
+          addAutoHighlight("COLLISION",`${p.name} · 옵저버 충돌`,now,p.index,2);
+          p.match.deathPoints.push({
+            round:currentRound,
+            t:Math.max(0,now-raceStart),
+            progressPct:+(100*frac).toFixed(1),
+            x:+p.x.toFixed(2),y:+p.y.toFixed(2),
+            ...deathCauseSnapshot(p,now,o)
+          });
+          p.cleanConfidenceMs=0;p.cleanConfidence=0;
+          p.continuousRunMs=0;p.continuousRunMul=1;
+          p.avoidPlanUntil=0;
+          return;
+        }
+      }
+    }
+
+    // 12 o'clock GOAL only.
+    const goal=currentMap770().goal||{x:89,y:5.8};
+    const gdx=p.x-goal.x,gdy=p.y-goal.y;
+    if(frac>=.992&&gdx*gdx+gdy*gdy<30.25){
+      p.done=true;
+      const preciseNow=now;
+      p.finishTime=Math.max(0,preciseNow-raceStart);
+      registerFinishRecord(p,p.finishTime);
+      const finished=players.filter(q=>q.done&&q.finishTime!=null).sort((a,b)=>a.finishTime-b.finishTime);
+      if(finished.length===1)
+        setBroadcastStory(`finish-${p.index}`,"FINISH",`${p.name} 1위 확정`,formatTime(p.finishTime),now,2400);
+      return;
+    }
+
+    // Keep confidence behavior consistent.
+    p.cleanConfidenceMs=Math.min(12000,(p.cleanConfidenceMs||0)+dt);
+    p.cleanConfidence=Math.max(0,Math.min(1,p.cleanConfidenceMs/12000));
+  }
+
 function updatePlayer(p, now, dt){
+    if(currentMap770().id==='triple_diamond'){
+      updateDestinyPlayer183(p,now,dt);
+      return;
+    }
     if(p.done || p.dead) return;
     p.simPrevX=p.x; p.simPrevY=p.y;
 
@@ -12962,6 +13114,21 @@ function seasonCardHtml(p){
   }
   applyPatch8182();
 
+
+  function applyPatch8183(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(!m)return;
+    m.destinyDedicatedUpdateLoop183=true;
+    m.destinyNoLegacyPlanner183=true;
+    m.destinySingleInterpolation183=true;
+    m.destinyNoDoubleCorrection183=true;
+    m.destinyThreatScanMs183=72;
+    m.roadFollowMode778='dedicated-personal-loop';
+    m.racingLineMode772='destiny-dedicated-loop-v8.183';
+    m.qaDestiny8183=true;
+  }
+  applyPatch8183();
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
@@ -12988,9 +13155,10 @@ function seasonCardHtml(p){
     if([...POINT_TO_POINT_MAPS_775].some(id=>MAP_DEFINITIONS_770[id]?.lapRequired775))issues.push("P2P완주775");
     if([...CIRCUIT_MAPS_775].some(id=>!MAP_DEFINITIONS_770[id]?.sharedGate778))issues.push("공용빨강게이트778");
     if(MAP_POOL_770.some(m=>m.id!=="s_map"&&!m.strictRoadFollow778))issues.push("도로추종778");
-    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="personal-path-smooth-ai")issues.push("하드경로778");
+    if(MAP_POOL_770.some(m=>m.id!=="s_map"&&m.id!=="triple_diamond"&&m.roadFollowMode778!=="route-center-hard")||MAP_DEFINITIONS_770.triple_diamond?.roadFollowMode778!=="dedicated-personal-loop")issues.push("하드경로778");
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
+      if(!td?.qaDestiny8183||!td?.destinyDedicatedUpdateLoop183||!td?.destinyNoLegacyPlanner183||!td?.destinySingleInterpolation183||!td?.destinyNoDoubleCorrection183)issues.push("데스티니8183");
       if(!td?.qaDestiny8182||!td?.destinyDedicatedAvoidAi182||!td?.destinyThreatPersonalPath182||!td?.destinyThreeLaneDecision182||!td?.destinyNoGenericEvadeCandidates182||!td?.destinyRenderSmoothing182)issues.push("데스티니8182");
       if(!td?.qaDestiny8181||!td?.destinyCachedPaths8181||!td?.destinyBinaryLookup8181||!td?.destinyNoFrameMaskScan8181||!td?.optimizedInsideLine8181||!td?.centerMerge8181)issues.push("데스티니8181");
       if(!td?.qaDestiny818||!td?.monotonicPersonalProgress818||!td?.allModesPersonalPath818||!td?.noEdgeStall818||!td?.noAdjacentLegSnap818||!td?.noBackwardFork818)issues.push("데스티니818");
