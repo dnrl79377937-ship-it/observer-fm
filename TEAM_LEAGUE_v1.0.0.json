@@ -1,5 +1,5 @@
 {
-  "version": "v1.0.0",
+  "version": "v1.0.3",
   "note": "New version line; unrelated to historical v1 builds.",
   "players": 12,
   "teamAssignment": "Random 6 vs 6 on page load/reset.",
@@ -15,5 +15,10 @@
     "Press 진행하기 for next set"
   ],
   "ui": "Old right-side Race Broadcast Center removed; compact live team matchup summary shown instead.",
-  "averageStatsVisible": false
+  "averageStatsVisible": false,
+  "heatEnd": "First player to clear wins the heat immediately.",
+  "mapOrder": "All 9 maps are shuffled. Each heat uses the next map. After all 9 are used, the deck reshuffles.",
+  "bracketMapDisplay": "Sets 1-6 show a preassigned random map next to the player matchup.",
+  "aceDisplay": "Set 7 is always visible as ??? vs ???. If Sets 1-6 finish 3-3, ??? is replaced by randomly selected ace player names.",
+  "mapAssignment": "One random map per set; all races inside that set use the same assigned map."
 }

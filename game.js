@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.0.0";
+  const BUILD_ID = "v1.0.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -548,7 +548,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       teamA,teamB,
       ace:{A:null,B:null},
       results:[],
-      winner:null
+      winner:null,
+      // v1.0.3: one map is assigned to each SET in advance and shown on the bracket.
+      // Seven slots are prepared; Set 7 remains hidden/??? until a 3:3 tie activates it.
+      setMaps:shuffle100(MAP_POOL_770.map(m=>m.id)).slice(0,7),
+      mapHistory:[],
+      currentMapId:null
     };
     prepareLeaguePair100();
     renderLeagueBoard100();
@@ -566,8 +571,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function prepareLeaguePair100(){
     if(!league100)return;
     if(league100.setNo===7){
-      if(league100.ace.A==null)league100.ace.A=league100.teamA[Math.floor(Math.random()*league100.teamA.length)];
-      if(league100.ace.B==null)league100.ace.B=league100.teamB[Math.floor(Math.random()*league100.teamB.length)];
+      // ACE names are chosen only after a real 3:3 tie activates Set 7.
+      if(league100.teamScore.A===3&&league100.teamScore.B===3){
+        if(league100.ace.A==null)league100.ace.A=league100.teamA[Math.floor(Math.random()*league100.teamA.length)];
+        if(league100.ace.B==null)league100.ace.B=league100.teamB[Math.floor(Math.random()*league100.teamB.length)];
+      }
     }
     const pair=leaguePair100();
     league100.current={A:pair.A,B:pair.B};
@@ -590,6 +598,16 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       current:{
         A:pair.A==null?null:{index:pair.A,name:names[pair.A]},
         B:pair.B==null?null:{index:pair.B,name:names[pair.B]}
+      },
+      map:{
+        id:league100.currentMapId,
+        name:league100.currentMapId?(MAP_DEFINITIONS_770[league100.currentMapId]?.name||league100.currentMapId):null,
+        history:[...(league100.mapHistory||[])],
+        setMaps:(league100.setMaps||[]).map((id,i)=>({
+          setNo:i+1,
+          id,
+          name:MAP_DEFINITIONS_770[id]?.name||id
+        }))
       },
       ace:{
         A:league100.ace.A==null?null:{index:league100.ace.A,name:names[league100.ace.A]},
@@ -633,36 +651,50 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     if(schedule){
       const rows=[];
+
       for(let setNo=1;setNo<=6;setNo++){
         const a=league100.teamA[setNo-1],b=league100.teamB[setNo-1];
         const r=leagueResultForSet100(setNo);
+        const mapId=league100.setMaps?.[setNo-1];
+        const mapName=mapId?(MAP_DEFINITIONS_770[mapId]?.name||mapId):"맵 미정";
         const cls=[
           "league-schedule-row-100",
           r?"done":"",
           !r&&league100.setNo===setNo&&!league100.winner?"current":""
         ].filter(Boolean).join(" ");
+
         rows.push(`<div class="${cls}">
           <span class="set">${setNo}세트</span>
-          <b class="a">${names[a]}</b>
+          <b class="a">${mapName} · ${names[a]}</b>
           <span class="vs">VS</span>
           <b class="b">${names[b]}</b>
           <span class="result">${r?`${r.score.A} : ${r.score.B}`:"-"}</span>
         </div>`);
       }
 
-      const aceNeeded=league100.setNo===7||league100.results.some(r=>r.setNo===7)||
+      // v1.0.3: ACE row is always visible.
+      // Players remain ??? until Sets 1~6 actually finish 3:3.
+      const aceActivated=league100.setNo===7 ||
+        league100.results.some(r=>r.setNo===7) ||
         (league100.results.length>=6&&league100.teamScore.A===3&&league100.teamScore.B===3);
-      if(aceNeeded){
-        prepareLeaguePair100();
-        const r=leagueResultForSet100(7);
-        rows.push(`<div class="league-schedule-row-100 ace ${!r&&league100.setNo===7?"current":""} ${r?"done":""}">
-          <span class="set">7세트<br>ACE</span>
-          <b class="a">${league100.ace.A==null?"-":names[league100.ace.A]}</b>
-          <span class="vs">VS</span>
-          <b class="b">${league100.ace.B==null?"-":names[league100.ace.B]}</b>
-          <span class="result">${r?`${r.score.A} : ${r.score.B}`:"-"}</span>
-        </div>`);
-      }
+
+      const aceMapId=league100.setMaps?.[6];
+      const aceMapName=aceMapId?(MAP_DEFINITIONS_770[aceMapId]?.name||aceMapId):"맵 미정";
+      const aceResult=leagueResultForSet100(7);
+
+      if(aceActivated)prepareLeaguePair100();
+
+      const aceA=aceActivated&&league100.ace.A!=null?names[league100.ace.A]:"???";
+      const aceB=aceActivated&&league100.ace.B!=null?names[league100.ace.B]:"???";
+
+      rows.push(`<div class="league-schedule-row-100 ace ${!aceResult&&league100.setNo===7?"current":""} ${aceResult?"done":""}">
+        <span class="set">7세트<br>ACE</span>
+        <b class="a">${aceMapName} · ${aceA}</b>
+        <span class="vs">VS</span>
+        <b class="b">${aceB}</b>
+        <span class="result">${aceResult?`${aceResult.score.A} : ${aceResult.score.B}`:"-"}</span>
+      </div>`);
+
       schedule.innerHTML=rows.join("");
     }
 
@@ -704,7 +736,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       if(league100.winner){
         current.innerHTML=`<small>FINAL RESULT</small><div class="league-side-heat-100">${league100.winner} TEAM WIN</div>`;
       }else{
-        current.innerHTML=`<small>${league100.setNo===7?"ACE DECIDER":`${league100.setNo} SET`} · ${league100.heatNo}번째 경기</small>
+        const mapName100=league100.currentMapId?(MAP_DEFINITIONS_770[league100.currentMapId]?.name||league100.currentMapId):"맵 준비";
+        current.innerHTML=`<small>${league100.setNo===7?"ACE DECIDER":`${league100.setNo} SET`} · ${mapName100} · ${league100.heatNo}번째 경기</small>
           <div class="league-side-current-row-100">
             <b class="a">${pair.A==null?"-":names[pair.A]}</b><i>VS</i><b class="b">${pair.B==null?"-":names[pair.B]}</b>
           </div>
@@ -728,6 +761,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }).join("");
     }
   }
+  function nextLeagueMap100(){
+    if(!league100)return currentMap770().id;
+    const setIndex=Math.max(0,Math.min(6,(league100.setNo||1)-1));
+    const id=league100.setMaps?.[setIndex] || MAP_POOL_770[setIndex%MAP_POOL_770.length]?.id || currentMap770().id;
+    league100.currentMapId=id;
+    if(!league100.mapHistory.includes(id))league100.mapHistory.push(id);
+    return id;
+  }
+
 
   function setupLeagueHeat100(){
     const pair=leaguePair100();
@@ -747,6 +789,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     // Unit rotation follows heat count but never affects league score rules.
     currentRound=((league100.setNo+league100.heatNo-2)%5)+1;
+
+    // v1.0.3: each SET has one preassigned random map; all heats in that set reuse it.
+    const nextMapId100=nextLeagueMap100();
+    const mapResult100=applyMapDefinition770(nextMapId100,{reset:false});
+    if(!mapResult100.ok){
+      league100.currentMapId=currentMap770().id;
+    }
+
     resetRound();
     renderLeagueSide100();
     return true;
@@ -759,14 +809,18 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     league100.heatNo=1;
     league100.heatScore={A:0,B:0};
     hideLeagueBoard100();
-    setupLeagueHeat100();
+    if(!setupLeagueHeat100()){
+      league100.phase="bracket";
+      showLeagueBoard100();
+      return;
+    }
     start();
   }
 
   function continueLeagueHeat100(){
-    if(!league100||league100.winner)return;
+    if(!league100||league100.winner||league100.phase==="complete")return;
     league100.phase="racing";
-    setupLeagueHeat100();
+    if(!setupLeagueHeat100())return;
     start();
   }
 
@@ -810,7 +864,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function awardLeagueHeat100(winner){
     if(!league100||league100.phase!=="racing"||league100.winner)return;
+    if(winner!=="A"&&winner!=="B")return;
+
     league100.heatScore[winner]++;
+    league100._lastHeatWinner101=winner;
     renderLeagueSide100();
 
     if(league100.heatScore[winner]>=2){
@@ -819,7 +876,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     }
 
     league100.heatNo++;
-    setTimeout(()=>continueLeagueHeat100(),650);
+    renderLeagueSide100();
+    setTimeout(()=>continueLeagueHeat100(),180);
   }
 
   let teamAssignments={};
@@ -4322,19 +4380,15 @@ function calibratedFastCorridor79(si){
     return dx*dx+dy*dy;
   }
   function playerObserverHit(p,o){
-    // v3.7 RELATIVE-MOTION SWEPT COLLISION:
-    // Sweep BOTH moving objects over the same 20 ms simulation step.
-    // In relative coordinates this is one segment from
-    // (playerPrev-observerPrev) to (playerNow-observerNow) against the origin.
-    // This prevents fast crossing contacts from being missed and avoids inflating HIT.
-    const r=playerHitRadius764(p);
-    const opx=Number.isFinite(o.simPrevX)?o.simPrevX:o.x;
-    const opy=Number.isFinite(o.simPrevY)?o.simPrevY:o.y;
-    const r0x=p.simPrevX-opx, r0y=p.simPrevY-opy;
-    const r1x=p.x-o.x, r1y=p.y-o.y;
-    if(segmentPointDistanceSq(r0x,r0y,r1x,r1y,0,0)<r*r) return true;
-    return r1x*r1x+r1y*r1y<r*r;
+    if(!p||!o)return false;
+    const dx=p.x-o.x,dy=p.y-o.y;
+    const base=playerHitRadius764(p);
+    // v1.0.1: slightly more forgiving visually = slightly stronger logical contact.
+    // Prevents obvious sprite overlap from slipping through.
+    const r=base+0.18;
+    return dx*dx+dy*dy<=r*r;
   }
+
 
   // v4.48 START AI: racers still spawn at exactly the same v6.04 start-safe coordinate. Start, Reaction,
   // Acceleration and personality decide how quickly and how strongly each racer fans into
@@ -9141,7 +9195,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     // Observer collision only.
     if(!safeAt(p.x,p.y)&&!startProtectionActive816(p,now)&&now>=p.invUntil&&now>=p.collisionLockUntil){
-      const hitR=playerHitRadius764(p);
+      const hitR=playerHitRadius764(p)+0.18;
       for(const o of playerNearbyObservers(p,hitR+1.0)){
         if(playerObserverHit(p,o)){
           p.hits++;
@@ -10626,16 +10680,32 @@ targetOff=clampRoadOffset(si,targetOff,p);
       if(tied.length!==1){
         running=false;
         roundTransitioning=false;
-        setTimeout(()=>continueLeagueHeat100(),650);
+        setTimeout(()=>continueLeagueHeat100(),180);
         return;
       }
 
       const winnerPlayer=tied[0];
       const pair=leaguePair100();
-      const winner=winnerPlayer.sourceIndex===pair.A?"A":"B";
+
+      // v1.0.1 robust league winner mapping:
+      // sourceIndex is preferred, but name/index fallbacks prevent a clear from scoring 0.
+      let winner=null;
+      if(winnerPlayer.sourceIndex===pair.A||winnerPlayer.name===names[pair.A])winner="A";
+      else if(winnerPlayer.sourceIndex===pair.B||winnerPlayer.name===names[pair.B])winner="B";
+      else if(winnerPlayer.index===0)winner="A";
+      else if(winnerPlayer.index===1)winner="B";
+
       running=false;
       roundTransitioning=false;
-      awardLeagueHeat100(winner);
+
+      if(winner){
+        awardLeagueHeat100(winner);
+      }else{
+        // Defensive fallback: never silently lose a legitimate clear.
+        const fallback=(winnerPlayer.index||0)===0?"A":"B";
+        awardLeagueHeat100(fallback);
+      }
+      renderLeagueSide100();
       return;
     }
 
@@ -10661,7 +10731,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const r=currentRound;
     setBroadcastStory(`all-dead-${r}`,"ALL OUT",`${ROUND_UNIT_NAMES[r]} 전원 사망`,`같은 경기 재시작`,gameNow(),900);
     if(league100?.phase==="racing"){
-      setTimeout(()=>{roundTransitioning=false;continueLeagueHeat100();},700);
+      setTimeout(()=>{roundTransitioning=false;continueLeagueHeat100();},220);
       return;
     }
     setTimeout(()=>{currentRound=r;resetRound();start();},900);
@@ -11087,13 +11157,21 @@ targetOff=clampRoadOffset(si,targetOff,p);
     }
 
     const roundFinishers=players.filter(p=>p.done&&p.finishTime!=null).sort((a,b)=>a.finishTime-b.finishTime);
+
+    // v1.0.2 TEAM LEAGUE: first clear wins the 1v1 heat immediately.
+    if(league100?.phase==="racing"&&roundFinishers.length){
+      running=false;
+      finalizeIndividualClear([roundFinishers[0]],ts);
+      return;
+    }
+
     if(!isTeamMode()&&roundFinishers.length){
       running=false;finalizeIndividualClear(roundFinishers,ts);return;
     }
     if(players.every(p=>p.dead)){
       running=false;restartSameIndividualRound();return;
     }
-    if(isTeamMode()&&players.every(p=>p.done)){
+    if(isTeamMode()&&league100?.phase!=="racing"&&players.every(p=>p.done)){
       const fin=[...players].sort((a,b)=>a.finishTime-b.finishTime);
       if(fin[0])commentaryLine(`round-finish-${currentRound}`,`${currentRound}라운드 종료! ${fin[0].name} 1위`,ts,true);
       running=false;finalizeRound();return;
@@ -13751,6 +13829,36 @@ function seasonCardHtml(p){
     window.__OBSERVER_FM_V100__={mode:"team-league",rules:{...LEAGUE_RULES_100}};
   }
   applyPatch100();
+
+
+  function applyPatch101(){
+    window.__OBSERVER_FM_V101__={
+      fasterLeagueTransition:true,
+      collisionTolerance:0.18,
+      robustLeagueScoring:true
+    };
+  }
+  applyPatch101();
+
+
+  function applyPatch102(){
+    window.__OBSERVER_FM_V102__={
+      firstClearEndsHeat:true,
+      randomizedMapDeck:true,
+      leagueFlowAudit:true
+    };
+  }
+  applyPatch102();
+
+
+  function applyPatch103(){
+    window.__OBSERVER_FM_V103__={
+      bracketShowsSetMaps:true,
+      aceHiddenUntilThreeThree:true,
+      oneMapPerSet:true
+    };
+  }
+  applyPatch103();
 
   function v36SelfAudit(){
     const issues=[];
