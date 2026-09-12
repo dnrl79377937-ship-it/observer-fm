@@ -32,7 +32,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v8.16";
+  const BUILD_ID = "v8.17";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -586,7 +586,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       // Route separation must come from AI decisions after the gun, not spawn offsets.
       const startLane=0;
       return {
-        index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||null,
+        index:i,sourceIndex:src,name,color:INDIVIDUAL_COLORS[i],profile:pf,stats,drivingStyle,team:teamAssignments[i]||null,spriteKey:RACER_KEYS[i],
         _dgStartIndex813:dgStartIndex813,_dgChoices813:dgChoices813,_dgPath813:null,_dgProg813:0,
         raceForm,survivalNorm,wideDetourRace,wideDetourSide,
         visionRadius:Math.max(50,Math.min(64,
@@ -5729,7 +5729,7 @@ function applyMapSet776(){
     double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_894.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
-    triple_diamond:{slot:9,name:"데스티니 게이트",en:"Destiny Gate",theme:"Heaven vs Hell Destiny Gate",tags:["데스티니게이트","2스타트","천국vs지옥"],image:"map_destiny_gate_8113.png?v=812-destiny-gate",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:true,verticality:false}}
+    triple_diamond:{slot:9,name:"데스티니 게이트",en:"Destiny Gate",theme:"Heaven vs Hell Destiny Gate",tags:["데스티니게이트","2스타트","천국vs지옥"],image:"map_destiny_gate_8113.png?v=817-destiny-gate",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:true,verticality:false}}
   };
   for(const id of keep){
     const m=MAP_DEFINITIONS_770[id];
@@ -5828,7 +5828,7 @@ applyMapSet776();
       lapArmFraction775:0,racingLineMode772:"generated-v7.77"
     });
     set777("triple_diamond",{
-      image:"map_destiny_gate_8113.png?v=812-destiny-gate",imageSize:{w:1254,h:1254},
+      image:"map_destiny_gate_8113.png?v=817-destiny-gate",imageSize:{w:1254,h:1254},
       logicalSize:{w:178,h:178},
       route770:[[89.05,165.8],[72.2,153],[55,138],[74,116],[89.05,107],[123,88],[110,61],[89.05,51],[55,34],[68,14.5],[89.1,5.8]],
       widths770:[7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2,7.2],
@@ -10213,7 +10213,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       marseilleVisualSpin=p.marseilleSide*Math.sin(mt*Math.PI)*1.05;
       ctx.save();
       ctx.globalAlpha=.16+.18*Math.sin(mt*Math.PI);
-      ctx.strokeStyle=teamColor(p.team);
+      ctx.strokeStyle=p.color||teamColor(p.team);
       ctx.lineWidth=Math.max(2,r*.22);
       ctx.lineCap="round";
       ctx.beginPath();
@@ -10223,20 +10223,19 @@ targetOff=clampRoadOffset(si,targetOff,p);
       ctx.restore();
     }
 
-    const sprite=unitSprites[currentRound]?.[p.team];
+    const spriteKey=p.spriteKey||RACER_KEYS[p.index]||"A";
+    const sprite=unitSprites[currentRound]?.[spriteKey];
     if(sprite && sprite.complete && sprite.naturalWidth){
       const size=r*2.65;
       ctx.save();
       ctx.rotate(p.visualAngle+marseilleVisualSpin);
-      ctx.shadowColor=p.team==="A" ? "rgba(255,77,77,.45)" :
-        p.team==="B" ? "rgba(77,141,255,.45)" :
-        p.team==="C" ? "rgba(255,216,77,.45)" : p.team==="D" ? "rgba(57,212,106,.45)" : "rgba(255,255,255,.35)";
+      ctx.shadowColor=p.color||"rgba(255,255,255,.45)";
       ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
       ctx.restore();
     }else{
       // Sprite-load fallback stays team-colored; collision never changes the icon.
-      ctx.fillStyle=teamColor(p.team);
+      ctx.fillStyle=p.color||teamColor(p.team);
       ctx.strokeStyle="#07111a";
       ctx.lineWidth=3;
       ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
@@ -12395,7 +12394,7 @@ function seasonCardHtml(p){
     m.en='Destiny Gate';
     m.theme='Heaven vs Hell Destiny Gate';
     m.tags=['데스티니게이트','2스타트','천국vs지옥'];
-    m.image='map_destiny_gate_8113.png?v=812-destiny-gate';
+    m.image='map_destiny_gate_8113.png?v=817-destiny-gate';
     m.imageSize={w:1254,h:1254};
     m.logicalSize={w:178,h:178};
     m.miniCrop={x:0,y:0,w:178,h:178};
@@ -12459,7 +12458,7 @@ function seasonCardHtml(p){
     if(!m)return;
     m.name='데스티니 게이트';
     m.en='Destiny Gate';
-    m.image='map_destiny_gate_8113.png?v=8113-clean-merged-junctions';
+    m.image='map_destiny_gate_8113.png?v=817-destiny-gate';
     m.imageSize={w:1254,h:1254};
     m.dualStarts810=[{x:72.2,y:165.8},{x:105.9,y:165.8}];
     m.start={x:89.05,y:165.8};
@@ -12560,6 +12559,19 @@ function seasonCardHtml(p){
   applyPatch815();
 
 
+
+  function applyPatch817(){
+    const m=MAP_DEFINITIONS_770.triple_diamond;
+    if(m){
+      m.name='데스티니 게이트';
+      m.en='Destiny Gate';
+      m.image='map_destiny_gate_8113.png?v=817-destiny-gate';
+      m.imageFallback791='map_triple_diamond_810.png?v=810-triple-diamond';
+      m.qaDestinyAsset817=true;
+    }
+  }
+  applyPatch817();
+
   function applyPatch816(){
     for(const m of MAP_POOL_770){
       if(!m)continue;
@@ -12602,13 +12614,13 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780)issues.push("아이스금지구역780");
     {const td=MAP_DEFINITIONS_770.triple_diamond;
       if(!td?.qaDestinyGate812||td?.id!=="triple_diamond"||!Array.isArray(td?.dualStarts810)||td.dualStarts810.length!==2)issues.push("데스티니게이트8113");
-      if(td?.image!=="map_destiny_gate_8113.png?v=8113-clean-merged-junctions")issues.push("데스티니게이트이미지8113");
+      if(td?.image!=="map_destiny_gate_8113.png?v=817-destiny-gate"||!td?.qaDestinyAsset817)issues.push("데스티니게이트이미지817");
       if(td?.lapRequired775!==false||td?.finishRule775!=="end-gate")issues.push("데스티니게이트완주8113");
       if(td?.routeChoiceProbability813!==.50||td?.routeChoiceCount815!==2||!td?.routeChoiceAtEveryJunction813||!Array.isArray(td?.destinyRoads813)||td.destinyRoads813.length!==8)issues.push("데스티니게이트분기815");
       if(!td?.qaDestinyGate815||!td?.actualMovementUsesPersonalPath815||!td?.progressUsesPersonalPath815||!td?.threatFrameUsesPersonalPath815||!td?.noLegacyRouteMask815)issues.push("데스티니게이트개인경로815");
     }
     if(!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스사각형794");
-    if(!unitSprites[1]?.D||!unitSprites[5]?.D)issues.push("유닛스프라이트");
+    if([1,2,3,4,5].some(r=>RACER_KEYS.some(k=>!unitSprites[r]?.[k])))issues.push("유닛스프라이트817");
     return {ok:!issues.length,issues,build:BUILD_ID};
   }
 
