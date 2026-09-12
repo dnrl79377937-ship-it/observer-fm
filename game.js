@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.0.6";
+  const BUILD_ID = "v1.0.7";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -997,6 +997,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return p?.color||teamColor(p?.team);
   }
 
+
+  function leagueNameplateColor107(p,alpha=.90){
+    if(p?.team==="BLUE")return `rgba(77,141,255,${alpha})`;
+    if(p?.team==="RED")return `rgba(255,77,77,${alpha})`;
+    return `rgba(110,130,145,${alpha})`;
+  }
+
   function teamLabel(team){return team==="RED"?"빨강팀":team==="BLUE"?"파랑팀":"개인전";}
 
   const TEAM_COLORS={RED:"#ff4d4d",BLUE:"#4d8dff"};
@@ -1715,6 +1722,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
 
   function optimalOffsetFor(p){
+    if(isSpaceMap107()){
+      const prog=Number.isFinite(p?._splineProg720)?p._splineProg720:0;
+      return spaceLaneBias107(p,prog);
+    }
+
     const si=Math.min(p.seg,segs.length-1);
     const cur=segs[si];
     const next=segs[Math.min(segs.length-1,si+1)];
@@ -8506,9 +8518,59 @@ applyMapSet776();
     };
   }
 
+
+  function isSpaceMap107(){
+    return currentMap770()?.id==="skyway";
+  }
+
+  function spaceLaneBias107(p,prog){
+    if(!isSpaceMap107())return 0;
+
+    // v1.0.7: Space no longer hugs the exact center line.
+    // Each racer gets a persistent lane personality and may use ± road width.
+    if(!Number.isFinite(p._spaceLaneSeed107)){
+      p._spaceLaneSeed107=(Math.random()*2-1)*1.8;
+    }
+
+    // gentle wave keeps racers from stacking in the exact same center path
+    const wave=Math.sin((prog||0)*.055+(p.index||0)*1.7)*.55;
+    return Math.max(-2.25,Math.min(2.25,p._spaceLaneSeed107+wave));
+  }
+
+  function sparseObserverThreat107(p,now){
+    // Special case for "only 1~2 observers nearby": this should be easy to read,
+    // so do a cheap but proactive forward-lane check.
+    const nearby=localObservers723(p,8.8);
+    if(!nearby.length||nearby.length>3)return null;
+
+    const frame=currentMap770().id==='triple_diamond'
+      ? destinyPoint813(p,Math.max(0,Number(p._dgProg813)||0))
+      : splinePointAt720(Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y));
+
+    let best=null,bestScore=Infinity;
+    for(const o of nearby){
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const forward=rx*frame.ux+ry*frame.uy;
+      const lateral=rx*(-frame.uy)+ry*frame.ux;
+      const dist=Math.hypot(rx,ry);
+
+      if(forward<-.35||forward>7.8||Math.abs(lateral)>3.0)continue;
+
+      const score=forward*.65+Math.abs(lateral)*.4+dist*.15;
+      if(score<bestScore){
+        bestScore=score;
+        best={o,dist,forward,lateral,emergency:dist<3.1||forward<3.4,source722:"sparse107"};
+      }
+    }
+    return best;
+  }
+
   function predictiveThreat722(p,now){
     if(currentMap770().id==='triple_diamond')return destinyThreat182(p,now);
     if(!p || safeAt(p.x,p.y)) return null;
+
+    const sparse107=sparseObserverThreat107(p,now);
+    if(sparse107)return sparse107;
 
     const prog=Number.isFinite(p._splineProg720)
       ? p._splineProg720
@@ -8538,10 +8600,10 @@ applyMapSet776();
     // v7.24(130): normal prediction is capped at 11.1; emergency 4.0 stays immediate.
     if(now<(p._nextThreatScan724||0))
       return p._cachedThreat724||null;
-    p._nextThreatScan724=now+(startBoost816?24:36);
+    p._nextThreatScan724=now+(isSpaceMap107()?(startBoost816?18:26):(startBoost816?24:36));
 
     let best=null,bestScore=Infinity;
-    const nearby=localObservers723(p,startBoost816?15.2:12.8);
+    const nearby=localObservers723(p,isSpaceMap107()?(startBoost816?16.5:14.6):(startBoost816?15.2:12.8));
 
     for(const o of nearby){
       const ox=o.x-p.x,oy=o.y-p.y;
@@ -8566,7 +8628,7 @@ applyMapSet776();
         if(d<minSep){minSep=d;minH=h;}
       }
 
-      const frontBlock=forward>-.30 && forward<5.15 && Math.abs(lateral)<2.20;
+      const frontBlock=forward>-.30 && forward<(isSpaceMap107()?6.0:5.15) && Math.abs(lateral)<(isSpaceMap107()?2.45:2.20);
       const emergency=
         dist<2.55 ||
         (frontBlock && dist<4.15) ||
@@ -8681,6 +8743,21 @@ applyMapSet776();
 
   function chooseEvadeAction720(p,now,threat){
     if(currentMap770().id==='triple_diamond')return chooseDestinyEvade182(p,now,threat);
+
+    // v1.0.7: when only a tiny number of observers are nearby, the correct
+    // behavior should usually be a clean lateral dodge rather than a late stop.
+    if(threat?.source722==="sparse107"){
+      const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
+      const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,oldProg+2.5));
+      const side=threat.lateral>=0?-1:1;
+      return {
+        kind:"sparse-dodge107",
+        target:{x:q.x,y:q.y,kind:"race720-sparse107"},
+        laneOffset:side*2.0,
+        speedMul:.97,
+        minClear:3.0
+      };
+    }
     const oldProg=Number.isFinite(p._splineProg720)?p._splineProg720:0;
     const projected=currentMap770().id==='triple_diamond'
       ? destinyNearest813(p,p.x,p.y,p._dgProg813)
@@ -10977,7 +11054,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
       const x=q[0]*sx, y=q[1]*sy, focused=i===focus;
       rctx.beginPath();
       rctx.arc(x,y,focused?5.8:3.9,0,Math.PI*2);
-      rctx.fillStyle=teamColor(p.team);
+      rctx.fillStyle=leagueTeamColor105(p);
       rctx.fill();
       rctx.strokeStyle=focused?"#ffffff":"#07111a";
       rctx.lineWidth=focused?2.2:1.2;
@@ -11348,7 +11425,7 @@ targetOff=clampRoadOffset(si,targetOff,p);
     const lh=Math.max(15,r*1.02);
     const ly=-r*1.48;
     ctx.fillStyle="rgba(5,8,13,.88)";
-    ctx.strokeStyle=teamColor(p.team);ctx.lineWidth=1.5;
+    ctx.strokeStyle=leagueTeamColor105(p);ctx.lineWidth=1.5;
     ctx.beginPath();
     if(ctx.roundRect) ctx.roundRect(-tw/2,ly-lh,tw,lh,5);
     else ctx.rect(-tw/2,ly-lh,tw,lh);
@@ -13907,6 +13984,26 @@ function seasonCardHtml(p){
     };
   }
   applyPatch106();
+
+
+  function applyPatch107(){
+    const space=MAP_DEFINITIONS_770.skyway;
+    if(space){
+      space.blackHoleHardCenter896=false;
+      space.blackHoleExactCenter897=false;
+      space.spaceFreeLane107=true;
+      space.spaceReactionBoost107=true;
+      space.spaceMaxLane107=2.25;
+    }
+
+    window.__OBSERVER_FM_V107__={
+      spaceFreeLane:true,
+      spaceReactionBoost:true,
+      sparseObserverPreRead:true,
+      unifiedTeamColor:true
+    };
+  }
+  applyPatch107();
 
   function v36SelfAudit(){
     const issues=[];
