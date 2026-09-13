@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.6.1";
+  const BUILD_ID = "v1.6.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10154,10 +10154,17 @@ function updateDestinyPlayer183(p,now,dt){
     p._nextControlCheck130=now+210;
 
     // Slightly higher than v1.3.1, still clearly low-probability.
-    const chance=.062+style.creativity*.042+d.control*.014;
+    // v1.6.2: slightly more human-like variation on safe road.
+    const chance=.074+style.creativity*.046+d.control*.016;
     if(Math.random()>=chance)return 0;
 
-    const types=["zigzag","wide","hold","feint","cutback","doublemove","microzig"];
+    const types=[
+      "zigzag","wide","hold",
+      "feint","feint",
+      "cutback","cutback",
+      "doublemove","doublemove",
+      "microzig"
+    ];
     const type=types[Math.floor(Math.random()*types.length)];
     const side=Math.random()<.5?-1:1;
     p._controlMove130={type,side,started:now,phase:Math.random()*Math.PI*2};
@@ -10728,7 +10735,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     // Only force if that one observer is actually threatening our corridor.
     const threatening=
-      dist<7.6 ||
+      dist<8.0 ||
       (fw>-.6&&fw<10.6&&Math.abs(lat)<4.0);
     if(!threatening)return null;
 
@@ -10756,7 +10763,7 @@ function updateDestinyPlayer183(p,now,dt){
         const gap=Math.hypot(x-ox,y-oy);
         minGap=Math.min(minGap,gap);
 
-        const safe=4.15+d.avoidance*.75+d.reaction*.35+(m.stopped?.65:0);
+        const safe=4.30+d.avoidance*.80+d.reaction*.38+(m.stopped?.72:0);
         if(gap<safe+1.8){
           const w=(safe+1.8-gap)/(safe+1.8);
           risk+=w*w*(2.8-t*.45);
@@ -10828,7 +10835,7 @@ function updateDestinyPlayer183(p,now,dt){
           const gap=Math.hypot(x-ox,y-oy);
           minGap=Math.min(minGap,gap);
 
-          const safe=3.85+d.avoidance*.80+d.risk*.70+(m.stopped?.60:0);
+          const safe=4.05+d.avoidance*.86+d.risk*.76+(m.stopped?.68:0);
           if(gap<safe)blockedNow=true;
 
           if(gap<safe+2.5){
@@ -10862,18 +10869,18 @@ function updateDestinyPlayer183(p,now,dt){
     if(!best)return null;
 
     // Corridor only takes control when there is real traffic ahead.
-    const danger=best.minGap<5.0||best.risk>.08||best.blocked>0;
+    const danger=best.minGap<5.35||best.risk>.055||best.blocked>0;
     if(!danger)return null;
 
     p._corridorLane161=best.lane;
-    p._corridorUntil161=now+140;
+    p._corridorUntil161=now+165;
 
     return {
       lane:best.lane,
       minGap:best.minGap,
       dangerous:true,
       corridor161:true,
-      speedMul:best.minGap<2.8?.90:.96
+      speedMul:best.minGap<2.8?.90:.965
     };
   }
 
@@ -11029,7 +11036,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     const emergencyBoost=
       (p.liveEvadeAction==="collision-veto")?3.55:
-      ((p.liveEvadeAction==="safe-corridor")?3.10:
+      ((p.liveEvadeAction==="safe-corridor")?3.25:
       ((p.liveEvadeAction==="single-hard-escape")?3.80:
       ((p.liveEvadeAction==="crowd-breakout")?3.70:
       ((p.liveEvadeAction==="crowd-survival")?2.55:
@@ -11293,11 +11300,11 @@ function updateDestinyPlayer183(p,now,dt){
   function collisionVeto153(p,now,info,intendedLane){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
-    const nearby=localObservers723(p,13.2+d.prediction*2.6);
+    const nearby=localObservers723(p,13.8+d.prediction*2.7);
     if(!nearby.length)return null;
 
     const times=[.03,.06,.10,.15,.21,.29,.39,.51,.66,.84,1.04,1.26,1.50];
-    const required=3.85+d.avoidance*.74+d.reaction*.42;
+    const required=4.00+d.avoidance*.78+d.reaction*.45;
 
     let intendedMin=999;
     for(const o of nearby){
@@ -15451,6 +15458,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch161();
+
+
+  function applyPatch162(){
+    window.__OBSERVER_FM_V162__={
+      finalSurvivalTune:true,
+      corridorSafetyMarginRaised:true,
+      collisionVetoClearanceRaised:true,
+      singleObserverSafetyRaised:true,
+      safeCorridorBoost:3.25,
+      controlVarietyRaisedSlightly:true,
+      safeRoadControlChanceRaised:true
+    };
+  }
+  applyPatch162();
 
   function v36SelfAudit(){
     const issues=[];
