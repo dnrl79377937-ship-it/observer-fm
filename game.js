@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.2";
+  const BUILD_ID = "v1.5.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1569,6 +1569,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._simpleEscapeUntil133=0;p._simpleEscapeLane133=NaN;
       p._masterHoldUntil140=0;p._masterLane140=NaN;p._masterStopUntil140=0;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;p._crowdPlanStarted150=0;p._crowdWaitUntil150=0;
+      p._vetoLane153=NaN;p._vetoUntil153=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10996,10 +10997,11 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="crowd-survival")?1.90:
+      (p.liveEvadeAction==="collision-veto")?2.05:
+      ((p.liveEvadeAction==="crowd-survival")?1.90:
       ((p.liveEvadeAction==="survival-master")?1.62:
       ((p.liveEvadeAction==="simple-escape")?1.48:
-      ((p.liveEvadeAction==="free-path-dodge")?1.32:1)));
+      ((p.liveEvadeAction==="free-path-dodge")?1.32:1))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11123,6 +11125,93 @@ function updateDestinyPlayer183(p,now,dt){
     }
     return false;
   }
+
+  // ============================================================
+  // v1.5.3 FINAL COLLISION VETO
+  // Every tick, validate the path that will ACTUALLY be driven.
+  // If it intersects an observer soon, the old plan loses authority immediately.
+  // ============================================================
+
+  function pathGap153(p,info,lane,o,t){
+    const speed=Math.max(6.5,Number(p.speed)||9.7);
+    const pr=Math.min(info.total,info.prog+speed*t);
+    const q=smoothFrame120(info,pr);
+    const nx=-q.uy,ny=q.ux;
+    const x=q.x+nx*lane,y=q.y+ny*lane;
+
+    const m=observerMotion131(o);
+    const ox=o.x+(m.stopped?0:m.vx*t);
+    const oy=o.y+(m.stopped?0:m.vy*t);
+    return Math.hypot(x-ox,y-oy);
+  }
+
+  function collisionVeto153(p,now,info,intendedLane){
+    const d=driver120(p);
+    const maxLane=roadHalf120(p,info,info.prog);
+    const nearby=localObservers723(p,8.6+d.prediction*1.7);
+    if(!nearby.length)return null;
+
+    const times=[.10,.20,.34,.50,.70,.88];
+    const required=3.25+d.avoidance*.55+d.reaction*.30;
+
+    let intendedMin=999;
+    for(const o of nearby){
+      for(const t of times){
+        intendedMin=Math.min(intendedMin,pathGap153(p,info,intendedLane,o,t));
+      }
+    }
+
+    // No danger on the actual intended route.
+    if(intendedMin>=required)return null;
+
+    // Old route is vetoed. Search dense side exits immediately.
+    const current=Number(p._lane120)||0;
+    const candidates=[-1,-.85,-.68,-.50,-.32,-.16,.16,.32,.50,.68,.85,1].map(v=>v*maxLane);
+    let best=null;
+
+    for(const lane of candidates){
+      let minGap=999,risk=0;
+      for(const o of nearby){
+        const m=observerMotion131(o);
+        for(const t of times){
+          const gap=pathGap153(p,info,lane,o,t);
+          minGap=Math.min(minGap,gap);
+
+          const safe=required+(m.stopped?.45:0);
+          if(gap<safe+1.6){
+            const w=(safe+1.6-gap)/(safe+1.6);
+            risk+=w*w*(2.6-t*.55);
+          }
+        }
+      }
+
+      let score=risk*52+Math.max(0,required-minGap)*42+Math.abs(lane-current)*.012;
+
+      // Prefer a real side-step rather than tiny correction that still clips obstacle.
+      if(Math.abs(lane-current)<.45)score+=.24;
+
+      // If two racers overlap, break mirrored evasions.
+      const c=competitionState132(p);
+      if(c.opp&&c.close){
+        const other=Number(c.opp._vetoLane153);
+        if(Number.isFinite(other)&&Math.sign(other)===Math.sign(lane))score+=.16;
+      }
+
+      if(!best||score<best.score)best={lane,minGap,score};
+    }
+
+    if(!best)return null;
+
+    p._vetoLane153=best.lane;
+    p._vetoUntil153=now+260;
+
+    return {
+      lane:best.lane,
+      minGap:best.minGap,
+      emergency:true
+    };
+  }
+
   function updatePlayer(p,now,dt){
     if(!p||p.done||p.dead)return;
     p.simPrevX=p.x;p.simPrevY=p.y;
@@ -11137,15 +11226,45 @@ function updateDestinyPlayer183(p,now,dt){
     const info=pathInfo120(p);
     p._v120Prog=info.prog;p._v120Total=info.total;
 
-    const decision=freeDrivingDecision130(p,now,info);
+    let decision=freeDrivingDecision130(p,now,info);
+
+    // v1.5.3: final path veto checks the route that is ACTUALLY about to be driven.
+    const veto153=collisionVeto153(p,now,info,decision.lane);
+    if(veto153){
+      decision={
+        ...decision,
+        lane:veto153.lane,
+        speedMul:Math.max(.88,Number(decision.speedMul)||1),
+        dangerous:true,
+        veto153:true,
+        minGap:veto153.minGap
+      };
+
+      // Cancel stale commitments immediately.
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._controlMove130=null;p._controlMoveUntil130=0;
+    }else if(now<(p._vetoUntil153||0)&&Number.isFinite(p._vetoLane153)){
+      // Hold the emergency side briefly so the racer doesn't snap back into danger.
+      decision={
+        ...decision,
+        lane:p._vetoLane153,
+        speedMul:Math.max(.92,Number(decision.speedMul)||1),
+        dangerous:true,
+        veto153Hold:true
+      };
+    }
+
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.crowd150
+    p.liveEvadeAction=decision.veto153
+      ? "collision-veto"
+      : (decision.crowd150
       ? "crowd-survival"
       : (decision.master140
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -15023,6 +15142,19 @@ function seasonCardHtml(p){
     };
   }
   applyPatch152();
+
+
+  function applyPatch153(){
+    window.__OBSERVER_FM_V153__={
+      finalCollisionVeto:true,
+      plannedPathCheckedEveryTick:true,
+      stalePlanCancelledOnThreat:true,
+      noProbabilityGate:true,
+      vetoHoldMs:260,
+      vetoLateralBoost:2.05
+    };
+  }
+  applyPatch153();
 
   function v36SelfAudit(){
     const issues=[];
