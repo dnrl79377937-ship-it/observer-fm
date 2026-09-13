@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.5";
+  const BUILD_ID = "v1.5.7";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1570,6 +1570,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._masterHoldUntil140=0;p._masterLane140=NaN;p._masterStopUntil140=0;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;p._crowdPlanStarted150=0;p._crowdWaitUntil150=0;
       p._vetoLane153=NaN;p._vetoUntil153=0;
+      p._breakoutLane156=NaN;p._breakoutUntil156=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10417,7 +10418,7 @@ function updateDestinyPlayer183(p,now,dt){
       }
       // When scores are close, prefer a decisive side step over staying in the collision line.
       score+=Math.abs(lane-current)*.025;
-      if(Math.abs(lane-current)<.35)score+=.22;
+      if(Math.abs(lane-current)<.35)score+=.14;
       if(!best||score<best.score)best={lane,score,minGap};
     }
 
@@ -10528,7 +10529,7 @@ function updateDestinyPlayer183(p,now,dt){
     const nx=-f.uy,ny=f.ux;
     const maxLane=roadHalf120(p,info,info.prog);
 
-    const nearby=localObservers723(p,10.0+d.prediction*2.0);
+    const nearby=localObservers723(p,11.0+d.prediction*2.2);
     if(!nearby.length||nearby.length>2)return null;
 
     let threat=null,bestScore=999;
@@ -10552,8 +10553,8 @@ function updateDestinyPlayer183(p,now,dt){
     // 1~2 observers should be an "easy read":
     // no probability gate, no waiting until almost-contact.
     const trigger =
-      threat.dist<6.8 ||
-      (threat.fw>-.5&&threat.fw<9.2&&Math.abs(threat.lat)<3.85);
+      threat.dist<7.3 ||
+      (threat.fw>-.5&&threat.fw<10.0&&Math.abs(threat.lat)<4.0);
 
     if(!trigger)return null;
 
@@ -10850,7 +10851,7 @@ function updateDestinyPlayer183(p,now,dt){
       const plan=crowdPathPlan150(p,now,info);
       if(!plan)return null;
       p._crowdPlan150=plan;p._crowdPlanStarted150=now;
-      p._crowdPlanUntil150=now+(plan.danger?80:220);
+      p._crowdPlanUntil150=now+(plan.danger?35:160);
     }
 
     const plan=p._crowdPlan150;
@@ -10914,7 +10915,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     if(!p._freePlan130||now>=(p._freePlanUntil130||0)){
       p._freePlan130=chooseFreeTrajectory130(p,now,info,prog,maxLane);
-      p._freePlanUntil130=now+(p._freePlan130.holdMs||420);
+      p._freePlanUntil130=now+Math.min(260,(p._freePlan130.holdMs||420));
     }
 
     let lane=p._freePlan130?.lane||0,speedMul=1;
@@ -10997,11 +10998,12 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="collision-veto")?2.55:
-      ((p.liveEvadeAction==="crowd-survival")?2.00:
-      ((p.liveEvadeAction==="survival-master")?1.68:
-      ((p.liveEvadeAction==="simple-escape")?1.52:
-      ((p.liveEvadeAction==="free-path-dodge")?1.34:1))));
+      (p.liveEvadeAction==="collision-veto")?2.85:
+      ((p.liveEvadeAction==="crowd-breakout")?3.00:
+      ((p.liveEvadeAction==="crowd-survival")?2.15:
+      ((p.liveEvadeAction==="survival-master")?1.76:
+      ((p.liveEvadeAction==="simple-escape")?1.60:
+      ((p.liveEvadeAction==="free-path-dodge")?1.38:1)))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11009,7 +11011,7 @@ function updateDestinyPlayer183(p,now,dt){
     // v1.5.5: quick decisions, smooth steering.
     // High emergency authority raises target lateral speed more than acceleration,
     // producing a human-like curved dodge instead of an AI-looking snap.
-    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.58);
+    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.42);
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
@@ -11149,13 +11151,120 @@ function updateDestinyPlayer183(p,now,dt){
     return Math.hypot(x-ox,y-oy);
   }
 
+
+  // ============================================================
+  // v1.5.6 CROWD BREAKOUT
+  // Dedicated response for 3+ simultaneous observers.
+  // Chooses the largest open space instead of waiting for all routes to be "safe".
+  // ============================================================
+
+  function crowdBreakout156(p,now,info,intendedLane){
+    const d=driver120(p);
+    const f=smoothFrame120(info,info.prog);
+    const nx=-f.uy,ny=f.ux;
+    const maxLane=roadHalf120(p,info,info.prog);
+
+    // Keep only the closest local crowd to cap cost.
+    let nearby=localObservers723(p,12.0+d.prediction*2.0);
+    if(nearby.length<3)return null;
+
+    nearby=nearby
+      .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
+      .sort((a,b)=>a.dist-b.dist)
+      .slice(0,14)
+      .map(x=>x.o);
+
+    // Need at least one meaningful front/side threat.
+    let frontThreats=0;
+    for(const o of nearby){
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const fw=rx*f.ux+ry*f.uy;
+      const lat=rx*nx+ry*ny;
+      if(fw>-1.2&&fw<9.6&&Math.abs(lat)<4.6)frontThreats++;
+    }
+    if(frontThreats<2)return null;
+
+    const lanes=[-1,-.84,-.68,-.52,-.36,-.20,0,.20,.36,.52,.68,.84,1].map(v=>v*maxLane);
+    const times=[.10,.24,.42,.64,.88,1.14];
+    const speed=Math.max(6.5,Number(p.speed)||9.7);
+    const current=Number(p._lane120)||0;
+    let best=null;
+
+    for(const lane of lanes){
+      let minGap=999;
+      let crowdCost=0;
+      let blockedMoments=0;
+
+      for(const t of times){
+        const pr=Math.min(info.total,info.prog+speed*t);
+        const q=smoothFrame120(info,pr);
+        const qnx=-q.uy,qny=q.ux;
+        const x=q.x+qnx*lane,y=q.y+qny*lane;
+
+        let blocked=false;
+        for(const o of nearby){
+          const m=observerMotion131(o);
+          const ox=o.x+(m.stopped?0:m.vx*t);
+          const oy=o.y+(m.stopped?0:m.vy*t);
+          const gap=Math.hypot(x-ox,y-oy);
+          minGap=Math.min(minGap,gap);
+
+          const safe=3.55+d.avoidance*.72+d.reaction*.35+(m.stopped?.55:0);
+          if(gap<safe)blocked=true;
+
+          // Density cost rewards broad open space, not just avoiding one collision.
+          if(gap<safe+3.0){
+            const w=(safe+3.0-gap)/(safe+3.0);
+            crowdCost+=w*w*(2.0-t*.35);
+          }
+        }
+        if(blocked)blockedMoments++;
+      }
+
+      let score=
+        crowdCost*38+
+        blockedMoments*22+
+        Math.max(0,3.7-minGap)*32+
+        Math.abs(lane-current)*.010;
+
+      // Avoid staying in almost the same lane when a crowd is directly ahead.
+      if(Math.abs(lane-current)<.45)score+=.30;
+
+      // Maintain some driver individuality in equivalent openings.
+      const style=freeStyle130(p);
+      if(Math.sign(lane)===style.preferSide)score-=.10;
+
+      if(!best||score<best.score){
+        best={lane,minGap,blockedMoments,crowdCost,score};
+      }
+    }
+
+    if(!best)return null;
+
+    // Trigger only when the crowd is actually closing the intended corridor.
+    const intendedDanger = best.blockedMoments>0 || best.minGap<4.5 || frontThreats>=3;
+    if(!intendedDanger)return null;
+
+    // In a fully congested situation, still move toward the least-dense opening.
+    p._breakoutLane156=best.lane;
+    p._breakoutUntil156=now+140;
+
+    return {
+      lane:best.lane,
+      minGap:best.minGap,
+      blocked:best.blockedMoments,
+      speedMul:best.minGap<2.6?.86:.94,
+      breakout156:true
+    };
+  }
+
   function collisionVeto153(p,now,info,intendedLane){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
-    const nearby=localObservers723(p,11.2+d.prediction*2.2);
+    const nearby=localObservers723(p,12.0+d.prediction*2.4);
     if(!nearby.length)return null;
 
-    const times=[.06,.12,.20,.30,.42,.56,.74,.94,1.18,1.42];
+    const times=[.04,.08,.13,.19,.27,.37,.49,.63,.80,1.00,1.22,1.46];
     const required=3.85+d.avoidance*.74+d.reaction*.42;
 
     let intendedMin=999;
@@ -11218,7 +11327,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(!best)return null;
 
     p._vetoLane153=best.lane;
-    p._vetoUntil153=now+240;
+    p._vetoUntil153=now+170;
 
     return {
       lane:best.lane,
@@ -11243,7 +11352,25 @@ function updateDestinyPlayer183(p,now,dt){
 
     let decision=freeDrivingDecision130(p,now,info);
 
-    // v1.5.3: final path veto checks the route that is ACTUALLY about to be driven.
+    // v1.5.6: 3+ simultaneous observers get a dedicated open-space breakout pass.
+    const breakout156=crowdBreakout156(p,now,info,decision.lane);
+    if(breakout156){
+      decision={
+        ...decision,
+        lane:breakout156.lane,
+        speedMul:Math.max(.86,breakout156.speedMul),
+        dangerous:true,
+        breakout156:true,
+        minGap:breakout156.minGap
+      };
+
+      // Immediately discard stale plans that would keep driving into the crowd.
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._controlMove130=null;p._controlMoveUntil130=0;
+    }
+
+    // final collision veto checks the route that is ACTUALLY about to be driven.
     const veto153=collisionVeto153(p,now,info,decision.lane);
     if(veto153){
       decision={
@@ -11260,27 +11387,36 @@ function updateDestinyPlayer183(p,now,dt){
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;
     }else if(now<(p._vetoUntil153||0)&&Number.isFinite(p._vetoLane153)){
-      // v1.5.5: short commitment only. Keep a light bias toward the previous escape
-      // without hard-locking the racer to that lane.
       decision={
         ...decision,
-        lane:decision.lane*.58+p._vetoLane153*.42,
+        lane:decision.lane*.72+p._vetoLane153*.28,
         speedMul:Math.max(.94,Number(decision.speedMul)||1),
         dangerous:true,
         veto153Hold:true
+      };
+    }else if(now<(p._breakoutUntil156||0)&&Number.isFinite(p._breakoutLane156)){
+      // A very short crowd-breakout bias so the move looks intentional, not jittery.
+      decision={
+        ...decision,
+        lane:decision.lane*.82+p._breakoutLane156*.18,
+        speedMul:Math.max(.94,Number(decision.speedMul)||1),
+        dangerous:true,
+        breakoutHold156:true
       };
     }
 
     p.liveEvadeDanger=decision.dangerous?1:0;
     p.liveEvadeAction=decision.veto153
       ? "collision-veto"
+      : (decision.breakout156
+      ? "crowd-breakout"
       : (decision.crowd150
       ? "crowd-survival"
       : (decision.master140
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")))));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -15203,6 +15339,38 @@ function seasonCardHtml(p){
     };
   }
   applyPatch155();
+
+
+  function applyPatch156(){
+    window.__OBSERVER_FM_V156__={
+      crowdBreakout:true,
+      multiObserverImmediateResponse:true,
+      crowdBreakoutMinObservers:3,
+      openSpaceDensitySearch:true,
+      breakoutCandidates:13,
+      breakoutHoldMs:180,
+      crowdBreakoutLateralBoost:2.70,
+      noStopForCrowdBreakout:true
+    };
+  }
+  applyPatch156();
+
+
+  function applyPatch157(){
+    window.__OBSERVER_FM_V157__={
+      ultraReaction:true,
+      reactionPolicy:"detect-fast-steer-smooth",
+      crowdDangerReplanMs:35,
+      collisionVetoNearTermSamples:12,
+      vetoHoldMs:170,
+      breakoutHoldMs:140,
+      collisionVetoBoost:2.85,
+      crowdBreakoutBoost:3.00,
+      smoothSteeringAcceleration:true,
+      statsAffectRouteQualityMoreThanDetection:true
+    };
+  }
+  applyPatch157();
 
   function v36SelfAudit(){
     const issues=[];
