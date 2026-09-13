@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.7.0";
+  const BUILD_ID = "v1.7.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10028,15 +10028,16 @@ function updateDestinyPlayer183(p,now,dt){
     try{ fast=Number(optimalRacingLine2Offset(p,si))||0; }catch(e){ fast=0; }
 
     // Stats determine line quality; identity keeps two racers from cloning each other.
-    const lineSkill=(d.inside*.42+d.cornering*.25+d.route*.20+d.control*.13);
-    let target=fast*(.48+lineSkill*.32);
-    target+=per.lane*(.34+(1-d.route)*.18);
+    const lineSkill=(d.inside*.34+d.cornering*.22+d.route*.24+d.control*.20);
+    // v1.7.1: racing line is only a weak reference. Driver identity/free space matter more.
+    let target=fast*(.20+lineSkill*.16);
+    target+=per.lane*(.48+(1-d.route)*.20);
 
     // Small continuous personal motion, not frame-random jitter.
     target+=Math.sin(now*.00085+per.phase)*maxLane*per.wander*.16;
 
     // On clear road, high inside-line skill can bias toward the calculated fast side.
-    if(Math.abs(fast)>.05)target+=Math.sign(fast)*maxLane*d.inside*.08;
+    if(Math.abs(fast)>.05)target+=Math.sign(fast)*maxLane*d.inside*.025;
 
     return Math.max(-maxLane,Math.min(maxLane,target));
   }
@@ -10324,17 +10325,17 @@ function updateDestinyPlayer183(p,now,dt){
 
     // In chase mode, racing line / inside line dominates unless danger overrides later.
     const maxLane=roadHalf120(p,info,info.prog);
-    let lane=Math.max(-maxLane,Math.min(maxLane,fast));
+    const per=ensurePersonality120(p);
+    let lane=Math.max(-maxLane,Math.min(maxLane,fast*.55+per.preferSide*maxLane*.25));
 
-    if(Math.abs(lane)<.25){
-      const per=ensurePersonality120(p);
-      lane=per.preferSide*maxLane*.52;
+    if(Math.abs(lane)<.20){
+      lane=per.preferSide*maxLane*.40;
     }
 
     return {
       active:true,
       lane,
-      speedMul:1.055+d.cornering*.025+d.control*.015,
+      speedMul:1.025+d.cornering*.015+d.control*.010,
       gap:c.gap
     };
   }
@@ -10801,18 +10802,18 @@ function updateDestinyPlayer183(p,now,dt){
     const maxLane=roadHalf120(p,info,info.prog);
     const speed=Math.max(6.5,Number(p.speed)||9.7);
 
-    let nearby=localObservers723(p,14.0+d.prediction*2.6);
+    let nearby=localObservers723(p,15.0+d.prediction*2.8);
     if(!nearby.length)return null;
 
     // Limit cost while keeping the closest meaningful threats.
     nearby=nearby
       .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
       .sort((a,b)=>a.dist-b.dist)
-      .slice(0,16)
+      .slice(0,18)
       .map(x=>x.o);
 
     const lanes=[-1,-.82,-.64,-.46,-.28,-.12,.12,.28,.46,.64,.82,1].map(v=>v*maxLane);
-    const times=[.12,.28,.46,.68,.94,1.24,1.58,1.94];
+    const times=[.10,.22,.38,.58,.82,1.10,1.42,1.78,2.16];
 
     const current=Number(p._lane120)||0;
     const previous=Number(p._corridorLane161);
@@ -10837,7 +10838,7 @@ function updateDestinyPlayer183(p,now,dt){
           const gap=Math.hypot(x-ox,y-oy);
           minGap=Math.min(minGap,gap);
 
-          const safe=4.05+d.avoidance*.86+d.risk*.76+(m.stopped?.68:0);
+          const safe=4.35+d.avoidance*.92+d.risk*.84+(m.stopped?.78:0);
           if(gap<safe)blockedNow=true;
 
           if(gap<safe+2.5){
@@ -10849,9 +10850,9 @@ function updateDestinyPlayer183(p,now,dt){
       }
 
       let score=
-        risk*60+
-        blocked*26+
-        Math.max(0,4.1-minGap)*46+
+        risk*78+
+        blocked*34+
+        Math.max(0,4.55-minGap)*60+
         Math.abs(lane-current)*.012;
 
       // Keep movement human: don't change side unless the new corridor is truly safer.
@@ -10871,7 +10872,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(!best)return null;
 
     // Corridor only takes control when there is real traffic ahead.
-    const danger=best.minGap<5.35||best.risk>.055||best.blocked>0;
+    const danger=best.minGap<5.75||best.risk>.035||best.blocked>0;
     if(!danger)return null;
 
     p._corridorLane161=best.lane;
@@ -10882,7 +10883,7 @@ function updateDestinyPlayer183(p,now,dt){
       minGap:best.minGap,
       dangerous:true,
       corridor161:true,
-      speedMul:best.minGap<2.8?.90:.965
+      speedMul:best.minGap<2.8?.82:(best.minGap<3.6?.90:.97)
     };
   }
 
@@ -10964,7 +10965,7 @@ function updateDestinyPlayer183(p,now,dt){
       p._controlMove130=null;p._controlMoveUntil130=0;
     }else{
       lane+=maybeControlMove130(p,now,maxLane);
-      lane=lane*.86+baseLane120(p,now,info,prog,maxLane)*.14;
+      lane=lane*.96+baseLane120(p,now,info,prog,maxLane)*.04;
       lane=antiMirrorLane132(p,lane,maxLane);
     }
 
@@ -11374,7 +11375,7 @@ function updateDestinyPlayer183(p,now,dt){
         const gap=Math.hypot(s.x-ox,s.y-oy);
         minGap=Math.min(minGap,gap);
 
-        const safe=3.8+d.avoidance*.78+d.risk*.72+(m.stopped?.70:0);
+        const safe=4.25+d.avoidance*.90+d.risk*.82+(m.stopped?.82:0);
         if(gap<safe)blockedNow=true;
 
         if(gap<safe+2.1){
@@ -11391,41 +11392,41 @@ function updateDestinyPlayer183(p,now,dt){
 
   function actualMotionEscape170(p,now,info,intendedLane,intendedSpeedMul){
     const d=driver120(p);
-    let nearby=localObservers723(p,12.5+d.prediction*2.2);
+    let nearby=localObservers723(p,14.5+d.prediction*2.5);
     if(!nearby.length)return null;
 
     nearby=nearby
       .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
       .sort((a,b)=>a.dist-b.dist)
-      .slice(0,14)
+      .slice(0,18)
       .map(x=>x.o);
 
     // First evaluate what the racer can ACTUALLY do if it keeps the current plan.
     const currentEval=reachableRisk170(
-      p,info,intendedLane,Math.max(.88,Number(intendedSpeedMul)||1),nearby,1.25
+      p,info,intendedLane,Math.max(.84,Number(intendedSpeedMul)||1),nearby,1.45
     );
 
-    if(currentEval.minGap>=4.2 && currentEval.blocked===0 && currentEval.risk<.08){
+    if(currentEval.minGap>=4.85 && currentEval.blocked===0 && currentEval.risk<.04){
       return null;
     }
 
     const maxLane=roadHalf120(p,info,info.prog);
     const candidates=[-1,-.82,-.64,-.46,-.28,-.12,.12,.28,.46,.64,.82,1].map(v=>v*maxLane);
-    const speeds=[.96,.90,.84];
+    const speeds=[.97,.90,.82,.76];
     const currentLane=Number(p._lane120)||0;
 
     let best=null;
 
     for(const lane of candidates){
       for(const sm of speeds){
-        const e=reachableRisk170(p,info,lane,sm,nearby,1.55);
+        const e=reachableRisk170(p,info,lane,sm,nearby,1.85);
 
         let score=
-          e.risk*72+
-          e.blocked*34+
-          Math.max(0,4.3-e.minGap)*56+
-          Math.abs(lane-currentLane)*.010+
-          (1-sm)*.12;
+          e.risk*96+
+          e.blocked*46+
+          Math.max(0,4.8-e.minGap)*74+
+          Math.abs(lane-currentLane)*.004+
+          (1-sm)*.025;
 
         // Maintain individuality in equivalent openings.
         const side=(p.sourceIndex??p.index??0)%2===0?-1:1;
@@ -11441,8 +11442,8 @@ function updateDestinyPlayer183(p,now,dt){
 
     // If even the best reachable path is bad, allow a tiny speed reduction,
     // but never long stop/slow behavior.
-    if(best.minGap<2.55 || best.blocked>=3){
-      best.speedMul=Math.max(.78,best.speedMul-.06);
+    if(best.minGap<3.10 || best.blocked>=2){
+      best.speedMul=Math.max(.72,best.speedMul-.10);
     }
 
     p._actualEscapeLane170=best.lane;
@@ -11460,11 +11461,11 @@ function updateDestinyPlayer183(p,now,dt){
   function collisionVeto153(p,now,info,intendedLane){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
-    const nearby=localObservers723(p,13.8+d.prediction*2.7);
+    const nearby=localObservers723(p,15.0+d.prediction*2.9);
     if(!nearby.length)return null;
 
     const times=[.03,.06,.10,.15,.21,.29,.39,.51,.66,.84,1.04,1.26,1.50];
-    const required=4.00+d.avoidance*.78+d.reaction*.45;
+    const required=4.35+d.avoidance*.86+d.reaction*.50;
 
     let intendedMin=999;
     for(const o of nearby){
@@ -15796,6 +15797,21 @@ function seasonCardHtml(p){
     };
   }
   applyPatch170();
+
+
+  function applyPatch171(){
+    window.__OBSERVER_FM_V171__={
+      survivalOverOptimalLine:true,
+      racingLineInfluenceReduced:true,
+      safeCorridorLookaheadSec:2.16,
+      actualMotionLookaheadSec:1.85,
+      actualMotionObserversMax:18,
+      survivalScoreWeightRaised:true,
+      emergencySlowdownAllowed:true,
+      chaseLineAuthorityReduced:true
+    };
+  }
+  applyPatch171();
 
   function v36SelfAudit(){
     const issues=[];
