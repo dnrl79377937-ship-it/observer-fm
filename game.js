@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.7.3";
+  const BUILD_ID = "v1.8.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10985,7 +10985,7 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="unified-survival")?3.45:
+      (p.liveEvadeAction==="unified-survival")?3.15:
       ((p.liveEvadeAction==="free-path-dodge")?1.50:1);
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
@@ -10995,11 +10995,13 @@ function updateDestinyPlayer183(p,now,dt){
     // High emergency authority raises target lateral speed more than acceleration,
     // producing a human-like curved dodge instead of an AI-looking snap.
     const burstAccel163=1;
-    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.50);
+    // v1.8.0: acceleration is time-scaled so 5 microsteps equal one normal tick.
+    const timeScale180=Math.max(.15,Math.min(1,dtSafe/20));
+    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.50)*timeScale180;
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
-    let lane=current+latVel;
+    let lane=current+latVel*timeScale180;
     lane=Math.max(-maxLane-.08,Math.min(maxLane+.08,lane));
 
     // Incremental actual movement:
@@ -11009,8 +11011,8 @@ function updateDestinyPlayer183(p,now,dt){
     let y=p.y+uy*step;
 
     // Apply lateral steering as a small physical sideways motion.
-    x+=nx*latVel;
-    y+=ny*latVel;
+    x+=nx*latVel*timeScale180;
+    y+=ny*latVel*timeScale180;
 
     // Soft attraction toward desired path+lateral target.
     // Capped correction prevents teleporting while still preventing long-term drift.
@@ -11020,7 +11022,7 @@ function updateDestinyPlayer183(p,now,dt){
     const err=Math.hypot(ex,ey);
 
     if(err>1e-6){
-      const correctionCap=.040+control*.018;
+      const correctionCap=(.040+control*.018)*timeScale180;
       const correction=Math.min(correctionCap,err*.12);
       x+=ex/err*correction;
       y+=ey/err*correction;
@@ -12540,41 +12542,114 @@ function updateDestinyPlayer183(p,now,dt){
     panel.classList.remove("hidden");
   }
 
+
+  // ============================================================
+  // v1.8.0 ADAPTIVE SUBSTEP AI
+  // Screen/game speed stays 1x. A 20ms simulation tick is split into
+  // five 4ms internal steps only when an observer threatens a racer.
+  // ============================================================
+
+  function adaptiveSubsteps180(){
+    let threat=false;
+    let critical=false;
+
+    for(const p of players){
+      if(!p||p.done||p.dead)continue;
+
+      const info=pathInfo120(p);
+      const f=smoothFrame120(info,info.prog);
+      const nx=-f.uy,ny=f.ux;
+
+      // Direct scan is intentional here: it decides physics precision and must
+      // not depend on a possibly stale spatial grid.
+      for(const o of observers){
+        const rx=o.x-p.x,ry=o.y-p.y;
+        const d2=rx*rx+ry*ry;
+
+        if(d2<30.25){ // 5.5 world units
+          critical=true;
+          threat=true;
+          break;
+        }
+
+        if(d2>196)continue; // >14 units
+
+        const fw=rx*f.ux+ry*f.uy;
+        const lat=rx*nx+ry*ny;
+        if(fw>-1.2&&fw<11.0&&Math.abs(lat)<4.8){
+          threat=true;
+        }
+      }
+
+      if(critical)break;
+    }
+
+    // 5x internal time resolution in real danger.
+    // Critical is still 5 here to avoid multiplying the heavy path planner by 10x.
+    return threat?5:1;
+  }
   function simulateStep(now,dt){
-    // v1.1.4: cap one simulation step so a stalled browser frame
-    // cannot be repaid as a giant movement burst / apparent 2x speed.
     dt=Math.max(0,Math.min(24,Number(dt)||0));
 
-    updateObservers(now,dt);
-    playerNearbyFrameSerial++;
-    simTickCounter++;
+    const substeps=adaptiveSubsteps180();
+    const subDt=dt/substeps;
+    const startNow=now-dt;
 
-    // v7.32: split periodic work across different simulation ticks.
-    // This removes the old ~280 ms "grid + prediction" same-frame spike.
-    if(simTickCounter===7) rebuildObserverGrid();
+    // Keep this visible for diagnostics/tuning.
+    window.__adaptiveSubsteps180=substeps;
+
+    for(let s=0;s<substeps;s++){
+      const subNow=startNow+subDt*(s+1);
+
+      updateObservers(subNow,subDt);
+
+      // Invalidate nearby-observer caches every microstep because both racers
+      // and observers have genuinely moved.
+      playerNearbyFrameSerial++;
+
+      // Rebuild the spatial grid once at the start of a danger tick.
+      // 4ms observer motion is too small to justify rebuilding it five times.
+      if(s===0 && substeps>1){
+        rebuildObserverGrid();
+      }
+
+      for(let i=0;i<players.length;i++){
+        sanitizeRaceState666(players[i]);
+
+        // updatePlayer contains the planner + physical movement + swept collision.
+        // Running it with 4ms dt means the AI can react again before traversing
+        // the full distance of the former 20ms tick.
+        updatePlayer(players[i],subNow,subDt);
+
+        sanitizeRaceState666(players[i]);
+
+        if(!Number.isFinite(players[i]._v120Prog)){
+          stabilityAudit698(players[i],subNow);
+        }
+      }
+    }
+
+    // Periodic background work remains at normal simulation rate.
+    simTickCounter++;
+    if(simTickCounter===7)rebuildObserverGrid();
     if(simTickCounter>=14){
       simTickCounter=0;
       precomputeObserverPredictions(now);
     }
 
-    for(let i=0;i<players.length;i++){
-      sanitizeRaceState666(players[i]);
-      updatePlayer(players[i],now,dt);
-      sanitizeRaceState666(players[i]);
-      // v1.2.0 movement is monotonic/path-authoritative; legacy stall repair is bypassed.
-      if(!Number.isFinite(players[i]._v120Prog))
-        stabilityAudit698(players[i],now);
-    }
     if(currentMap770().id==='triple_diamond'){
       if(simTickCounter%2===0)telemetryStep696(now,dt*2);
     }else{
       if(league100?.phase!=="racing" || simTickCounter%2===0)telemetryStep696(now,dt*2);
     }
+
+    // Visual/camera updates happen once, so the user still sees normal 1x speed.
     rebuildRaceFrameCache668(now);
-    prevCamX730=camX; prevCamY730=camY;
+    prevCamX730=camX;prevCamY730=camY;
     updateCamera(dt);
     captureReplayFrame(now);
   }
+
 
   function loop(ts){
     if(!running) return;
@@ -15898,6 +15973,23 @@ function seasonCardHtml(p){
     };
   }
   applyPatch173();
+
+
+  function applyPatch180(){
+    window.__OBSERVER_FM_V180__={
+      adaptiveSubstepAI:true,
+      clearRoadSubsteps:1,
+      threatSubsteps:5,
+      internalThreatStepMs:4,
+      visibleGameSpeed:1.0,
+      playerBaseSpeedUnchanged:true,
+      observerBaseSpeedUnchanged:true,
+      plannerReevaluatesEveryMicrostep:true,
+      sweptCollisionEveryMicrostep:true,
+      timeScaledLateralPhysics:true
+    };
+  }
+  applyPatch180();
 
   function v36SelfAudit(){
     const issues=[];
