@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.6.2";
+  const BUILD_ID = "v1.6.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1573,6 +1573,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._breakoutLane156=NaN;p._breakoutUntil156=0;
       p._singleEscapeLane160=NaN;p._singleEscapeUntil160=0;
       p._corridorLane161=NaN;p._corridorUntil161=0;
+      p._threatBurstUntil163=0;p._threatZigSide163=0;p._threatZigAt163=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -11035,14 +11036,15 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="collision-veto")?3.55:
+      (p.liveEvadeAction==="threat-burst")?4.60:
+      ((p.liveEvadeAction==="collision-veto")?3.55:
       ((p.liveEvadeAction==="safe-corridor")?3.25:
       ((p.liveEvadeAction==="single-hard-escape")?3.80:
       ((p.liveEvadeAction==="crowd-breakout")?3.70:
       ((p.liveEvadeAction==="crowd-survival")?2.55:
       ((p.liveEvadeAction==="survival-master")?1.95:
       ((p.liveEvadeAction==="simple-escape")?1.80:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1)))))));
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1))))))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11050,7 +11052,8 @@ function updateDestinyPlayer183(p,now,dt){
     // v1.5.5: quick decisions, smooth steering.
     // High emergency authority raises target lateral speed more than acceleration,
     // producing a human-like curved dodge instead of an AI-looking snap.
-    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.62);
+    const burstAccel163=(p.liveEvadeAction==="threat-burst")?1.18:1;
+    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.68)*burstAccel163;
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
@@ -11375,6 +11378,103 @@ function updateDestinyPlayer183(p,now,dt){
     };
   }
 
+
+  // ============================================================
+  // v1.6.3 THREAT BURST AI
+  // Calm when road is clear; hyper-reactive only while observers are threatening.
+  // ============================================================
+
+  function threatBurst163(p,now,info){
+    const d=driver120(p);
+    const f=smoothFrame120(info,info.prog);
+    const nx=-f.uy,ny=f.ux;
+
+    const nearby=localObservers723(p,12.8+d.prediction*2.2);
+    if(!nearby.length){
+      p._threatBurstUntil163=0;
+      p._threatZigSide163=0;
+      return null;
+    }
+
+    let threatCount=0;
+    let nearest=999;
+    let leftPressure=0,rightPressure=0;
+
+    for(const o of nearby){
+      const m=observerMotion131(o);
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const dist=Math.hypot(rx,ry);
+      const fw=rx*f.ux+ry*f.uy;
+      const lat=rx*nx+ry*ny;
+
+      const inCorridor=
+        dist<7.2 ||
+        (fw>-.7&&fw<10.5&&Math.abs(lat)<4.4);
+
+      if(!inCorridor)continue;
+
+      threatCount++;
+      nearest=Math.min(nearest,dist);
+
+      const weight=1/Math.max(.5,dist);
+      if(lat<0)leftPressure+=weight;
+      else rightPressure+=weight;
+
+      if(m.stopped){
+        if(lat<0)leftPressure+=.25;
+        else rightPressure+=.25;
+      }
+    }
+
+    if(threatCount===0){
+      p._threatBurstUntil163=0;
+      p._threatZigSide163=0;
+      return null;
+    }
+
+    p._threatBurstUntil163=now+180;
+
+    const maxLane=roadHalf120(p,info,info.prog);
+    const current=Number(p._lane120)||0;
+
+    // Move toward the less crowded side.
+    let side=leftPressure<=rightPressure?-1:1;
+
+    // If multiple threats are stacked, allow alternating zig-zag breaks.
+    if(threatCount>=2){
+      const switchEvery=nearest<3.5?85:120;
+      if(!Number.isFinite(p._threatZigAt163)||now>=p._threatZigAt163){
+        const prev=Number(p._threatZigSide163)||side;
+        p._threatZigSide163=-prev;
+        p._threatZigAt163=now+switchEvery;
+      }
+      side=p._threatZigSide163||side;
+    }else{
+      p._threatZigSide163=side;
+      p._threatZigAt163=now+140;
+    }
+
+    // Larger lateral target only while threatened.
+    const strength=
+      threatCount>=4?.92:
+      threatCount>=2?.78:.66;
+
+    let lane=side*maxLane*strength;
+
+    // Don't keep drifting outward if already on that side.
+    if(Math.sign(current)===side && Math.abs(current)>maxLane*.70){
+      lane=side*maxLane*.52;
+    }
+
+    return {
+      active:true,
+      lane,
+      threatCount,
+      nearest,
+      speedMul:nearest<2.7?.91:.97
+    };
+  }
+
   function updatePlayer(p,now,dt){
     if(!p||p.done||p.dead)return;
     p.simPrevX=p.x;p.simPrevY=p.y;
@@ -11391,7 +11491,24 @@ function updateDestinyPlayer183(p,now,dt){
 
     let decision=freeDrivingDecision130(p,now,info);
 
-    // v1.5.6: 3+ simultaneous observers get a dedicated open-space breakout pass.
+    // v1.6.3: if observers are actively threatening, enter burst mode.
+    const burst163=threatBurst163(p,now,info);
+    if(burst163?.active){
+      decision={
+        ...decision,
+        lane:burst163.lane,
+        speedMul:Math.max(.91,burst163.speedMul),
+        dangerous:true,
+        burst163:true,
+        threatCount163:burst163.threatCount
+      };
+
+      // stale calm-road choices lose authority immediately
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._controlMove130=null;p._controlMoveUntil130=0;
+    }
+
+    // 3+ simultaneous observers still get the open-space breakout pass.
     const breakout156=crowdBreakout156(p,now,info,decision.lane);
     if(breakout156){
       decision={
@@ -11447,6 +11564,8 @@ function updateDestinyPlayer183(p,now,dt){
     p.liveEvadeDanger=decision.dangerous?1:0;
     p.liveEvadeAction=decision.veto153
       ? "collision-veto"
+      : (decision.burst163
+      ? "threat-burst"
       : (decision.corridor161
       ? "safe-corridor"
       : (decision.single160
@@ -11459,7 +11578,7 @@ function updateDestinyPlayer183(p,now,dt){
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))))))));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")))))))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -15472,6 +15591,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch162();
+
+
+  function applyPatch163(){
+    window.__OBSERVER_FM_V163__={
+      threatBurstAI:true,
+      calmWhenClear:true,
+      hyperReactiveWhenThreatened:true,
+      threatBurstLateralBoost:4.60,
+      multiThreatZigzag:true,
+      zigzagSwitchMs:"85-120",
+      threatBurstNoSlowBias:true
+    };
+  }
+  applyPatch163();
 
   function v36SelfAudit(){
     const issues=[];
