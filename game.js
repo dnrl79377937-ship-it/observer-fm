@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.3.2";
+  const BUILD_ID = "v1.3.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1566,6 +1566,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._survivalHoldUntil120=0;p._variant120=null;p._variantUntil120=0;
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;p._nextControlCheck130=0;
+      p._simpleEscapeUntil133=0;p._simpleEscapeLane133=NaN;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10516,10 +10517,145 @@ function updateDestinyPlayer183(p,now,dt){
     const chance=.18+d.reaction*.18+d.control*.12;
     return Math.random()<chance;
   }
+
+  function simpleThreatEscape133(p,now,info){
+    const d=driver120(p);
+    const f=smoothFrame120(info,info.prog);
+    const nx=-f.uy,ny=f.ux;
+    const maxLane=roadHalf120(p,info,info.prog);
+
+    const nearby=localObservers723(p,8.8+d.prediction*1.8);
+    if(!nearby.length||nearby.length>2)return null;
+
+    let threat=null,bestScore=999;
+    for(const o of nearby){
+      const motion=observerMotion131(o);
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const dist=Math.hypot(rx,ry);
+      const fw=rx*f.ux+ry*f.uy;
+      const lat=rx*nx+ry*ny;
+
+      if(fw<-1.0||fw>8.2||Math.abs(lat)>4.2)continue;
+
+      const score=dist + Math.max(0,fw)*.08 + Math.abs(lat)*.05;
+      if(score<bestScore){
+        bestScore=score;
+        threat={o,motion,dist,fw,lat};
+      }
+    }
+    if(!threat)return null;
+
+    // 1~2 observers should be an "easy read":
+    // no probability gate, no waiting until almost-contact.
+    const trigger =
+      threat.dist<5.6 ||
+      (threat.fw>-.4&&threat.fw<7.4&&Math.abs(threat.lat)<3.25);
+
+    if(!trigger)return null;
+
+    const current=Number(p._lane120)||0;
+
+    // Prefer the side opposite the obstacle.
+    const preferredSide=threat.lat>=0?-1:1;
+    const candidates=[
+      preferredSide*maxLane*.92,
+      preferredSide*maxLane*.72,
+      preferredSide*maxLane*.52,
+      -preferredSide*maxLane*.72,
+      -preferredSide*maxLane*.92
+    ];
+
+    let best=null;
+    for(const lane of candidates){
+      let minGap=999,risk=0;
+
+      for(const t of [.12,.28,.46,.68,.92,1.18]){
+        const pr=Math.min(info.total,info.prog+(p.speed||9.7)*t);
+        const q=smoothFrame120(info,pr);
+        const qnx=-q.uy,qny=q.ux;
+        const x=q.x+qnx*lane,y=q.y+qny*lane;
+
+        for(const o of nearby){
+          const m=observerMotion131(o);
+          const ox=o.x+(m.stopped?0:m.vx*t);
+          const oy=o.y+(m.stopped?0:m.vy*t);
+          const gap=Math.hypot(x-ox,y-oy);
+          minGap=Math.min(minGap,gap);
+
+          const safe=3.45+d.avoidance*.75+d.reaction*.35+(m.stopped?.55:0);
+          if(gap<safe+1.7){
+            const w=(safe+1.7-gap)/(safe+1.7);
+            risk+=w*w*(2.4-t*.42);
+          }
+        }
+      }
+
+      // Survival dominates completely in simple situations.
+      let score=risk*44 + Math.max(0,3.4-minGap)*34 + Math.abs(lane-current)*.018;
+      if(Math.sign(lane)===preferredSide)score-=.28;
+
+      if(!best||score<best.score)best={lane,minGap,score};
+    }
+
+    if(!best)return null;
+
+    // If both racers are together, don't make both choose exactly the same escape.
+    const c=competitionState132(p);
+    if(c.opp&&c.close){
+      const oppLane=Number(c.opp._simpleEscapeLane133);
+      if(Number.isFinite(oppLane)&&Math.sign(oppLane)===Math.sign(best.lane)){
+        best.lane=-best.lane*.88;
+      }
+    }
+
+    p._simpleEscapeLane133=best.lane;
+
+    return {
+      lane:best.lane,
+      minGap:best.minGap,
+      hard:true,
+      stopped:threat.motion.stopped,
+      holdMs:threat.motion.stopped?720:560
+    };
+  }
   function freeDrivingDecision130(p,now,info){
     const prog=info.prog;
     const maxLane=roadHalf120(p,info,prog);
     const d=driver120(p);
+
+    // v1.3.3: 1~2 observers nearby = guaranteed easy-read escape layer.
+    const simple133=simpleThreatEscape133(p,now,info);
+    if(simple133){
+      p._controlMove130=null;p._controlMoveUntil130=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+
+      p._simpleEscapeUntil133=now+simple133.holdMs;
+      p._simpleEscapeLane133=simple133.lane;
+
+      let lane=simple133.lane;
+      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+
+      return {
+        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
+        speedMul:simple133.stopped ? (.72+d.control*.08) : (.80+d.control*.08+d.reaction*.04),
+        dangerous:true,
+        minGap:simple133.minGap,
+        risk:1,
+        simpleEscape133:true
+      };
+    }
+
+    // Hold the safe side briefly instead of instantly returning to original line.
+    if(now<(p._simpleEscapeUntil133||0)&&Number.isFinite(p._simpleEscapeLane133)){
+      let lane=p._simpleEscapeLane133;
+      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+      return {
+        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
+        speedMul:.94,
+        dangerous:true,minGap:3.8,risk:.45,
+        simpleEscapeHold133:true
+      };
+    }
 
     if(!p._freePlan130||now>=(p._freePlanUntil130||0)){
       p._freePlan130=chooseFreeTrajectory130(p,now,info,prog,maxLane);
@@ -10528,12 +10664,10 @@ function updateDestinyPlayer183(p,now,dt){
 
     let plan=p._freePlan130;
 
-    // 1) Almost-contact escape layer
     const escape=emergencyEscape131(p,now,info);
     if(escape){
       p._controlMove130=null;p._controlMoveUntil130=0;
 
-      // v1.3.2 stop-control: briefly wait for the obstacle gap to open.
       if(shouldStopControl132(p,escape,info)){
         p._stopControlUntil132=now+110+Math.random()*150;
         p._freePlan130={
@@ -10555,7 +10689,6 @@ function updateDestinyPlayer183(p,now,dt){
 
       let lane=escape.lane;
       if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-
       return {
         lane:Math.max(-maxLane,Math.min(maxLane,lane)),
         speedMul:.76+d.control*.09+d.reaction*.05,
@@ -10564,7 +10697,6 @@ function updateDestinyPlayer183(p,now,dt){
       };
     }
 
-    // Continue a previously triggered stop-control for a very short human-like pause.
     if(now<(p._stopControlUntil132||0)){
       return {
         lane:Number(p._lane120)||0,
@@ -10574,7 +10706,6 @@ function updateDestinyPlayer183(p,now,dt){
       };
     }
 
-    // 2) Normal emergency predictor
     const f=smoothFrame120(info,prog);
     const near=localObservers723(p,6.6+d.reaction*1.3);
     let emergency=false;
@@ -10606,21 +10737,15 @@ function updateDestinyPlayer183(p,now,dt){
     if(plan?.dangerous){
       speedMul=.79+d.control*.08+d.risk*.05;
     }else{
-      // 3) trailing racer comeback mode
       const chase=chaseMode132(p,info);
       if(chase?.active){
         lane=chase.lane;
         speedMul=chase.speedMul;
         p._controlMove130=null;p._controlMoveUntil130=0;
       }else{
-        // 4) free/human controls
         lane+=maybeControlMove130(p,now,maxLane);
-
-        // keep racing-line skill as secondary influence
         const skilled=baseLane120(p,now,info,prog,maxLane);
         lane=lane*.84+skilled*.16;
-
-        // anti-mirroring during close competition
         lane=antiMirrorLane132(p,lane,maxLane);
       }
     }
@@ -10635,6 +10760,7 @@ function updateDestinyPlayer183(p,now,dt){
       risk:plan?.risk??0
     };
   }
+
 
 
 
@@ -10696,7 +10822,9 @@ function updateDestinyPlayer183(p,now,dt){
     const current=Number.isFinite(p._lane120)?p._lane120:0;
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
-    const emergencyBoost=(p.liveEvadeAction==="free-path-dodge")?1.32:1;
+    const emergencyBoost=
+      (p.liveEvadeAction==="simple-escape")?1.48:
+      ((p.liveEvadeAction==="free-path-dodge")?1.32:1);
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -10836,7 +10964,9 @@ function updateDestinyPlayer183(p,now,dt){
 
     const decision=freeDrivingDecision130(p,now,info);
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive");
+    p.liveEvadeAction=decision.simpleEscape133
+      ? "simple-escape"
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -14634,6 +14764,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch132();
+
+
+  function applyPatch133(){
+    window.__OBSERVER_FM_V133__={
+      singleObserverGuaranteedRead:true,
+      twoObserverGuaranteedRead:true,
+      noProbabilityGateForSimpleThreat:true,
+      simpleEscapeHold:true,
+      stoppedObserverExtraMargin:true,
+      simpleEscapeLateralBoost:1.48,
+      antiMirrorSimpleEscape:true
+    };
+  }
+  applyPatch133();
 
   function v36SelfAudit(){
     const issues=[];
