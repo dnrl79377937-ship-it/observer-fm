@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.2.0";
+  const BUILD_ID = "v1.2.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1561,10 +1561,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       forceStartCenter625(p);
       p._v120Prog=0;p._v120Total=NaN;
       p._lane120=0;p._laneVel120=0;
+      p._headingUx121=NaN;p._headingUy121=NaN;p._maxLane121=NaN;
       p._avoidPlan120=null;p._avoidPlanUntil120=0;
       p._survivalHoldUntil120=0;p._variant120=null;p._variantUntil120=0;
     });
     observers=spawnObservers();
+    unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
+    camVelX121=0;camVelY121=0;
     running=false;
     raceStart=0; lastTs=0; lastRankingRender=0; simClock=0; simAccumulator=0; simTickCounter=0;
     lastLeaderName=""; raceEventText=""; raceEventUntil=0; bestSector=[null,null,null];liveEventFeed814=[];liveFocus814={playerId:-1,type:"",text:"",until:0};
@@ -10000,17 +10003,28 @@ function updateDestinyPlayer183(p,now,dt){
       pointAt:(pr)=>splinePointAt720(Math.max(0,Math.min(total,pr)))
     };
   }
-
   function smoothFrame120(info,prog){
-    const d=.46;
-    const q=info.pointAt(prog);
-    const a=info.pointAt(Math.max(0,prog-d));
-    const b=info.pointAt(Math.min(info.total,prog+d));
-    let ux=(a.ux||q.ux||0)*.18+(q.ux||0)*.64+(b.ux||q.ux||0)*.18;
-    let uy=(a.uy||q.uy||-1)*.18+(q.uy||-1)*.64+(b.uy||q.uy||-1)*.18;
+    const pr=Math.max(0,Math.min(info.total,Number(prog)||0));
+    const d=.62;
+    const q=info.pointAt(pr);
+    const a=info.pointAt(Math.max(0,pr-d));
+    const b=info.pointAt(Math.min(info.total,pr+d));
+
+    // Smooth center position as well as tangent. This turns a hard polyline
+    // corner into a continuous local curve without rebuilding map geometry.
+    const x=a.x*.14+q.x*.72+b.x*.14;
+    const y=a.y*.14+q.y*.72+b.y*.14;
+
+    let ux=(q.x-a.x)*.46+(b.x-q.x)*.54;
+    let uy=(q.y-a.y)*.46+(b.y-q.y)*.54;
+    if(Math.hypot(ux,uy)<1e-6){
+      ux=(b.ux||q.ux||0)+(a.ux||q.ux||0);
+      uy=(b.uy||q.uy||-1)+(a.uy||q.uy||-1);
+    }
     const L=Math.hypot(ux,uy)||1;
-    return {x:q.x,y:q.y,ux:ux/L,uy:uy/L};
+    return {x,y,ux:ux/L,uy:uy/L};
   }
+
 
   function roadHalf120(p,info,prog){
     if(info.destiny)return 2.85;
@@ -10201,60 +10215,81 @@ function updateDestinyPlayer183(p,now,dt){
 
     return Math.max(-maxLane,Math.min(maxLane,target));
   }
-
   function movementStep120(p,now,dt,info,targetLane,speedMul){
     const d=driver120(p);
-    const dtSafe=Math.max(0,Math.min(24,Number(dt)||0));
+    const dtSafe=Math.max(0,Math.min(22,Number(dt)||0));
     const prog=info.prog;
     const turn=curve120(info,prog);
 
-    // Corner stats affect actual pace without any coordinate teleport/reprojection.
     const cornerSkill=d.cornering*.38+d.control*.24+d.braking*.20+d.stability*.18;
     const turnSeverity=Math.min(1,turn/.72);
-    const cornerMul=1-turnSeverity*(.18*(1-cornerSkill)+.045);
+    const cornerMul=1-turnSeverity*(.16*(1-cornerSkill)+.035);
 
-    const step=Math.max(0,(p.speed||9.7)*Math.max(.62,Math.min(1.05,speedMul))*cornerMul*dtSafe/1000);
+    // Forward movement is monotonic and bounded. No catch-up multiplier.
+    const step=Math.max(0,Math.min(.26,(p.speed||9.7)*Math.max(.62,Math.min(1.03,speedMul))*cornerMul*dtSafe/1000));
     const next=Math.min(info.total,prog+step);
 
-    const frame=smoothFrame120(info,next);
-    const maxLane=roadHalf120(p,info,next);
-    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
+    const raw=smoothFrame120(info,next);
 
+    // Persistently smooth heading. The normal therefore rotates gradually through
+    // a corner instead of instantly changing orientation with the path segment.
+    let ux=Number(p._headingUx121),uy=Number(p._headingUy121);
+    if(!Number.isFinite(ux)||!Number.isFinite(uy)){
+      ux=raw.ux;uy=raw.uy;
+    }else{
+      const headingBlend=.10+d.control*.035+d.stability*.025;
+      ux=ux*(1-headingBlend)+raw.ux*headingBlend;
+      uy=uy*(1-headingBlend)+raw.uy*headingBlend;
+      const HL=Math.hypot(ux,uy)||1;ux/=HL;uy/=HL;
+    }
+    p._headingUx121=ux;p._headingUy121=uy;
+    const nx=-uy,ny=ux;
+
+    // Road-width changes are also filtered; a narrower segment can no longer
+    // clamp the racer sideways in one tick.
+    const rawMax=roadHalf120(p,info,next);
+    let maxLane=Number(p._maxLane121);
+    if(!Number.isFinite(maxLane))maxLane=rawMax;
+    maxLane+=Math.max(-.055,Math.min(.055,rawMax-maxLane));
+    maxLane=Math.max(1.8,Math.min(4.0,maxLane));
+    p._maxLane121=maxLane;
+
+    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
     const current=Number.isFinite(p._lane120)?p._lane120:0;
+
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
-    const maxLatSpeed=.052+control*.055;
-    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.18+control*.13)));
+    const maxLatSpeed=.043+control*.042;
+    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.14+control*.10)));
     const prevVel=Number(p._laneVel120)||0;
-    const accel=.010+control*.018;
+    const accel=.0075+control*.0125;
     let vel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
 
-    // Corners damp lateral velocity instead of snapping the unit to a new segment.
-    vel*=1-Math.min(.30,turnSeverity*(.20-d.stability*.06));
+    vel*=1-Math.min(.26,turnSeverity*(.17-d.stability*.05));
     let lane=current+vel;
-    lane=Math.max(-maxLane,Math.min(maxLane,lane));
 
-    const nx=-frame.uy,ny=frame.ux;
-    p.x=frame.x+nx*lane;
-    p.y=frame.y+ny*lane;
+    // If the road width shrank, return inside progressively rather than snapping.
+    const hardLimit=maxLane+.10;
+    if(lane>hardLimit)lane=Math.max(hardLimit,lane-.055);
+    if(lane<-hardLimit)lane=Math.min(-hardLimit,lane+.055);
+    lane=Math.max(-maxLane-.10,Math.min(maxLane+.10,lane));
 
-    p._lane120=lane;
-    p._laneVel120=vel;
-    p._v120Prog=next;
-    p._v120Total=info.total;
+    p.x=raw.x+nx*lane;
+    p.y=raw.y+ny*lane;
+
+    p._lane120=lane;p._laneVel120=vel;
+    p._v120Prog=next;p._v120Total=info.total;
 
     if(info.destiny){
-      p._dgProg813=next;
-      p._dgLaneOff818=lane;
+      p._dgProg813=next;p._dgLaneOff818=lane;
     }else{
-      p._splineProg720=next;
-      p._splineFloor754=next;
-      p._lineOffset720=lane;
+      p._splineProg720=next;p._splineFloor754=next;p._lineOffset720=lane;
     }
 
     const frac=Math.max(0,Math.min(1,next/info.total));
     p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
     return {frac,step,turn};
   }
+
 
   function finishPlayer120(p,now,dt,frac){
     if(frac<.997)return false;
@@ -10631,34 +10666,87 @@ function updateDestinyPlayer183(p,now,dt){
     commentaryLine(`story-${key}`,`${k}! ${title}${sub?` · ${sub}`:""}`,now);
   }
 
+  
+  let unifiedCameraLeader121=-1;
+  let unifiedCameraHoldUntil121=0;
+  let camVelX121=0,camVelY121=0;
+
+  function smoothUnifiedCamera121(dt,tx,ty){
+    const dtSec=Math.max(.001,Math.min(.030,(Number(dt)||20)/1000));
+    const dx=tx-camX,dy=ty-camY;
+
+    // critically-damped-ish velocity camera
+    const accel=13.5;
+    camVelX121+=dx*accel*dtSec;
+    camVelY121+=dy*accel*dtSec;
+
+    const damp=Math.exp(-7.5*dtSec);
+    camVelX121*=damp;camVelY121*=damp;
+
+    const maxV=20;
+    const v=Math.hypot(camVelX121,camVelY121);
+    if(v>maxV){
+      camVelX121*=maxV/v;camVelY121*=maxV/v;
+    }
+
+    camX+=camVelX121*dtSec;
+    camY+=camVelY121*dtSec;
+  }
+
+  function unifiedCameraSubject121(now){
+    const active=players.filter(p=>!p.done&&!p.dead);
+    if(!active.length)return null;
+    active.sort((a,b)=>currentProgress(b)-currentProgress(a));
+    const leader=active[0];
+
+    const held=players.find(p=>p.index===unifiedCameraLeader121&&!p.done&&!p.dead);
+    if(held){
+      const gap=currentProgress(leader)-currentProgress(held);
+      // keep current subject during tiny position swaps / side-by-side corners
+      if(now<unifiedCameraHoldUntil121 || gap<1.8)return held;
+    }
+
+    unifiedCameraLeader121=leader.index;
+    unifiedCameraHoldUntil121=now+900;
+    return leader;
+  }
   function updateCamera(dt){
     const now=gameNow();
 
-    // Manual POV is the only intentional override of P1 following.
     const pov=players[povPlayerIndex];
-    if(povPlayerIndex>=0 && pov && !pov.done && !pov.dead){
+    if(povPlayerIndex>=0&&pov&&!pov.done&&!pov.dead){
       cameraLeaderId=pov.index;
-      if(currentMap770().id==='triple_diamond'){
+      const info=pathInfo120(pov);
+      const frame=smoothFrame120(info,Number(pov._v120Prog)||info.prog);
+      if(info.destiny){
         const centerX=Number(currentMap770().destinyCameraCenterX8172)||89.0;
-        destinyPath813(pov);
-        const cq=destinyPoint813(pov,Math.max(0,Number(pov._dgProg813)||0));
-        smoothCamera665(dt,centerX,cq.y);
-        camX=centerX;
+        smoothUnifiedCamera121(dt,centerX,frame.y);
+        camX=centerX;camVelX121=0;
       }else{
-        smoothCamera665(dt,pov.x,pov.y);
+        const lead=1.0;
+        smoothUnifiedCamera121(dt,frame.x+frame.ux*lead,frame.y+frame.uy*lead);
       }
       return;
     }
 
-    const cache=(raceFrameCache668.stamp===now)?raceFrameCache668:rebuildRaceFrameCache668(now);
-    const leader=cameraSubject661(now);
-    if(!leader) return;
-
+    const leader=unifiedCameraSubject121(now);
+    if(!leader)return;
     cameraLeaderId=leader.index;
-    cameraLeaderHoldUntil=now;
 
-    broadcastCamera695(now,dt,leader,cache);
+    const info=pathInfo120(leader);
+    const frame=smoothFrame120(info,Number(leader._v120Prog)||info.prog);
+
+    if(info.destiny){
+      const centerX=Number(currentMap770().destinyCameraCenterX8172)||89.0;
+      smoothUnifiedCamera121(dt,centerX,frame.y);
+      camX=centerX;camVelX121=0;
+      return;
+    }
+
+    const lead=.95;
+    smoothUnifiedCamera121(dt,frame.x+frame.ux*lead,frame.y+frame.uy*lead);
   }
+
 
   function finalizeIndividualClear(finishers,now){
     if(roundTransitioning) return; roundTransitioning=true;
@@ -10897,7 +10985,7 @@ function updateDestinyPlayer183(p,now,dt){
   }
 
   const SIM_STEP_MS = 1000/50;
-  const MAX_SIM_STEPS = 2;
+  const MAX_SIM_STEPS = 1;
   let simClock=0;
   let simTickCounter=0;
   let simAccumulator=0;
@@ -11099,7 +11187,7 @@ function updateDestinyPlayer183(p,now,dt){
       updateFpsProtection(ts);
     }
     if(frameDelta<0) frameDelta=0;
-    if(frameDelta>40) frameDelta=40;
+    if(frameDelta>30) frameDelta=30;
     simAccumulator+=frameDelta;
 
     if(!simClock) simClock=ts-simAccumulator;
@@ -11114,9 +11202,10 @@ function updateDestinyPlayer183(p,now,dt){
 
     // v1.2.0: never repay a browser hitch as visible fast-forward.
     if(steps>=MAX_SIM_STEPS && simAccumulator>=SIM_STEP_MS){
-      simAccumulator=0;
-    }else if(simAccumulator>SIM_STEP_MS*2){
-      simAccumulator=SIM_STEP_MS*2;
+      // Drop backlog. Never execute a second movement step in the same rendered frame.
+      simAccumulator=Math.min(simAccumulator,SIM_STEP_MS*.95);
+    }else if(simAccumulator>SIM_STEP_MS){
+      simAccumulator=SIM_STEP_MS*.95;
     }
 
     // v7.30 HOTFIX: simulation stays at 50 Hz; only visual coordinates interpolate.
@@ -14045,6 +14134,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch120();
+
+
+  function applyPatch121(){
+    window.__OBSERVER_FM_V121__={
+      continuousCenterCurve:true,
+      persistentHeadingNormal:true,
+      filteredRoadWidth:true,
+      unifiedCamera:true,
+      cameraLeaderHysteresisMs:900,
+      maxSimulationStepsPerRender:1,
+      noLegacyCameraBattleOffsets:true
+    };
+  }
+  applyPatch121();
 
   function v36SelfAudit(){
     const issues=[];
