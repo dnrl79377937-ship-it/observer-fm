@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.8";
+  const BUILD_ID = "v1.6.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1571,6 +1571,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;p._crowdPlanStarted150=0;p._crowdWaitUntil150=0;
       p._vetoLane153=NaN;p._vetoUntil153=0;
       p._breakoutLane156=NaN;p._breakoutUntil156=0;
+      p._singleEscapeLane160=NaN;p._singleEscapeUntil160=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -8313,140 +8314,8 @@ applyMapSet776();
 
     return Math.max(0,Math.min(segs.length-1,p._stableSeg116));
   }
-  function advanceOnSplineLane113(p,distance,targetOff,mode="NORMAL"){
-    if(!p||!(distance>0))return false;
-
-    const total=Math.max(1,RACING_SPLINE_SEGS_720.total||1);
-    let prog=Number.isFinite(p._splineProg720)
-      ? p._splineProg720
-      : nearestSplineProgress720(p.x,p.y);
-
-    prog=Math.max(Number(p._splineFloor754)||0,prog);
-
-    // v1.1.6: tighter per-tick forward cap around corners.
-    const qNow=smoothSplineFrame116(prog);
-    const qAhead=smoothSplineFrame116(Math.min(total,prog+.75));
-    const dot=Math.max(-1,Math.min(1,qNow.ux*qAhead.ux+qNow.uy*qAhead.uy));
-    const turn=Math.acos(dot); // radians
-
-    const cornerFactor=Math.max(.58,1-Math.min(1,turn/.75)*.34);
-    const safeDistance=Math.max(0,Math.min(Number(distance)||0,.30))*cornerFactor;
-    const next=Math.min(total,prog+safeDistance);
-
-    const q=smoothSplineFrame116(next);
-    const nx=-q.uy,ny=q.ux;
-
-    // Stable segment selection so width / road authority does not jump on corners.
-    const segIndex=stableSegFromProgress116(p,next,total);
-    const roadHalf=Math.max(1.75,(widths[segIndex]||3.5)*.78);
-
-    const maxLane=Math.min(4.0,roadHalf);
-    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetOff)||0));
-    const prev=Number(p._actualLane113);
-    const current=Number.isFinite(prev)?prev:(Number(p._lineOffset720)||0);
-
-    const emergency=mode==="EVADE"||
-      (gameNow()<(p._hardDodgeUntil110||0))||
-      (gameNow()<(p._survivalOverrideUntil109||0));
-
-    // Cornering reduces lateral aggressiveness so lane movement cannot jerk sideways
-    // at the same time the path tangent rotates.
-    const targetLatVel=Math.max(-.095,Math.min(.095,(wanted-current)*.26));
-    const prevLatVel=Number(p._latVel114)||0;
-    const cornerLatScale=Math.max(.48,1-Math.min(1,turn/.75)*.42);
-    const maxLatAccel=(emergency?.026:.014)*cornerLatScale;
-
-    let latVel=prevLatVel+Math.max(
-      -maxLatAccel,
-      Math.min(maxLatAccel,targetLatVel-prevLatVel)
-    );
-
-    // Damp lateral momentum through sharp turns.
-    latVel*=Math.max(.72,cornerFactor);
-    p._latVel114=latVel;
-
-    const maxDelta=(emergency?.105:.058)*cornerLatScale;
-    const laneStep=Math.max(-maxDelta,Math.min(maxDelta,latVel));
-    let lane=current+laneStep;
-    lane=Math.max(-maxLane,Math.min(maxLane,lane));
-
-    let x=q.x+nx*lane,y=q.y+ny*lane;
-
-    // Lighter road validation, but force a check on meaningful corners.
-    const needRoadCheck=
-      turn>.18 ||
-      Math.abs(lane)>maxLane*.72 ||
-      ((p._roadCheckTick115=(p._roadCheckTick115||0)+1)%5===0);
-
-    if(needRoadCheck && !courseContainsPoint(x,y,0)){
-      let found=false;
-      for(const f of [.72,.48,.25,0]){
-        const test=lane*f;
-        const tx=q.x+nx*test,ty=q.y+ny*test;
-        if(courseContainsPoint(tx,ty,0)){
-          lane=test;x=tx;y=ty;found=true;break;
-        }
-      }
-      if(!found){lane=0;x=q.x;y=q.y;}
-      p._latVel114*=.35;
-    }
-
-    p.x=x;p.y=y;
-    p._actualLane113=lane;
-    p._lineOffset720=lane;
-    p._splineProg720=next;
-    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,next);
-    p.seg=segIndex;
-
-    return true;
-  }
 
 
-  function advanceOnSpline720(p,distance){
-    if(!p || !(distance>0)) return false;
-    if(currentMap770().id==='triple_diamond')return advanceDestinyPath815(p,distance);
-    let prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
-    prog=Math.min(RACING_SPLINE_SEGS_720.total,prog+distance);
-
-    const raw=splinePointAt720(prog);
-    const q=executedSplinePoint720(p,prog);
-    let off=Number(q.executionOffset720)||0;
-
-    // v7.54: the final top straight could flip "wideSide" from one frame to the
-    // other or fall from a legal offset to zero. Smooth only the execution offset;
-    // forward spline progress remains exact and monotonic.
-    const prev=Number.isFinite(p._lineOffset720)?p._lineOffset720:off;
-    const maxOffStep=Math.max(.035,Math.min(.095,distance*.31));
-    off=prev+Math.max(-maxOffStep,Math.min(maxOffStep,off-prev));
-
-    // Extra hysteresis on the 11 -> 1 o'clock upper straight.
-    const topStraight754=currentMap770().id==="s_map"&&raw.x>=57.0&&raw.y<=33.0&&raw.y>=15.0;
-    if(topStraight754){
-      if(!Number.isFinite(p._topOffsetSign754)||Math.abs(prev)<.025)
-        p._topOffsetSign754=Math.sign(off)||Math.sign(prev)||1;
-      if(Math.sign(off)&&Math.sign(off)!==p._topOffsetSign754&&Math.abs(off)>.035)
-        off=p._topOffsetSign754*Math.min(Math.abs(off),Math.abs(prev)+maxOffStep);
-    }
-
-    const nx=-raw.uy,ny=raw.ux;
-    let x=raw.x+nx*off,y=raw.y+ny*off;
-    if(!visualRoadMask674(x,y,0)||!courseContainsPoint(x,y,0)){
-      // Blend toward center instead of snapping straight to zero offset.
-      let found=false;
-      for(const k of [.80,.60,.40,.20,0]){
-        const oo=off*k,xx=raw.x+nx*oo,yy=raw.y+ny*oo;
-        if(visualRoadMask674(xx,yy,0)&&courseContainsPoint(xx,yy,0)){
-          off=oo;x=xx;y=yy;found=true;break;
-        }
-      }
-      if(!found){x=raw.x;y=raw.y;off=0;}
-    }
-
-    p.x=x;p.y=y;p._splineProg720=prog;
-    p._splineFloor754=Math.max(Number(p._splineFloor754)||0,prog);
-    p._lineOffset720=off;
-    return true;
-  }
 
   function syncEvadeSplineProgress754(p,fromX,fromY){
     if(!p)return;
@@ -8860,59 +8729,7 @@ applyMapSet776();
         return 0;
     }
   }
-  function forwardSafetyField112(p,now){
-    if(!p||safeAt(p.x,p.y))return null;
 
-    // v1.1.5: cache proactive safety planning.
-    // Hard-close emergency scan still runs every tick separately.
-    if(now<(p._nextSafetyField115||0)){
-      return p._cachedSafetyField115||null;
-    }
-    p._nextSafetyField115=now+90;
-
-    const prog=Number.isFinite(p._splineProg720)
-      ? p._splineProg720
-      : nearestSplineProgress720(p.x,p.y);
-    const speed=Math.max(6.5,Number(p.speed)||9.7);
-    const nearby=localObservers723(p,10.8);
-
-    if(!nearby.length){
-      p._cachedSafetyField115=null;
-      return null;
-    }
-
-    // 5 lanes -> 3 lanes, 5 horizons -> 3 horizons.
-    // Enough for proactive avoidance without the old per-tick cost.
-    const lanes=[-3.0,0,3.0];
-    const horizons=[.20,.50,.82];
-    let best=null;
-
-    for(const lane of lanes){
-      let risk=0,minClear=999;
-      for(const h of horizons){
-        const q=splinePointAt720(Math.min(RACING_SPLINE_SEGS_720.total,prog+speed*h));
-        const nx=-q.uy,ny=q.ux;
-        const x=q.x+nx*lane,y=q.y+ny*lane;
-
-        for(const o of nearby){
-          const ox=o.x+(Number(o.vx)||0)*h;
-          const oy=o.y+(Number(o.vy)||0)*h;
-          const d=Math.hypot(x-ox,y-oy);
-          minClear=Math.min(minClear,d);
-          if(d<5.6){
-            const w=(5.6-d)/5.6;
-            risk+=w*w*(1.35-h*.18);
-          }
-        }
-      }
-
-      const score=risk*30 + Math.max(0,2.8-minClear)*26 + Math.abs(lane)*.008;
-      if(!best||score<best.score)best={lane,score,minClear};
-    }
-
-    p._cachedSafetyField115=best;
-    return best;
-  }
 
 
   function hardCloseThreat110(p,now){
@@ -10036,7 +9853,7 @@ function updateDestinyPlayer183(p,now,dt){
     const frac=Math.max(0,Math.min(1,prog/info.total));
     const si=Math.max(0,Math.min(widths.length-1,Math.floor(frac*Math.max(1,widths.length-1))));
     const raw=Math.max(4.6,Number(widths[si])||8);
-    return Math.max(1.9,Math.min(4.0,raw*.37));
+    return Math.max(1.8,Math.min(3.45,raw*.32));
   }
 
   function curve120(info,prog){
@@ -10317,17 +10134,17 @@ function updateDestinyPlayer183(p,now,dt){
       const m=p._controlMove130;if(!m)return 0;
       const dur=Math.max(1,p._controlMoveUntil130-m.started);
       const t=Math.max(0,Math.min(1,(now-m.started)/dur));
-      if(m.type==="zigzag")return Math.sin(t*Math.PI*2.35+m.phase)*maxLane*(.30+d.control*.18);
-      if(m.type==="wide")return m.side*maxLane*(.62+d.control*.10);
-      if(m.type==="hold")return m.side*maxLane*(.45+d.stability*.15);
-      if(m.type==="feint")return m.side*(t<.46?1:-.74)*maxLane*(.36+d.control*.12);
-      if(m.type==="cutback")return m.side*(t<.32?-1:1)*maxLane*(.29+d.reaction*.18);
+      if(m.type==="zigzag")return Math.sin(t*Math.PI*2.35+m.phase)*maxLane*(.25+d.control*.15);
+      if(m.type==="wide")return m.side*maxLane*(.52+d.control*.08);
+      if(m.type==="hold")return m.side*maxLane*(.38+d.stability*.12);
+      if(m.type==="feint")return m.side*(t<.46?1:-.74)*maxLane*(.30+d.control*.10);
+      if(m.type==="cutback")return m.side*(t<.32?-1:1)*maxLane*(.24+d.reaction*.15);
       if(m.type==="doublemove"){
         const s=t<.28?1:(t<.58?-1:.72);
-        return m.side*s*maxLane*(.31+d.control*.14);
+        return m.side*s*maxLane*(.26+d.control*.11);
       }
       if(m.type==="microzig"){
-        return Math.sin(t*Math.PI*3.3+m.phase)*maxLane*(.18+d.control*.10);
+        return Math.sin(t*Math.PI*3.3+m.phase)*maxLane*(.15+d.control*.08);
       }
       return 0;
     }
@@ -10453,30 +10270,33 @@ function updateDestinyPlayer183(p,now,dt){
       close:Math.abs(diff)<4.2
     };
   }
-
   function antiMirrorLane132(p,baseLane,maxLane){
     const c=competitionState132(p);
-    if(!c.opp||!c.close)return baseLane;
+    if(!c.opp)return baseLane;
 
     const otherLane=Number(c.opp._lane120)||0;
     const myLane=Number(p._lane120)||0;
     const laneGap=Math.abs(myLane-otherLane);
+    const src=(p.sourceIndex??p.index??0);
+    const personalSide=(src%2===0)?-1:1;
 
-    if(laneGap<.70){
-      // deterministic opposite decisions so two racers don't clone one another.
-      const src=(p.sourceIndex??p.index??0);
-      const side=(src%2===0)?-1:1;
-      const target=side*maxLane*(.50+.12*driver120(p).route);
-      return baseLane*.45+target*.55;
+    // Close racing: force visibly different tactical choices.
+    if(c.close){
+      if(laneGap<1.05){
+        const target=personalSide*maxLane*(.42+.16*driver120(p).route);
+        return baseLane*.30+target*.70;
+      }
+
+      const oppSide=Math.sign(otherLane);
+      if(oppSide!==0&&Math.sign(baseLane)===oppSide){
+        return baseLane*.56+(-oppSide*maxLane*.38)*.44;
+      }
     }
 
-    // If opponent already occupies one side, prefer the other side slightly.
-    const oppSide=Math.sign(otherLane);
-    if(oppSide!==0 && Math.sign(baseLane)===oppSide){
-      return baseLane*.70 + (-oppSide*maxLane*.42)*.30;
-    }
-    return baseLane;
+    // Even outside very close battles, keep a small persistent identity bias.
+    return baseLane*.88 + personalSide*maxLane*.12;
   }
+
 
   function chaseMode132(p,info){
     const c=competitionState132(p);
@@ -10888,8 +10708,101 @@ function updateDestinyPlayer183(p,now,dt){
       dangerous:plan.danger,crowd150:true,minGap:plan.minGap,risk:plan.risk
     };
   }
+
+  function singleObserverHardEscape160(p,now,info){
+    const d=driver120(p);
+    const f=smoothFrame120(info,info.prog);
+    const nx=-f.uy,ny=f.ux;
+    const maxLane=roadHalf120(p,info,info.prog);
+
+    let nearby=localObservers723(p,11.8);
+    if(nearby.length!==1)return null;
+
+    const o=nearby[0];
+    const m=observerMotion131(o);
+    const rx=o.x-p.x,ry=o.y-p.y;
+    const dist=Math.hypot(rx,ry);
+    const fw=rx*f.ux+ry*f.uy;
+    const lat=rx*nx+ry*ny;
+
+    // Only force if that one observer is actually threatening our corridor.
+    const threatening=
+      dist<7.6 ||
+      (fw>-.6&&fw<10.6&&Math.abs(lat)<4.0);
+    if(!threatening)return null;
+
+    // Evaluate both broad sides + intermediate exits.
+    const preferred=lat>=0?-1:1;
+    const current=Number(p._lane120)||0;
+    const candidates=[
+      preferred*.86*maxLane,
+      preferred*.68*maxLane,
+      preferred*.50*maxLane,
+      -preferred*.52*maxLane,
+      -preferred*.72*maxLane
+    ];
+
+    let best=null;
+    for(const lane of candidates){
+      let minGap=999,risk=0;
+      for(const t of [.05,.10,.18,.28,.42,.60,.82,1.06]){
+        const pr=Math.min(info.total,info.prog+(p.speed||9.7)*t);
+        const q=smoothFrame120(info,pr);
+        const qnx=-q.uy,qny=q.ux;
+        const x=q.x+qnx*lane,y=q.y+qny*lane;
+        const ox=o.x+(m.stopped?0:m.vx*t);
+        const oy=o.y+(m.stopped?0:m.vy*t);
+        const gap=Math.hypot(x-ox,y-oy);
+        minGap=Math.min(minGap,gap);
+
+        const safe=4.15+d.avoidance*.75+d.reaction*.35+(m.stopped?.65:0);
+        if(gap<safe+1.8){
+          const w=(safe+1.8-gap)/(safe+1.8);
+          risk+=w*w*(2.8-t*.45);
+        }
+      }
+
+      let score=risk*70+Math.max(0,4.2-minGap)*60+Math.abs(lane-current)*.008;
+      if(Math.sign(lane)===preferred)score-=.30;
+
+      if(!best||score<best.score)best={lane,minGap,score};
+    }
+
+    if(!best)return null;
+
+    return {
+      lane:best.lane,
+      speedMul:.96,
+      dangerous:true,
+      single160:true,
+      minGap:best.minGap,
+      risk:1
+    };
+  }
+
   function freeDrivingDecision130(p,now,info){
     const prog=info.prog,maxLane=roadHalf120(p,info,prog),d=driver120(p);
+
+    // v1.6.0: one obvious observer must NEVER be ignored.
+    const single160=singleObserverHardEscape160(p,now,info);
+    if(single160){
+      p._controlMove130=null;p._controlMoveUntil130=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+      p._singleEscapeLane160=single160.lane;
+      p._singleEscapeUntil160=now+150;
+
+      let lane=single160.lane;
+      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+      return {
+        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
+        speedMul:single160.speedMul,
+        dangerous:true,
+        single160:true,
+        minGap:single160.minGap,
+        risk:1
+      };
+    }
 
     const crowd=crowdDecision150(p,now,info);
     if(crowd?.dangerous||crowd?.waiting){
@@ -10998,12 +10911,13 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="collision-veto")?3.45:
+      (p.liveEvadeAction==="single-hard-escape")?3.80:
+      ((p.liveEvadeAction==="collision-veto")?3.45:
       ((p.liveEvadeAction==="crowd-breakout")?3.70:
       ((p.liveEvadeAction==="crowd-survival")?2.55:
       ((p.liveEvadeAction==="survival-master")?1.95:
       ((p.liveEvadeAction==="simple-escape")?1.80:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1)))));
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1))))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11406,7 +11320,9 @@ function updateDestinyPlayer183(p,now,dt){
     }
 
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.veto153
+    p.liveEvadeAction=decision.single160
+      ? "single-hard-escape"
+      : (decision.veto153
       ? "collision-veto"
       : (decision.breakout156
       ? "crowd-breakout"
@@ -11416,7 +11332,7 @@ function updateDestinyPlayer183(p,now,dt){
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))))));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")))))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -15387,6 +15303,19 @@ function seasonCardHtml(p){
     };
   }
   applyPatch158();
+
+
+  function applyPatch160(){
+    window.__OBSERVER_FM_V160__={
+      singleObserverHardEscape:true,
+      singleObserverPriority:"absolute",
+      singleObserverBoost:3.80,
+      antiMirrorStrengthened:true,
+      lateralRangeReduced:true,
+      conservativeDeadCodeCleanup:true
+    };
+  }
+  applyPatch160();
 
   function v36SelfAudit(){
     const issues=[];
