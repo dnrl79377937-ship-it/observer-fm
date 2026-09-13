@@ -24,16 +24,16 @@
   let MAP_W = 172, MAP_H = 178;
   const OBSERVER_COUNT = 130; // max/default observer pool
   function observerCountForMap791(m=currentMap770()){
-    if(m?.id==="double_hairpin") return 30; // 블랙홀
-    if(m?.id==="skyway") return 70;         // 스페이스
-    if(m?.id==="cliff_hanger") return 70;   // 스카이 클리프
-    return 100;                             // 나머지 맵
+    if(m?.id==="double_hairpin") return 60;
+    if(m?.id==="skyway") return 140;
+    if(m?.id==="cliff_hanger") return 140;
+    return 200;
   }
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.4.1";
+  const BUILD_ID = "v1.5.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1568,6 +1568,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._controlMove130=null;p._controlMoveUntil130=0;p._nextControlCheck130=0;
       p._simpleEscapeUntil133=0;p._simpleEscapeLane133=NaN;
       p._masterHoldUntil140=0;p._masterLane140=NaN;p._masterStopUntil140=0;
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;p._crowdPlanStarted150=0;p._crowdWaitUntil150=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10756,94 +10757,166 @@ function updateDestinyPlayer183(p,now,dt){
       master140:true
     };
   }
-  function freeDrivingDecision130(p,now,info){
-    const prog=info.prog;
-    const maxLane=roadHalf120(p,info,prog);
-    const d=driver120(p);
 
-    // v1.4.0 Survival Master always gets first authority.
+  function crowdState150(o){
+    const m=observerMotion131(o);
+    return {o,vx:m.stopped?0:m.vx,vy:m.stopped?0:m.vy,stopped:m.stopped};
+  }
+
+  function evalPath150(p,info,startProg,lanes,times,nearby){
+    const d=driver120(p), speed=Math.max(6.5,Number(p.speed)||9.7);
+    let risk=0,minGap=999,blocked=0;
+
+    for(let i=0;i<times.length;i++){
+      const t=times[i];
+      const seg=Math.min(lanes.length-1,Math.floor(i*lanes.length/times.length));
+      const lane=lanes[seg];
+      const pr=Math.min(info.total,startProg+speed*t);
+      const q=smoothFrame120(info,pr),nx=-q.uy,ny=q.ux;
+      const x=q.x+nx*lane,y=q.y+ny*lane;
+      let blockedNow=false;
+
+      for(const cs of nearby){
+        const gap=Math.hypot(x-(cs.o.x+cs.vx*t),y-(cs.o.y+cs.vy*t));
+        minGap=Math.min(minGap,gap);
+        const safe=3.85+d.avoidance*.85+d.risk*.75+(cs.stopped?.75:0);
+        if(gap<safe)blockedNow=true;
+        if(gap<safe+2.6){
+          const w=(safe+2.6-gap)/(safe+2.6);
+          risk+=w*w*(2.85-t*.28);
+        }
+      }
+      if(blockedNow)blocked++;
+    }
+    return {risk,minGap,blocked};
+  }
+
+  function crowdPathPlan150(p,now,info){
+    const d=driver120(p),prog=info.prog,maxLane=roadHalf120(p,info,prog);
+    const obs=localObservers723(p,16+d.prediction*3).map(crowdState150);
+
+    if(!obs.length)return {danger:false,lane:Number(p._lane120)||0,speedMul:1,minGap:99,risk:0};
+
+    const current=Number(p._lane120)||0;
+    const horizon=1.9+d.prediction*.75;
+    const times=[.12,.28,.48,.72,.98,1.28,1.62,horizon];
+    const laneSet=[-1,-.8,-.6,-.4,-.2,0,.2,.4,.6,.8,1].map(v=>v*maxLane);
+
+    let stage1=[];
+    for(const l1 of laneSet){
+      const e=evalPath150(p,info,prog,[l1,l1,l1],times,obs);
+      stage1.push({lanes:[l1],score:e.risk*58+e.blocked*28+Math.max(0,4-e.minGap)*42+Math.abs(l1-current)*.008,...e});
+    }
+    stage1.sort((a,b)=>a.score-b.score); stage1=stage1.slice(0,5);
+
+    const branch2=[-1,-.66,-.33,0,.33,.66,1].map(v=>v*maxLane);
+    let stage2=[];
+    for(const a of stage1)for(const l2 of branch2){
+      const lanes=[a.lanes[0],l2,l2],e=evalPath150(p,info,prog,lanes,times,obs);
+      stage2.push({lanes:[a.lanes[0],l2],score:e.risk*62+e.blocked*30+Math.max(0,4.1-e.minGap)*45+Math.abs(l2-a.lanes[0])*.012,...e});
+    }
+    stage2.sort((a,b)=>a.score-b.score); stage2=stage2.slice(0,6);
+
+    const branch3=[-1,-.5,0,.5,1].map(v=>v*maxLane);
+    let best=null;
+    for(const a of stage2)for(const l3 of branch3){
+      const lanes=[a.lanes[0],a.lanes[1],l3],e=evalPath150(p,info,prog,lanes,times,obs);
+      const score=e.risk*68+e.blocked*34+Math.max(0,4.2-e.minGap)*48+Math.abs(l3-a.lanes[1])*.010;
+      if(!best||score<best.score)best={lanes,score,...e};
+    }
+    if(!best)return null;
+
+    const danger=best.minGap<5||best.risk>.06||best.blocked>0;
+    const hopeless=best.blocked>=3||best.minGap<2.85;
+    return {
+      danger,lane:best.lanes[0],lane2:best.lanes[1],lane3:best.lanes[2],
+      minGap:best.minGap,risk:best.risk,blocked:best.blocked,hopeless,
+      speedMul:hopeless?0:(best.minGap<3.3?.28:(best.minGap<4?.52:.76))
+    };
+  }
+
+  function crowdDecision150(p,now,info){
+    const d=driver120(p);
+    const near=localObservers723(p,6.5+d.reaction*1.3);
+    let hardDanger=false;
+    for(const o of near){
+      if(Math.hypot(o.x-p.x,o.y-p.y)<3.7+d.reaction*.7){hardDanger=true;break;}
+    }
+
+    if(hardDanger||!p._crowdPlan150||now>=(p._crowdPlanUntil150||0)){
+      const plan=crowdPathPlan150(p,now,info);
+      if(!plan)return null;
+      p._crowdPlan150=plan;p._crowdPlanStarted150=now;
+      p._crowdPlanUntil150=now+(plan.danger?180:320);
+    }
+
+    const plan=p._crowdPlan150;
+    if(!plan)return null;
+
+    const age=now-(p._crowdPlanStarted150||now);
+    let lane=age>520?plan.lane3:(age>240?plan.lane2:plan.lane);
+
+    if(plan.danger){
+      p._controlMove130=null;p._controlMoveUntil130=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+    }
+
+    if(plan.hopeless)p._crowdWaitUntil150=Math.max(p._crowdWaitUntil150||0,now+180);
+
+    if(now<(p._crowdWaitUntil150||0)){
+      return {lane:Number(p._lane120)||lane,speedMul:0,dangerous:true,crowd150:true,waiting:true,minGap:plan.minGap,risk:1};
+    }
+
+    return {
+      lane,speedMul:plan.danger?plan.speedMul:.995,
+      dangerous:plan.danger,crowd150:true,minGap:plan.minGap,risk:plan.risk
+    };
+  }
+  function freeDrivingDecision130(p,now,info){
+    const prog=info.prog,maxLane=roadHalf120(p,info,prog),d=driver120(p);
+
+    const crowd=crowdDecision150(p,now,info);
+    if(crowd?.dangerous||crowd?.waiting){
+      let lane=crowd.lane;
+      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+      return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul:crowd.speedMul,dangerous:true,crowd150:true,waiting150:!!crowd.waiting,minGap:crowd.minGap,risk:crowd.risk};
+    }
+
     const master=survivalMasterDecision140(p,now,info);
     if(master?.dangerous){
       let lane=master.lane;
       if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {
-        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
-        speedMul:master.speedMul,
-        dangerous:true,
-        master140:true,
-        stop140:!!master.stop140,
-        minGap:2.8,
-        risk:1
-      };
+      return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul:master.speedMul,dangerous:true,master140:true,minGap:2.8,risk:1};
     }
 
-    // 1~2 observers: guaranteed easy-read escape still active.
-    const simple133=simpleThreatEscape133(p,now,info);
-    if(simple133){
+    const simple=simpleThreatEscape133(p,now,info);
+    if(simple){
       p._controlMove130=null;p._controlMoveUntil130=0;
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._simpleEscapeUntil133=now+Math.max(720,simple133.holdMs);
-      p._simpleEscapeLane133=simple133.lane;
-
-      let lane=simple133.lane;
+      let lane=simple.lane;
       if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {
-        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
-        speedMul:simple133.stopped ? (.66+d.control*.08) : (.77+d.control*.08),
-        dangerous:true,
-        simpleEscape133:true,
-        minGap:simple133.minGap,risk:1
-      };
+      return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul:simple.stopped?.62:.76,dangerous:true,simpleEscape133:true,minGap:simple.minGap,risk:1};
     }
 
-    if(now<(p._simpleEscapeUntil133||0)&&Number.isFinite(p._simpleEscapeLane133)){
-      let lane=p._simpleEscapeLane133;
-      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {
-        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
-        speedMul:.92,
-        dangerous:true,
-        simpleEscapeHold133:true,
-        minGap:4.0,risk:.35
-      };
-    }
-
-    // No immediate danger: free-driving / competition logic remains.
     if(!p._freePlan130||now>=(p._freePlanUntil130||0)){
       p._freePlan130=chooseFreeTrajectory130(p,now,info,prog,maxLane);
       p._freePlanUntil130=now+(p._freePlan130.holdMs||420);
     }
 
-    let plan=p._freePlan130;
-    let lane=plan?.lane||0;
-    let speedMul=1;
-
-    if(plan?.dangerous){
-      speedMul=.76+d.control*.08+d.risk*.04;
+    let lane=p._freePlan130?.lane||0,speedMul=1;
+    const chase=chaseMode132(p,info);
+    if(chase?.active){
+      lane=chase.lane;speedMul=chase.speedMul;
+      p._controlMove130=null;p._controlMoveUntil130=0;
     }else{
-      const chase=chaseMode132(p,info);
-      if(chase?.active){
-        lane=chase.lane;
-        speedMul=chase.speedMul;
-        p._controlMove130=null;p._controlMoveUntil130=0;
-      }else{
-        lane+=maybeControlMove130(p,now,maxLane);
-        const skilled=baseLane120(p,now,info,prog,maxLane);
-        lane=lane*.84+skilled*.16;
-        lane=antiMirrorLane132(p,lane,maxLane);
-      }
+      lane+=maybeControlMove130(p,now,maxLane);
+      lane=lane*.86+baseLane120(p,now,info,prog,maxLane)*.14;
+      lane=antiMirrorLane132(p,lane,maxLane);
     }
 
     if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-    lane=Math.max(-maxLane,Math.min(maxLane,lane));
-
-    return {
-      lane,speedMul,
-      dangerous:!!plan?.dangerous,
-      minGap:plan?.minGap??99,
-      risk:plan?.risk??0
-    };
+    return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul,dangerous:false,minGap:99,risk:0};
   }
+
 
 
 
@@ -10861,8 +10934,9 @@ function updateDestinyPlayer183(p,now,dt){
     // Never "stop to turn". Even a weak cornering stat keeps meaningful forward speed.
     const cornerMul=Math.max(.84,1-turnSeverity*(.12*(1-cornerSkill)+.025));
 
-    const rawStep=(p.speed||9.7)*Math.max(.65,Math.min(1.03,speedMul))*cornerMul*dtSafe/1000;
-    const step=Math.max(.001,Math.min(.245,rawStep));
+    const commandedSpeed=Math.max(0,Math.min(1.03,Number(speedMul)||0));
+    const rawStep=(p.speed||9.7)*commandedSpeed*cornerMul*dtSafe/1000;
+    const step=Math.max(0,Math.min(.245,rawStep));
     const next=Math.min(info.total,prog+step);
 
     const targetFrame=smoothFrame120(info,next);
@@ -10908,9 +10982,10 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="survival-master")?1.62:
+      (p.liveEvadeAction==="crowd-survival")?1.78:
+      ((p.liveEvadeAction==="survival-master")?1.62:
       ((p.liveEvadeAction==="simple-escape")?1.48:
-      ((p.liveEvadeAction==="free-path-dodge")?1.32:1));
+      ((p.liveEvadeAction==="free-path-dodge")?1.32:1)));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11050,11 +11125,13 @@ function updateDestinyPlayer183(p,now,dt){
 
     const decision=freeDrivingDecision130(p,now,info);
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.master140
+    p.liveEvadeAction=decision.crowd150
+      ? "crowd-survival"
+      : (decision.master140
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -14891,6 +14968,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch141();
+
+
+  function applyPatch150(){
+    window.__OBSERVER_FM_V150__={
+      aiGeneration:"CrowdSurvival150",
+      targetSurvival:"~99% goal, not guaranteed",
+      observerCountMultiplier:2,
+      multiStagePathfinding:true,
+      pathStages:3,
+      trueStopControl:true,
+      waitForGap:true,
+      crowdEmergencyLateralBoost:1.78,
+      survivalAlwaysFirst:true
+    };
+  }
+  applyPatch150();
 
   function v36SelfAudit(){
     const issues=[];
