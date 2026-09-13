@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.4.0";
+  const BUILD_ID = "v1.4.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10626,6 +10626,7 @@ function updateDestinyPlayer183(p,now,dt){
   // ============================================================
 
   function survivalMasterPlan140(p,now,info){
+    if(!p||!info||!Number.isFinite(info.prog)||!Number.isFinite(info.total)||info.total<=0)return null;
     const d=driver120(p);
     const prog=info.prog;
     const maxLane=roadHalf120(p,info,prog);
@@ -10651,7 +10652,7 @@ function updateDestinyPlayer183(p,now,dt){
         const nx=-q.uy,ny=q.ux;
         const x=q.x+nx*lane,y=q.y+ny*lane;
 
-        let frameBlocked=False;
+        let frameBlocked=false;
         for(const o of nearby){
           const m=observerMotion131(o);
           const ox=o.x+(m.stopped?0:m.vx*t);
@@ -10661,7 +10662,7 @@ function updateDestinyPlayer183(p,now,dt){
 
           const safe=3.65+d.risk*.85+d.avoidance*.75+(m.stopped?.65:0);
           if(gap<safe){
-            frameBlocked=True
+            frameBlocked=true
           }
           if(gap<safe+2.35){
             const w=(safe+2.35-gap)/(safe+2.35);
@@ -14880,6 +14881,16 @@ function seasonCardHtml(p){
     };
   }
   applyPatch140();
+
+
+  function applyPatch141(){
+    window.__OBSERVER_FM_V141__={
+      survivalMasterRuntimeFix:true,
+      pythonBooleanLeakFixed:true,
+      leagueStartCrashFixed:true
+    };
+  }
+  applyPatch141();
 
   function v36SelfAudit(){
     const issues=[];
