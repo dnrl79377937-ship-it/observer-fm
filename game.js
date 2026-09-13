@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.0";
+  const BUILD_ID = "v1.5.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10729,13 +10729,13 @@ function updateDestinyPlayer183(p,now,dt){
 
       // If all forward lanes are poor, wait briefly for a gap instead of forcing through.
       if(plan.blockedFrames>=3 && plan.minGap<3.15){
-        p._masterStopUntil140=now+150+Math.random()*220;
+        p._masterStopUntil140=now+55+Math.random()*70;
       }
 
       if(now<(p._masterStopUntil140||0)){
         return {
           lane:Number(p._lane120)||0,
-          speedMul:.02,
+          speedMul:.12,
           dangerous:true,
           master140:true,
           stop140:true
@@ -10821,17 +10821,17 @@ function updateDestinyPlayer183(p,now,dt){
     let best=null;
     for(const a of stage2)for(const l3 of branch3){
       const lanes=[a.lanes[0],a.lanes[1],l3],e=evalPath150(p,info,prog,lanes,times,obs);
-      const score=e.risk*68+e.blocked*34+Math.max(0,4.2-e.minGap)*48+Math.abs(l3-a.lanes[1])*.010;
+      const score=e.risk*68+e.blocked*22+Math.max(0,4.2-e.minGap)*48+Math.abs(l3-a.lanes[1])*.010;
       if(!best||score<best.score)best={lanes,score,...e};
     }
     if(!best)return null;
 
     const danger=best.minGap<5||best.risk>.06||best.blocked>0;
-    const hopeless=best.blocked>=3||best.minGap<2.85;
+    const hopeless=best.blocked>=5&&best.minGap<2.25;
     return {
       danger,lane:best.lanes[0],lane2:best.lanes[1],lane3:best.lanes[2],
       minGap:best.minGap,risk:best.risk,blocked:best.blocked,hopeless,
-      speedMul:hopeless?0:(best.minGap<3.3?.28:(best.minGap<4?.52:.76))
+      speedMul:hopeless?.10:(best.minGap<2.8?.34:(best.minGap<3.6?.58:.80))
     };
   }
 
@@ -10847,7 +10847,7 @@ function updateDestinyPlayer183(p,now,dt){
       const plan=crowdPathPlan150(p,now,info);
       if(!plan)return null;
       p._crowdPlan150=plan;p._crowdPlanStarted150=now;
-      p._crowdPlanUntil150=now+(plan.danger?180:320);
+      p._crowdPlanUntil150=now+(plan.danger?110:240);
     }
 
     const plan=p._crowdPlan150;
@@ -10861,10 +10861,22 @@ function updateDestinyPlayer183(p,now,dt){
       p._freePlan130=null;p._freePlanUntil130=0;
     }
 
-    if(plan.hopeless)p._crowdWaitUntil150=Math.max(p._crowdWaitUntil150||0,now+180);
+    if(plan.hopeless){
+      // v1.5.1: only very short "hesitation", never a long full stop.
+      p._crowdWaitUntil150=Math.max(p._crowdWaitUntil150||0,now+70+Math.random()*55);
+    }
 
     if(now<(p._crowdWaitUntil150||0)){
-      return {lane:Number(p._lane120)||lane,speedMul:0,dangerous:true,crowd150:true,waiting:true,minGap:plan.minGap,risk:1};
+      // Keep moving slowly and keep the escape lane alive.
+      return {
+        lane:Number.isFinite(lane)?lane:(Number(p._lane120)||0),
+        speedMul:.14,
+        dangerous:true,
+        crowd150:true,
+        waiting:true,
+        minGap:plan.minGap,
+        risk:1
+      };
     }
 
     return {
@@ -10982,7 +10994,7 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="crowd-survival")?1.78:
+      (p.liveEvadeAction==="crowd-survival")?1.90:
       ((p.liveEvadeAction==="survival-master")?1.62:
       ((p.liveEvadeAction==="simple-escape")?1.48:
       ((p.liveEvadeAction==="free-path-dodge")?1.32:1)));
@@ -14984,6 +14996,19 @@ function seasonCardHtml(p){
     };
   }
   applyPatch150();
+
+
+  function applyPatch151(){
+    window.__OBSERVER_FM_V151__={
+      naturalFlowSurvival:true,
+      longStopsRemoved:true,
+      crowdWaitMs:"70-125",
+      rollingAvoidance:true,
+      crowdReplanMs:110,
+      crowdEmergencyLateralBoost:1.90
+    };
+  }
+  applyPatch151();
 
   function v36SelfAudit(){
     const issues=[];
