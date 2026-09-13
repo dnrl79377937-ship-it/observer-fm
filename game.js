@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.6.3";
+  const BUILD_ID = "v1.7.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1574,6 +1574,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._singleEscapeLane160=NaN;p._singleEscapeUntil160=0;
       p._corridorLane161=NaN;p._corridorUntil161=0;
       p._threatBurstUntil163=0;p._threatZigSide163=0;p._threatZigAt163=0;
+      p._actualEscapeLane170=NaN;p._actualEscapeUntil170=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10156,7 +10157,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     // Slightly higher than v1.3.1, still clearly low-probability.
     // v1.6.2: slightly more human-like variation on safe road.
-    const chance=.074+style.creativity*.046+d.control*.016;
+    const chance=.060+style.creativity*.040+d.control*.014;
     if(Math.random()>=chance)return 0;
 
     const types=[
@@ -11036,7 +11037,8 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="threat-burst")?4.60:
+      (p.liveEvadeAction==="actual-motion-escape")?4.10:
+      ((p.liveEvadeAction==="threat-burst")?4.20:
       ((p.liveEvadeAction==="collision-veto")?3.55:
       ((p.liveEvadeAction==="safe-corridor")?3.25:
       ((p.liveEvadeAction==="single-hard-escape")?3.80:
@@ -11044,7 +11046,7 @@ function updateDestinyPlayer183(p,now,dt){
       ((p.liveEvadeAction==="crowd-survival")?2.55:
       ((p.liveEvadeAction==="survival-master")?1.95:
       ((p.liveEvadeAction==="simple-escape")?1.80:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1))))))));
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1)))))))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11300,6 +11302,161 @@ function updateDestinyPlayer183(p,now,dt){
     };
   }
 
+
+  // ============================================================
+  // v1.7.0 ACTUAL MOTION PREDICTION
+  // Predict the RACER'S reachable trajectory, not an instantly-snapped lane.
+  // ============================================================
+
+  function simulateReachablePath170(p,info,targetLane,speedMul,horizon,stepDt=.08){
+    const d=driver120(p);
+    const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
+
+    let prog=Number(info.prog)||0;
+    let lane=Number(p._lane120)||0;
+    let latVel=Number(p._laneVel120)||0;
+
+    const speed=Math.max(6.5,Number(p.speed)||9.7);
+    const samples=[];
+
+    for(let t=stepDt;t<=horizon+1e-6;t+=stepDt){
+      const turn=curve120(info,prog);
+      const turnSeverity=Math.min(1,turn/.72);
+      const cornerSkill=d.cornering*.38+d.control*.24+d.braking*.20+d.stability*.18;
+      const cornerMul=Math.max(.84,1-turnSeverity*(.12*(1-cornerSkill)+.025));
+
+      const commanded=Math.max(0,Math.min(1.03,Number(speedMul)||0));
+      const forwardStep=speed*commanded*cornerMul*stepDt;
+      prog=Math.min(info.total,prog+forwardStep);
+
+      const maxLane=roadHalf120(p,info,prog);
+      const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
+
+      // Same family of lateral limits as real movementStep120.
+      const boost=1.0;
+      const maxLatSpeed=(.048+control*.046)*boost;
+      const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-lane)*(.150+control*.100)*boost));
+      const accel=(.0080+control*.0130)*1.0;
+
+      latVel+=Math.max(-accel,Math.min(accel,targetVel-latVel));
+      latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
+      lane+=latVel;
+
+      lane=Math.max(-maxLane-.08,Math.min(maxLane+.08,lane));
+
+      const q=smoothFrame120(info,prog);
+      const nx=-q.uy,ny=q.ux;
+      samples.push({
+        t,
+        prog,
+        lane,
+        x:q.x+nx*lane,
+        y:q.y+ny*lane
+      });
+    }
+
+    return samples;
+  }
+
+  function reachableRisk170(p,info,targetLane,speedMul,nearby,horizon=1.45){
+    const d=driver120(p);
+    const traj=simulateReachablePath170(p,info,targetLane,speedMul,horizon,.07);
+
+    let minGap=999,risk=0,blocked=0;
+
+    for(const s of traj){
+      let blockedNow=false;
+
+      for(const o of nearby){
+        const m=observerMotion131(o);
+        const ox=o.x+(m.stopped?0:m.vx*s.t);
+        const oy=o.y+(m.stopped?0:m.vy*s.t);
+        const gap=Math.hypot(s.x-ox,s.y-oy);
+        minGap=Math.min(minGap,gap);
+
+        const safe=3.8+d.avoidance*.78+d.risk*.72+(m.stopped?.70:0);
+        if(gap<safe)blockedNow=true;
+
+        if(gap<safe+2.1){
+          const w=(safe+2.1-gap)/(safe+2.1);
+          risk+=w*w*(2.7-s.t*.42);
+        }
+      }
+
+      if(blockedNow)blocked++;
+    }
+
+    return {minGap,risk,blocked,traj};
+  }
+
+  function actualMotionEscape170(p,now,info,intendedLane,intendedSpeedMul){
+    const d=driver120(p);
+    let nearby=localObservers723(p,12.5+d.prediction*2.2);
+    if(!nearby.length)return null;
+
+    nearby=nearby
+      .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
+      .sort((a,b)=>a.dist-b.dist)
+      .slice(0,14)
+      .map(x=>x.o);
+
+    // First evaluate what the racer can ACTUALLY do if it keeps the current plan.
+    const currentEval=reachableRisk170(
+      p,info,intendedLane,Math.max(.88,Number(intendedSpeedMul)||1),nearby,1.25
+    );
+
+    if(currentEval.minGap>=4.2 && currentEval.blocked===0 && currentEval.risk<.08){
+      return null;
+    }
+
+    const maxLane=roadHalf120(p,info,info.prog);
+    const candidates=[-1,-.82,-.64,-.46,-.28,-.12,.12,.28,.46,.64,.82,1].map(v=>v*maxLane);
+    const speeds=[.96,.90,.84];
+    const currentLane=Number(p._lane120)||0;
+
+    let best=null;
+
+    for(const lane of candidates){
+      for(const sm of speeds){
+        const e=reachableRisk170(p,info,lane,sm,nearby,1.55);
+
+        let score=
+          e.risk*72+
+          e.blocked*34+
+          Math.max(0,4.3-e.minGap)*56+
+          Math.abs(lane-currentLane)*.010+
+          (1-sm)*.12;
+
+        // Maintain individuality in equivalent openings.
+        const side=(p.sourceIndex??p.index??0)%2===0?-1:1;
+        if(Math.sign(lane)===side)score-=.05;
+
+        if(!best||score<best.score){
+          best={lane,speedMul:sm,score,minGap:e.minGap,blocked:e.blocked,risk:e.risk};
+        }
+      }
+    }
+
+    if(!best)return null;
+
+    // If even the best reachable path is bad, allow a tiny speed reduction,
+    // but never long stop/slow behavior.
+    if(best.minGap<2.55 || best.blocked>=3){
+      best.speedMul=Math.max(.78,best.speedMul-.06);
+    }
+
+    p._actualEscapeLane170=best.lane;
+    p._actualEscapeUntil170=now+130;
+
+    return {
+      lane:best.lane,
+      speedMul:best.speedMul,
+      minGap:best.minGap,
+      dangerous:true,
+      actual170:true
+    };
+  }
+
   function collisionVeto153(p,now,info,intendedLane){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
@@ -11441,8 +11598,8 @@ function updateDestinyPlayer183(p,now,dt){
     let side=leftPressure<=rightPressure?-1:1;
 
     // If multiple threats are stacked, allow alternating zig-zag breaks.
-    if(threatCount>=2){
-      const switchEvery=nearest<3.5?85:120;
+    if(threatCount>=3){
+      const switchEvery=nearest<3.2?150:210;
       if(!Number.isFinite(p._threatZigAt163)||now>=p._threatZigAt163){
         const prev=Number(p._threatZigSide163)||side;
         p._threatZigSide163=-prev;
@@ -11456,8 +11613,8 @@ function updateDestinyPlayer183(p,now,dt){
 
     // Larger lateral target only while threatened.
     const strength=
-      threatCount>=4?.92:
-      threatCount>=2?.78:.66;
+      threatCount>=5?.78:
+      threatCount>=3?.66:.54;
 
     let lane=side*maxLane*strength;
 
@@ -11526,7 +11683,24 @@ function updateDestinyPlayer183(p,now,dt){
       p._controlMove130=null;p._controlMoveUntil130=0;
     }
 
-    // final collision veto checks the route that is ACTUALLY about to be driven.
+    // v1.7.0: check the RACER'S ACTUAL REACHABLE motion before old geometric veto.
+    const actual170=actualMotionEscape170(p,now,info,decision.lane,decision.speedMul);
+    if(actual170){
+      decision={
+        ...decision,
+        lane:actual170.lane,
+        speedMul:actual170.speedMul,
+        dangerous:true,
+        actual170:true,
+        minGap:actual170.minGap
+      };
+
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._controlMove130=null;p._controlMoveUntil130=0;
+    }
+
+    // final collision veto remains the last geometric safety net.
     const veto153=collisionVeto153(p,now,info,decision.lane);
     if(veto153){
       decision={
@@ -11564,6 +11738,8 @@ function updateDestinyPlayer183(p,now,dt){
     p.liveEvadeDanger=decision.dangerous?1:0;
     p.liveEvadeAction=decision.veto153
       ? "collision-veto"
+      : (decision.actual170
+      ? "actual-motion-escape"
       : (decision.burst163
       ? "threat-burst"
       : (decision.corridor161
@@ -11578,7 +11754,7 @@ function updateDestinyPlayer183(p,now,dt){
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")))))))));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))))))))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -15605,6 +15781,21 @@ function seasonCardHtml(p){
     };
   }
   applyPatch163();
+
+
+  function applyPatch170(){
+    window.__OBSERVER_FM_V170__={
+      aiGeneration:"ActualMotionPrediction170",
+      reachableTrajectorySimulation:true,
+      simUsesCurrentLaneVelocity:true,
+      simUsesLateralAcceleration:true,
+      simUsesForwardSpeed:true,
+      actualMotionEscapePriority:true,
+      zigzagReduced:true,
+      actualMotionLateralBoost:4.10
+    };
+  }
+  applyPatch170();
 
   function v36SelfAudit(){
     const issues=[];
