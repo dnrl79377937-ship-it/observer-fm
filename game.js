@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.4";
+  const BUILD_ID = "v1.5.5";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10552,8 +10552,8 @@ function updateDestinyPlayer183(p,now,dt){
     // 1~2 observers should be an "easy read":
     // no probability gate, no waiting until almost-contact.
     const trigger =
-      threat.dist<6.4 ||
-      (threat.fw>-.5&&threat.fw<8.6&&Math.abs(threat.lat)<3.65);
+      threat.dist<6.8 ||
+      (threat.fw>-.5&&threat.fw<9.2&&Math.abs(threat.lat)<3.85);
 
     if(!trigger)return null;
 
@@ -10850,7 +10850,7 @@ function updateDestinyPlayer183(p,now,dt){
       const plan=crowdPathPlan150(p,now,info);
       if(!plan)return null;
       p._crowdPlan150=plan;p._crowdPlanStarted150=now;
-      p._crowdPlanUntil150=now+(plan.danger?110:240);
+      p._crowdPlanUntil150=now+(plan.danger?80:220);
     }
 
     const plan=p._crowdPlan150;
@@ -10997,15 +10997,19 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="collision-veto")?2.35:
-      ((p.liveEvadeAction==="crowd-survival")?1.90:
-      ((p.liveEvadeAction==="survival-master")?1.62:
-      ((p.liveEvadeAction==="simple-escape")?1.48:
-      ((p.liveEvadeAction==="free-path-dodge")?1.32:1))));
+      (p.liveEvadeAction==="collision-veto")?2.55:
+      ((p.liveEvadeAction==="crowd-survival")?2.00:
+      ((p.liveEvadeAction==="survival-master")?1.68:
+      ((p.liveEvadeAction==="simple-escape")?1.52:
+      ((p.liveEvadeAction==="free-path-dodge")?1.34:1))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
-    const accel=(.0080+control*.0130)*emergencyBoost;
+
+    // v1.5.5: quick decisions, smooth steering.
+    // High emergency authority raises target lateral speed more than acceleration,
+    // producing a human-like curved dodge instead of an AI-looking snap.
+    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.58);
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
@@ -11148,11 +11152,11 @@ function updateDestinyPlayer183(p,now,dt){
   function collisionVeto153(p,now,info,intendedLane){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
-    const nearby=localObservers723(p,10.2+d.prediction*2.0);
+    const nearby=localObservers723(p,11.2+d.prediction*2.2);
     if(!nearby.length)return null;
 
-    const times=[.08,.16,.26,.38,.52,.70,.92,1.16];
-    const required=3.65+d.avoidance*.70+d.reaction*.38;
+    const times=[.06,.12,.20,.30,.42,.56,.74,.94,1.18,1.42];
+    const required=3.85+d.avoidance*.74+d.reaction*.42;
 
     let intendedMin=999;
     for(const o of nearby){
@@ -11166,7 +11170,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     // Old route is vetoed. Search dense side exits immediately.
     const current=Number(p._lane120)||0;
-    const candidates=[-1,-.90,-.78,-.64,-.50,-.36,-.22,.22,.36,.50,.64,.78,.90,1].map(v=>v*maxLane);
+    const candidates=[-1,-.92,-.82,-.70,-.58,-.46,-.34,-.22,.22,.34,.46,.58,.70,.82,.92,1].map(v=>v*maxLane);
     let best=null;
 
     for(const lane of candidates){
@@ -11203,7 +11207,9 @@ function updateDestinyPlayer183(p,now,dt){
         Number.isFinite(p._vetoLane153) &&
         Math.sign(lane)!==Math.sign(p._vetoLane153)
       ){
-        score+=.55;
+        // v1.5.5: still discourage ping-pong, but permit a second evasive move
+        // when a new obstacle makes the original side unsafe.
+        score+=.22;
       }
 
       if(!best||score<best.score)best={lane,minGap,score};
@@ -11212,7 +11218,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(!best)return null;
 
     p._vetoLane153=best.lane;
-    p._vetoUntil153=now+420;
+    p._vetoUntil153=now+240;
 
     return {
       lane:best.lane,
@@ -11254,11 +11260,12 @@ function updateDestinyPlayer183(p,now,dt){
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;
     }else if(now<(p._vetoUntil153||0)&&Number.isFinite(p._vetoLane153)){
-      // Hold the emergency side briefly so the racer doesn't snap back into danger.
+      // v1.5.5: short commitment only. Keep a light bias toward the previous escape
+      // without hard-locking the racer to that lane.
       decision={
         ...decision,
-        lane:p._vetoLane153,
-        speedMul:Math.max(.92,Number(decision.speedMul)||1),
+        lane:decision.lane*.58+p._vetoLane153*.42,
+        speedMul:Math.max(.94,Number(decision.speedMul)||1),
         dangerous:true,
         veto153Hold:true
       };
@@ -15180,6 +15187,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch154();
+
+
+  function applyPatch155(){
+    window.__OBSERVER_FM_V155__={
+      chainEvade:true,
+      vetoLookaheadSec:1.42,
+      vetoCandidates:16,
+      vetoHoldMs:240,
+      softHoldBias:true,
+      fasterCrowdReplanMs:80,
+      chainReactionImproved:true,
+      collisionVetoLateralBoost:2.55,
+      smoothEmergencyAcceleration:true
+    };
+  }
+  applyPatch155();
 
   function v36SelfAudit(){
     const issues=[];
