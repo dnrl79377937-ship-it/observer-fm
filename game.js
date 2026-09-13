@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.3.1";
+  const BUILD_ID = "v1.3.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10321,23 +10321,27 @@ function updateDestinyPlayer183(p,now,dt){
         const s=t<.28?1:(t<.58?-1:.72);
         return m.side*s*maxLane*(.31+d.control*.14);
       }
+      if(m.type==="microzig"){
+        return Math.sin(t*Math.PI*3.3+m.phase)*maxLane*(.18+d.control*.10);
+      }
       return 0;
     }
 
     if(now<(p._nextControlCheck130||0))return 0;
-    p._nextControlCheck130=now+220;
+    p._nextControlCheck130=now+210;
 
-    // Low probability per check, but clearly visible over a full race.
-    const chance=.052+style.creativity*.040+d.control*.014;
+    // Slightly higher than v1.3.1, still clearly low-probability.
+    const chance=.062+style.creativity*.042+d.control*.014;
     if(Math.random()>=chance)return 0;
 
-    const types=["zigzag","wide","hold","feint","cutback","doublemove"];
+    const types=["zigzag","wide","hold","feint","cutback","doublemove","microzig"];
     const type=types[Math.floor(Math.random()*types.length)];
     const side=Math.random()<.5?-1:1;
     p._controlMove130={type,side,started:now,phase:Math.random()*Math.PI*2};
     p._controlMoveUntil130=now+500+Math.random()*1050;
     return maybeControlMove130(p,now,maxLane);
   }
+
 
 
 
@@ -10417,6 +10421,101 @@ function updateDestinyPlayer183(p,now,dt){
     if(!imminent)return null;
     return {lane:best.lane,minGap:best.minGap,imminent:true};
   }
+
+  function opponent132(p){
+    if(players.length<2)return null;
+    let best=null,bestGap=Infinity;
+    const my=currentProgress(p);
+    for(const q of players){
+      if(q===p||q.done||q.dead)continue;
+      const gap=Math.abs(currentProgress(q)-my);
+      if(gap<bestGap){bestGap=gap;best=q;}
+    }
+    return best;
+  }
+
+  function competitionState132(p){
+    const opp=opponent132(p);
+    if(!opp)return {opp:null,gap:0,trailing:false,leading:false,close:false};
+
+    const my=currentProgress(p), other=currentProgress(opp);
+    const diff=other-my;
+    return {
+      opp,
+      gap:Math.abs(diff),
+      trailing:diff>0,
+      leading:diff<0,
+      close:Math.abs(diff)<4.2
+    };
+  }
+
+  function antiMirrorLane132(p,baseLane,maxLane){
+    const c=competitionState132(p);
+    if(!c.opp||!c.close)return baseLane;
+
+    const otherLane=Number(c.opp._lane120)||0;
+    const myLane=Number(p._lane120)||0;
+    const laneGap=Math.abs(myLane-otherLane);
+
+    if(laneGap<.70){
+      // deterministic opposite decisions so two racers don't clone one another.
+      const src=(p.sourceIndex??p.index??0);
+      const side=(src%2===0)?-1:1;
+      const target=side*maxLane*(.50+.12*driver120(p).route);
+      return baseLane*.45+target*.55;
+    }
+
+    // If opponent already occupies one side, prefer the other side slightly.
+    const oppSide=Math.sign(otherLane);
+    if(oppSide!==0 && Math.sign(baseLane)===oppSide){
+      return baseLane*.70 + (-oppSide*maxLane*.42)*.30;
+    }
+    return baseLane;
+  }
+
+  function chaseMode132(p,info){
+    const c=competitionState132(p);
+    if(!c.opp||!c.trailing)return null;
+
+    // "격차가 많이 벌어진" 상태: routeLength 기준 충분히 눈에 띄는 차이.
+    const bigGap=Math.max(7.5,routeLength*.055);
+    if(c.gap<bigGap)return null;
+
+    const d=driver120(p);
+    const frac=Math.max(0,Math.min(1,(Number(p._v120Prog)||info.prog)/Math.max(1,info.total)));
+    const si=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
+    let fast=0;
+    try{fast=Number(optimalRacingLine2Offset(p,si))||0;}catch(e){fast=0;}
+
+    // In chase mode, racing line / inside line dominates unless danger overrides later.
+    const maxLane=roadHalf120(p,info,info.prog);
+    let lane=Math.max(-maxLane,Math.min(maxLane,fast));
+
+    if(Math.abs(lane)<.25){
+      const per=ensurePersonality120(p);
+      lane=per.preferSide*maxLane*.52;
+    }
+
+    return {
+      active:true,
+      lane,
+      speedMul:1.055+d.cornering*.025+d.control*.015,
+      gap:c.gap
+    };
+  }
+
+  function shouldStopControl132(p,escape,info){
+    if(!escape||!escape.imminent)return false;
+    const d=driver120(p);
+
+    // Stop-control is useful when no lateral candidate has enough clearance.
+    // Better reaction/control players time it more effectively.
+    const veryTight=escape.minGap<2.55;
+    if(!veryTight)return false;
+
+    const chance=.18+d.reaction*.18+d.control*.12;
+    return Math.random()<chance;
+  }
   function freeDrivingDecision130(p,now,info){
     const prog=info.prog;
     const maxLane=roadHalf120(p,info,prog);
@@ -10429,17 +10528,34 @@ function updateDestinyPlayer183(p,now,dt){
 
     let plan=p._freePlan130;
 
-    // v1.3.1: collision-imminent layer runs before normal free-driving logic.
-    // It searches dense left/right exits and treats stopped observers as static walls.
+    // 1) Almost-contact escape layer
     const escape=emergencyEscape131(p,now,info);
     if(escape){
       p._controlMove130=null;p._controlMoveUntil130=0;
+
+      // v1.3.2 stop-control: briefly wait for the obstacle gap to open.
+      if(shouldStopControl132(p,escape,info)){
+        p._stopControlUntil132=now+110+Math.random()*150;
+        p._freePlan130={
+          lane:Number(p._lane120)||0,dangerous:true,minGap:escape.minGap,risk:1,holdMs:260
+        };
+        p._freePlanUntil130=now+260;
+        return {
+          lane:Number(p._lane120)||0,
+          speedMul:.04,
+          dangerous:true,minGap:escape.minGap,risk:1,
+          emergency131:true,stopControl132:true
+        };
+      }
+
       p._freePlan130={
         lane:escape.lane,dangerous:true,minGap:escape.minGap,risk:1,holdMs:430
       };
       p._freePlanUntil130=now+430;
+
       let lane=escape.lane;
       if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+
       return {
         lane:Math.max(-maxLane,Math.min(maxLane,lane)),
         speedMul:.76+d.control*.09+d.reaction*.05,
@@ -10448,6 +10564,17 @@ function updateDestinyPlayer183(p,now,dt){
       };
     }
 
+    // Continue a previously triggered stop-control for a very short human-like pause.
+    if(now<(p._stopControlUntil132||0)){
+      return {
+        lane:Number(p._lane120)||0,
+        speedMul:.05,
+        dangerous:true,minGap:2.4,risk:1,
+        stopControl132:true
+      };
+    }
+
+    // 2) Normal emergency predictor
     const f=smoothFrame120(info,prog);
     const near=localObservers723(p,6.6+d.reaction*1.3);
     let emergency=false;
@@ -10479,15 +10606,36 @@ function updateDestinyPlayer183(p,now,dt){
     if(plan?.dangerous){
       speedMul=.79+d.control*.08+d.risk*.05;
     }else{
-      lane+=maybeControlMove130(p,now,maxLane);
-      const skilled=baseLane120(p,now,info,prog,maxLane);
-      lane=lane*.84+skilled*.16;
+      // 3) trailing racer comeback mode
+      const chase=chaseMode132(p,info);
+      if(chase?.active){
+        lane=chase.lane;
+        speedMul=chase.speedMul;
+        p._controlMove130=null;p._controlMoveUntil130=0;
+      }else{
+        // 4) free/human controls
+        lane+=maybeControlMove130(p,now,maxLane);
+
+        // keep racing-line skill as secondary influence
+        const skilled=baseLane120(p,now,info,prog,maxLane);
+        lane=lane*.84+skilled*.16;
+
+        // anti-mirroring during close competition
+        lane=antiMirrorLane132(p,lane,maxLane);
+      }
     }
 
     if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
     lane=Math.max(-maxLane,Math.min(maxLane,lane));
-    return {lane,speedMul,dangerous:!!plan?.dangerous,minGap:plan?.minGap??99,risk:plan?.risk??0};
+
+    return {
+      lane,speedMul,
+      dangerous:!!plan?.dangerous,
+      minGap:plan?.minGap??99,
+      risk:plan?.risk??0
+    };
   }
+
 
 
   function movementStep120(p,now,dt,info,targetLane,speedMul){
@@ -14471,6 +14619,21 @@ function seasonCardHtml(p){
     };
   }
   applyPatch131();
+
+
+  function applyPatch132(){
+    window.__OBSERVER_FM_V132__={
+      antiMirrorCompetition:true,
+      chaseMode:true,
+      trailingGapThreshold:"max(7.5, routeLength*5.5%)",
+      chaseInsideLinePriority:true,
+      chaseSpeedBoost:true,
+      stopControl:true,
+      variantControlFrequencyRaisedSlightly:true,
+      controls:["zigzag","wide","hold","feint","cutback","doublemove","microzig","stop"]
+    };
+  }
+  applyPatch132();
 
   function v36SelfAudit(){
     const issues=[];
