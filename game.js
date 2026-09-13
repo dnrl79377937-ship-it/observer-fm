@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.1";
+  const BUILD_ID = "v1.5.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10516,7 +10516,8 @@ function updateDestinyPlayer183(p,now,dt){
     const veryTight=escape.minGap<2.55;
     if(!veryTight)return false;
 
-    const chance=.18+d.reaction*.18+d.control*.12;
+    // v1.5.2: stop-control frequency reduced by 95%.
+    const chance=(.18+d.reaction*.18+d.control*.12)*.05;
     return Math.random()<chance;
   }
 
@@ -10693,7 +10694,7 @@ function updateDestinyPlayer183(p,now,dt){
       risk:best.risk,
       blockedFrames:best.blockedFrames,
       speedMul: danger
-        ? (best.minGap<2.9 ? .18 : best.minGap<3.5 ? .46 : .72)
+        ? (best.minGap<2.9 ? .84 : best.minGap<3.5 ? .89 : .94)
         : .99
     };
   }
@@ -10728,14 +10729,14 @@ function updateDestinyPlayer183(p,now,dt){
       p._masterHoldUntil140=now+(plan.minGap<3.2?950:720);
 
       // If all forward lanes are poor, wait briefly for a gap instead of forcing through.
-      if(plan.blockedFrames>=3 && plan.minGap<3.15){
-        p._masterStopUntil140=now+55+Math.random()*70;
+      if(plan.blockedFrames>=3 && plan.minGap<3.15 && Math.random()<.05){
+        p._masterStopUntil140=now+40+Math.random()*35;
       }
 
       if(now<(p._masterStopUntil140||0)){
         return {
           lane:Number(p._lane120)||0,
-          speedMul:.12,
+          speedMul:.70,
           dangerous:true,
           master140:true,
           stop140:true
@@ -10831,7 +10832,8 @@ function updateDestinyPlayer183(p,now,dt){
     return {
       danger,lane:best.lanes[0],lane2:best.lanes[1],lane3:best.lanes[2],
       minGap:best.minGap,risk:best.risk,blocked:best.blocked,hopeless,
-      speedMul:hopeless?.10:(best.minGap<2.8?.34:(best.minGap<3.6?.58:.80))
+      // v1.5.2: slow-control reduced ~95%; dodge laterally while retaining speed.
+      speedMul:hopeless?.82:(best.minGap<2.8?.86:(best.minGap<3.6?.90:.94))
     };
   }
 
@@ -10861,16 +10863,16 @@ function updateDestinyPlayer183(p,now,dt){
       p._freePlan130=null;p._freePlanUntil130=0;
     }
 
-    if(plan.hopeless){
-      // v1.5.1: only very short "hesitation", never a long full stop.
-      p._crowdWaitUntil150=Math.max(p._crowdWaitUntil150||0,now+70+Math.random()*55);
+    if(plan.hopeless && Math.random()<.05){
+      // v1.5.2: crowd hesitation/stop-control reduced by 95%.
+      p._crowdWaitUntil150=Math.max(p._crowdWaitUntil150||0,now+45+Math.random()*35);
     }
 
     if(now<(p._crowdWaitUntil150||0)){
       // Keep moving slowly and keep the escape lane alive.
       return {
         lane:Number.isFinite(lane)?lane:(Number(p._lane120)||0),
-        speedMul:.14,
+        speedMul:.72,
         dangerous:true,
         crowd150:true,
         waiting:true,
@@ -15009,6 +15011,18 @@ function seasonCardHtml(p){
     };
   }
   applyPatch151();
+
+
+  function applyPatch152(){
+    window.__OBSERVER_FM_V152__={
+      stopControlFrequencyMultiplier:.05,
+      slowControlFrequencyMultiplier:.05,
+      lateralDodgePriority:true,
+      maintainRaceSpeedDuringAvoidance:true,
+      naturalEvade:true
+    };
+  }
+  applyPatch152();
 
   function v36SelfAudit(){
     const issues=[];
