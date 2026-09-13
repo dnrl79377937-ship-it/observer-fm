@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.5.3";
+  const BUILD_ID = "v1.5.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10528,7 +10528,7 @@ function updateDestinyPlayer183(p,now,dt){
     const nx=-f.uy,ny=f.ux;
     const maxLane=roadHalf120(p,info,info.prog);
 
-    const nearby=localObservers723(p,8.8+d.prediction*1.8);
+    const nearby=localObservers723(p,10.0+d.prediction*2.0);
     if(!nearby.length||nearby.length>2)return null;
 
     let threat=null,bestScore=999;
@@ -10552,8 +10552,8 @@ function updateDestinyPlayer183(p,now,dt){
     // 1~2 observers should be an "easy read":
     // no probability gate, no waiting until almost-contact.
     const trigger =
-      threat.dist<5.6 ||
-      (threat.fw>-.4&&threat.fw<7.4&&Math.abs(threat.lat)<3.25);
+      threat.dist<6.4 ||
+      (threat.fw>-.5&&threat.fw<8.6&&Math.abs(threat.lat)<3.65);
 
     if(!trigger)return null;
 
@@ -10586,7 +10586,7 @@ function updateDestinyPlayer183(p,now,dt){
           const gap=Math.hypot(x-ox,y-oy);
           minGap=Math.min(minGap,gap);
 
-          const safe=3.45+d.avoidance*.75+d.reaction*.35+(m.stopped?.55:0);
+          const safe=3.95+d.avoidance*.85+d.reaction*.40+(m.stopped?.75:0);
           if(gap<safe+1.7){
             const w=(safe+1.7-gap)/(safe+1.7);
             risk+=w*w*(2.4-t*.42);
@@ -10663,7 +10663,7 @@ function updateDestinyPlayer183(p,now,dt){
           const gap=Math.hypot(x-ox,y-oy);
           minGap=Math.min(minGap,gap);
 
-          const safe=3.65+d.risk*.85+d.avoidance*.75+(m.stopped?.65:0);
+          const safe=4.10+d.risk*.95+d.avoidance*.90+(m.stopped?.85:0);
           if(gap<safe){
             frameBlocked=true
           }
@@ -10687,7 +10687,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     if(!best)return null;
 
-    const danger=best.minGap<4.5 || best.risk>.10 || best.blockedFrames>0;
+    const danger=best.minGap<5.2 || best.risk>.055 || best.blockedFrames>0;
     return {
       danger,
       lane:best.lane,
@@ -10781,7 +10781,7 @@ function updateDestinyPlayer183(p,now,dt){
       for(const cs of nearby){
         const gap=Math.hypot(x-(cs.o.x+cs.vx*t),y-(cs.o.y+cs.vy*t));
         minGap=Math.min(minGap,gap);
-        const safe=3.85+d.avoidance*.85+d.risk*.75+(cs.stopped?.75:0);
+        const safe=4.25+d.avoidance*.95+d.risk*.85+(cs.stopped?.85:0);
         if(gap<safe)blockedNow=true;
         if(gap<safe+2.6){
           const w=(safe+2.6-gap)/(safe+2.6);
@@ -10828,7 +10828,7 @@ function updateDestinyPlayer183(p,now,dt){
     }
     if(!best)return null;
 
-    const danger=best.minGap<5||best.risk>.06||best.blocked>0;
+    const danger=best.minGap<5.6||best.risk>.035||best.blocked>0;
     const hopeless=best.blocked>=5&&best.minGap<2.25;
     return {
       danger,lane:best.lanes[0],lane2:best.lanes[1],lane3:best.lanes[2],
@@ -10997,7 +10997,7 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="collision-veto")?2.05:
+      (p.liveEvadeAction==="collision-veto")?2.35:
       ((p.liveEvadeAction==="crowd-survival")?1.90:
       ((p.liveEvadeAction==="survival-master")?1.62:
       ((p.liveEvadeAction==="simple-escape")?1.48:
@@ -11148,11 +11148,11 @@ function updateDestinyPlayer183(p,now,dt){
   function collisionVeto153(p,now,info,intendedLane){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
-    const nearby=localObservers723(p,8.6+d.prediction*1.7);
+    const nearby=localObservers723(p,10.2+d.prediction*2.0);
     if(!nearby.length)return null;
 
-    const times=[.10,.20,.34,.50,.70,.88];
-    const required=3.25+d.avoidance*.55+d.reaction*.30;
+    const times=[.08,.16,.26,.38,.52,.70,.92,1.16];
+    const required=3.65+d.avoidance*.70+d.reaction*.38;
 
     let intendedMin=999;
     for(const o of nearby){
@@ -11166,7 +11166,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     // Old route is vetoed. Search dense side exits immediately.
     const current=Number(p._lane120)||0;
-    const candidates=[-1,-.85,-.68,-.50,-.32,-.16,.16,.32,.50,.68,.85,1].map(v=>v*maxLane);
+    const candidates=[-1,-.90,-.78,-.64,-.50,-.36,-.22,.22,.36,.50,.64,.78,.90,1].map(v=>v*maxLane);
     let best=null;
 
     for(const lane of candidates){
@@ -11177,7 +11177,7 @@ function updateDestinyPlayer183(p,now,dt){
           const gap=pathGap153(p,info,lane,o,t);
           minGap=Math.min(minGap,gap);
 
-          const safe=required+(m.stopped?.45:0);
+          const safe=required+(m.stopped?.70:0);
           if(gap<safe+1.6){
             const w=(safe+1.6-gap)/(safe+1.6);
             risk+=w*w*(2.6-t*.55);
@@ -11185,7 +11185,7 @@ function updateDestinyPlayer183(p,now,dt){
         }
       }
 
-      let score=risk*52+Math.max(0,required-minGap)*42+Math.abs(lane-current)*.012;
+      let score=risk*64+Math.max(0,required+.35-minGap)*52+Math.abs(lane-current)*.010;
 
       // Prefer a real side-step rather than tiny correction that still clips obstacle.
       if(Math.abs(lane-current)<.45)score+=.24;
@@ -11197,13 +11197,22 @@ function updateDestinyPlayer183(p,now,dt){
         if(Number.isFinite(other)&&Math.sign(other)===Math.sign(lane))score+=.16;
       }
 
+      // v1.5.4: once a strong evade starts, don't instantly choose the opposite side.
+      if(
+        now<(p._vetoUntil153||0) &&
+        Number.isFinite(p._vetoLane153) &&
+        Math.sign(lane)!==Math.sign(p._vetoLane153)
+      ){
+        score+=.55;
+      }
+
       if(!best||score<best.score)best={lane,minGap,score};
     }
 
     if(!best)return null;
 
     p._vetoLane153=best.lane;
-    p._vetoUntil153=now+260;
+    p._vetoUntil153=now+420;
 
     return {
       lane:best.lane,
@@ -15155,6 +15164,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch153();
+
+
+  function applyPatch154(){
+    window.__OBSERVER_FM_V154__={
+      survivalFinalPass:true,
+      vetoLookaheadSec:1.16,
+      vetoCandidates:14,
+      vetoHoldMs:420,
+      vetoClearanceRaised:true,
+      singleObserverEarlyReadRaised:true,
+      crowdSafetyMarginRaised:true,
+      reverseEvadeSuppression:true,
+      collisionVetoLateralBoost:2.35
+    };
+  }
+  applyPatch154();
 
   function v36SelfAudit(){
     const issues=[];
