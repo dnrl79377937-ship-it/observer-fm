@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.2.1";
+  const BUILD_ID = "v1.2.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10005,25 +10005,23 @@ function updateDestinyPlayer183(p,now,dt){
   }
   function smoothFrame120(info,prog){
     const pr=Math.max(0,Math.min(info.total,Number(prog)||0));
-    const d=.62;
+    const d=.60;
     const q=info.pointAt(pr);
     const a=info.pointAt(Math.max(0,pr-d));
     const b=info.pointAt(Math.min(info.total,pr+d));
 
-    // Smooth center position as well as tangent. This turns a hard polyline
-    // corner into a continuous local curve without rebuilding map geometry.
-    const x=a.x*.14+q.x*.72+b.x*.14;
-    const y=a.y*.14+q.y*.72+b.y*.14;
-
-    let ux=(q.x-a.x)*.46+(b.x-q.x)*.54;
-    let uy=(q.y-a.y)*.46+(b.y-q.y)*.54;
+    // Keep exact path position monotonic.
+    // Only direction is smoothed so corners remain continuous without position stalls.
+    let ux=(q.x-a.x)*.48+(b.x-q.x)*.52;
+    let uy=(q.y-a.y)*.48+(b.y-q.y)*.52;
     if(Math.hypot(ux,uy)<1e-6){
       ux=(b.ux||q.ux||0)+(a.ux||q.ux||0);
       uy=(b.uy||q.uy||-1)+(a.uy||q.uy||-1);
     }
     const L=Math.hypot(ux,uy)||1;
-    return {x,y,ux:ux/L,uy:uy/L};
+    return {x:q.x,y:q.y,ux:ux/L,uy:uy/L};
   }
+
 
 
   function roadHalf120(p,info,prog){
@@ -10215,6 +10213,28 @@ function updateDestinyPlayer183(p,now,dt){
 
     return Math.max(-maxLane,Math.min(maxLane,target));
   }
+
+  function isNeonDrift122(){
+    const m=currentMap770();
+    const id=(m?.id||"").toLowerCase();
+    const nm=(m?.name||"").toLowerCase();
+    return id==="neon_city"||id==="neon_drift"||nm.includes("네온");
+  }
+
+  function neonVerticalZone122(p,info,prog){
+    if(!isNeonDrift122()||info.destiny)return false;
+
+    // 9시 -> 11시 세로 구간.
+    // 기존 맵 진행도 기준 대략 중후반 세로 상승 구간을 좌표로도 재확인.
+    const q=info.pointAt(prog);
+    const frac=prog/Math.max(1,info.total);
+
+    // 좌측 세로축 / 상향 주행 영역만 제한.
+    // 좌표 조건을 같이 사용해 다른 네온 구간에 영향 최소화.
+    const leftVertical=(q.x<78 && q.y>18 && q.y<62);
+    const progressBand=frac>.46&&frac<.72;
+    return leftVertical||progressBand;
+  }
   function movementStep120(p,now,dt,info,targetLane,speedMul){
     const d=driver120(p);
     const dtSafe=Math.max(0,Math.min(22,Number(dt)||0));
@@ -10223,60 +10243,102 @@ function updateDestinyPlayer183(p,now,dt){
 
     const cornerSkill=d.cornering*.38+d.control*.24+d.braking*.20+d.stability*.18;
     const turnSeverity=Math.min(1,turn/.72);
-    const cornerMul=1-turnSeverity*(.16*(1-cornerSkill)+.035);
 
-    // Forward movement is monotonic and bounded. No catch-up multiplier.
-    const step=Math.max(0,Math.min(.26,(p.speed||9.7)*Math.max(.62,Math.min(1.03,speedMul))*cornerMul*dtSafe/1000));
+    // Never "stop to turn". Even a weak cornering stat keeps meaningful forward speed.
+    const cornerMul=Math.max(.84,1-turnSeverity*(.12*(1-cornerSkill)+.025));
+
+    const rawStep=(p.speed||9.7)*Math.max(.65,Math.min(1.03,speedMul))*cornerMul*dtSafe/1000;
+    const step=Math.max(.001,Math.min(.245,rawStep));
     const next=Math.min(info.total,prog+step);
 
-    const raw=smoothFrame120(info,next);
+    const targetFrame=smoothFrame120(info,next);
 
-    // Persistently smooth heading. The normal therefore rotates gradually through
-    // a corner instead of instantly changing orientation with the path segment.
+    // Persistent heading turns continuously instead of snapping at a corner.
     let ux=Number(p._headingUx121),uy=Number(p._headingUy121);
     if(!Number.isFinite(ux)||!Number.isFinite(uy)){
-      ux=raw.ux;uy=raw.uy;
+      ux=targetFrame.ux;uy=targetFrame.uy;
     }else{
-      const headingBlend=.10+d.control*.035+d.stability*.025;
-      ux=ux*(1-headingBlend)+raw.ux*headingBlend;
-      uy=uy*(1-headingBlend)+raw.uy*headingBlend;
-      const HL=Math.hypot(ux,uy)||1;ux/=HL;uy/=HL;
+      const baseTurn=.085+d.control*.030+d.stability*.022+d.cornering*.020;
+      const turnBoost=Math.min(.06,turnSeverity*.045);
+      const blend=Math.min(.18,baseTurn+turnBoost);
+      ux=ux*(1-blend)+targetFrame.ux*blend;
+      uy=uy*(1-blend)+targetFrame.uy*blend;
+      const HL=Math.hypot(ux,uy)||1;
+      ux/=HL;uy/=HL;
     }
     p._headingUx121=ux;p._headingUy121=uy;
+
     const nx=-uy,ny=ux;
 
-    // Road-width changes are also filtered; a narrower segment can no longer
-    // clamp the racer sideways in one tick.
+    // Filter road width.
     const rawMax=roadHalf120(p,info,next);
     let maxLane=Number(p._maxLane121);
     if(!Number.isFinite(maxLane))maxLane=rawMax;
-    maxLane+=Math.max(-.055,Math.min(.055,rawMax-maxLane));
+    maxLane+=Math.max(-.045,Math.min(.045,rawMax-maxLane));
     maxLane=Math.max(1.8,Math.min(4.0,maxLane));
-    p._maxLane121=maxLane;
 
-    const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
+    let wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
+
+    // Neon Drift 9->11 vertical inside section:
+    // don't let racers drift too far to the outside/right.
+    if(neonVerticalZone122(p,info,next)){
+      const insideCap=Math.min(maxLane,.80);
+      const outsideCap=Math.min(maxLane,.35);
+      // On this section positive lane corresponds to the problematic outer/right side
+      // in current map orientation; heavily restrict it while preserving small freedom.
+      wanted=Math.max(-insideCap,Math.min(outsideCap,wanted));
+      maxLane=Math.min(maxLane,1.05);
+    }
+
     const current=Number.isFinite(p._lane120)?p._lane120:0;
-
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
-    const maxLatSpeed=.043+control*.042;
-    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.14+control*.10)));
+
+    const maxLatSpeed=.038+control*.038;
+    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.125+control*.085)));
     const prevVel=Number(p._laneVel120)||0;
-    const accel=.0075+control*.0125;
-    let vel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
+    const accel=.0065+control*.0105;
+    let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
+    latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
-    vel*=1-Math.min(.26,turnSeverity*(.17-d.stability*.05));
-    let lane=current+vel;
+    let lane=current+latVel;
+    lane=Math.max(-maxLane-.08,Math.min(maxLane+.08,lane));
 
-    // If the road width shrank, return inside progressively rather than snapping.
-    const hardLimit=maxLane+.10;
-    if(lane>hardLimit)lane=Math.max(hardLimit,lane-.055);
-    if(lane<-hardLimit)lane=Math.min(-hardLimit,lane+.055);
-    lane=Math.max(-maxLane-.10,Math.min(maxLane+.10,lane));
+    // Incremental actual movement:
+    // move forward using current continuous heading instead of reconstructing absolute
+    // x/y from the path frame every tick.
+    let x=p.x+ux*step;
+    let y=p.y+uy*step;
 
-    p.x=raw.x+nx*lane;
-    p.y=raw.y+ny*lane;
+    // Apply lateral steering as a small physical sideways motion.
+    x+=nx*latVel;
+    y+=ny*latVel;
 
-    p._lane120=lane;p._laneVel120=vel;
+    // Soft attraction toward desired path+lateral target.
+    // Capped correction prevents teleporting while still preventing long-term drift.
+    const desiredX=targetFrame.x+nx*lane;
+    const desiredY=targetFrame.y+ny*lane;
+    const ex=desiredX-x,ey=desiredY-y;
+    const err=Math.hypot(ex,ey);
+
+    if(err>1e-6){
+      const correctionCap=.040+control*.018;
+      const correction=Math.min(correctionCap,err*.12);
+      x+=ex/err*correction;
+      y+=ey/err*correction;
+    }
+
+    // Absolute safety guard: no single sim tick may visually jump too far.
+    const dx=x-p.x,dy=y-p.y;
+    const moved=Math.hypot(dx,dy);
+    const maxMove=.32;
+    if(moved>maxMove){
+      const k=maxMove/moved;
+      x=p.x+dx*k;
+      y=p.y+dy*k;
+    }
+
+    p.x=x;p.y=y;
+    p._lane120=lane;p._laneVel120=latVel;
     p._v120Prog=next;p._v120Total=info.total;
 
     if(info.destiny){
@@ -10289,6 +10351,7 @@ function updateDestinyPlayer183(p,now,dt){
     p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
     return {frac,step,turn};
   }
+
 
 
   function finishPlayer120(p,now,dt,frac){
@@ -10670,20 +10733,18 @@ function updateDestinyPlayer183(p,now,dt){
   let unifiedCameraLeader121=-1;
   let unifiedCameraHoldUntil121=0;
   let camVelX121=0,camVelY121=0;
-
   function smoothUnifiedCamera121(dt,tx,ty){
-    const dtSec=Math.max(.001,Math.min(.030,(Number(dt)||20)/1000));
+    const dtSec=Math.max(.001,Math.min(.026,(Number(dt)||20)/1000));
     const dx=tx-camX,dy=ty-camY;
 
-    // critically-damped-ish velocity camera
-    const accel=13.5;
+    const accel=10.5;
     camVelX121+=dx*accel*dtSec;
     camVelY121+=dy*accel*dtSec;
 
-    const damp=Math.exp(-7.5*dtSec);
+    const damp=Math.exp(-8.4*dtSec);
     camVelX121*=damp;camVelY121*=damp;
 
-    const maxV=20;
+    const maxV=15;
     const v=Math.hypot(camVelX121,camVelY121);
     if(v>maxV){
       camVelX121*=maxV/v;camVelY121*=maxV/v;
@@ -10692,6 +10753,7 @@ function updateDestinyPlayer183(p,now,dt){
     camX+=camVelX121*dtSec;
     camY+=camVelY121*dtSec;
   }
+
 
   function unifiedCameraSubject121(now){
     const active=players.filter(p=>!p.done&&!p.dead);
@@ -11202,10 +11264,11 @@ function updateDestinyPlayer183(p,now,dt){
 
     // v1.2.0: never repay a browser hitch as visible fast-forward.
     if(steps>=MAX_SIM_STEPS && simAccumulator>=SIM_STEP_MS){
-      // Drop backlog. Never execute a second movement step in the same rendered frame.
-      simAccumulator=Math.min(simAccumulator,SIM_STEP_MS*.95);
+      // Drop old backlog completely. Leaving 95% of a step caused an alternating
+      // 0-step/1-step cadence on some frame rates and looked like micro-stutter.
+      simAccumulator=0;
     }else if(simAccumulator>SIM_STEP_MS){
-      simAccumulator=SIM_STEP_MS*.95;
+      simAccumulator=0;
     }
 
     // v7.30 HOTFIX: simulation stays at 50 Hz; only visual coordinates interpolate.
@@ -14148,6 +14211,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch121();
+
+
+  function applyPatch122(){
+    window.__OBSERVER_FM_V122__={
+      incrementalMovement:true,
+      noAbsolutePositionRebuild:true,
+      noStopToTurn:true,
+      maxSingleTickMove:.32,
+      softPathCorrection:true,
+      backlogZeroed:true,
+      neonVerticalOuterLimit:true
+    };
+  }
+  applyPatch122();
 
   function v36SelfAudit(){
     const issues=[];
