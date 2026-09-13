@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.6.0";
+  const BUILD_ID = "v1.6.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1572,6 +1572,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._vetoLane153=NaN;p._vetoUntil153=0;
       p._breakoutLane156=NaN;p._breakoutUntil156=0;
       p._singleEscapeLane160=NaN;p._singleEscapeUntil160=0;
+      p._corridorLane161=NaN;p._corridorUntil161=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10780,10 +10781,126 @@ function updateDestinyPlayer183(p,now,dt){
     };
   }
 
+
+  // ============================================================
+  // v1.6.1 HUMAN SURVIVAL FLOW
+  // Build a continuous safe corridor rather than solving threats one-by-one.
+  // ============================================================
+
+  function safeCorridor161(p,now,info){
+    const d=driver120(p);
+    const maxLane=roadHalf120(p,info,info.prog);
+    const speed=Math.max(6.5,Number(p.speed)||9.7);
+
+    let nearby=localObservers723(p,14.0+d.prediction*2.6);
+    if(!nearby.length)return null;
+
+    // Limit cost while keeping the closest meaningful threats.
+    nearby=nearby
+      .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
+      .sort((a,b)=>a.dist-b.dist)
+      .slice(0,16)
+      .map(x=>x.o);
+
+    const lanes=[-1,-.82,-.64,-.46,-.28,-.12,.12,.28,.46,.64,.82,1].map(v=>v*maxLane);
+    const times=[.12,.28,.46,.68,.94,1.24,1.58,1.94];
+
+    const current=Number(p._lane120)||0;
+    const previous=Number(p._corridorLane161);
+    let best=null;
+
+    for(const lane of lanes){
+      let minGap=999;
+      let risk=0;
+      let blocked=0;
+
+      for(const t of times){
+        const pr=Math.min(info.total,info.prog+speed*t);
+        const q=smoothFrame120(info,pr);
+        const nx=-q.uy,ny=q.ux;
+        const x=q.x+nx*lane,y=q.y+ny*lane;
+        let blockedNow=false;
+
+        for(const o of nearby){
+          const m=observerMotion131(o);
+          const ox=o.x+(m.stopped?0:m.vx*t);
+          const oy=o.y+(m.stopped?0:m.vy*t);
+          const gap=Math.hypot(x-ox,y-oy);
+          minGap=Math.min(minGap,gap);
+
+          const safe=3.85+d.avoidance*.80+d.risk*.70+(m.stopped?.60:0);
+          if(gap<safe)blockedNow=true;
+
+          if(gap<safe+2.5){
+            const w=(safe+2.5-gap)/(safe+2.5);
+            risk+=w*w*(2.45-t*.28);
+          }
+        }
+        if(blockedNow)blocked++;
+      }
+
+      let score=
+        risk*60+
+        blocked*26+
+        Math.max(0,4.1-minGap)*46+
+        Math.abs(lane-current)*.012;
+
+      // Keep movement human: don't change side unless the new corridor is truly safer.
+      if(Number.isFinite(previous) && Math.sign(lane)!==Math.sign(previous)){
+        score+=.10;
+      }
+
+      // Persistent driver identity breaks mirrored lines.
+      const side=(p.sourceIndex??p.index??0)%2===0?-1:1;
+      if(Math.sign(lane)===side)score-=.06;
+
+      if(!best||score<best.score){
+        best={lane,minGap,risk,blocked,score};
+      }
+    }
+
+    if(!best)return null;
+
+    // Corridor only takes control when there is real traffic ahead.
+    const danger=best.minGap<5.0||best.risk>.08||best.blocked>0;
+    if(!danger)return null;
+
+    p._corridorLane161=best.lane;
+    p._corridorUntil161=now+140;
+
+    return {
+      lane:best.lane,
+      minGap:best.minGap,
+      dangerous:true,
+      corridor161:true,
+      speedMul:best.minGap<2.8?.90:.96
+    };
+  }
+
   function freeDrivingDecision130(p,now,info){
     const prog=info.prog,maxLane=roadHalf120(p,info,prog),d=driver120(p);
 
-    // v1.6.0: one obvious observer must NEVER be ignored.
+    // v1.6.1: continuous safe corridor owns the route whenever traffic is dangerous.
+    const corridor161=safeCorridor161(p,now,info);
+    if(corridor161){
+      p._controlMove130=null;p._controlMoveUntil130=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+
+      let lane=corridor161.lane;
+      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+
+      return {
+        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
+        speedMul:corridor161.speedMul,
+        dangerous:true,
+        corridor161:true,
+        minGap:corridor161.minGap,
+        risk:1
+      };
+    }
+
+    // One obvious observer must NEVER be ignored.
     const single160=singleObserverHardEscape160(p,now,info);
     if(single160){
       p._controlMove130=null;p._controlMoveUntil130=0;
@@ -10911,13 +11028,14 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="single-hard-escape")?3.80:
-      ((p.liveEvadeAction==="collision-veto")?3.45:
+      (p.liveEvadeAction==="collision-veto")?3.55:
+      ((p.liveEvadeAction==="safe-corridor")?3.10:
+      ((p.liveEvadeAction==="single-hard-escape")?3.80:
       ((p.liveEvadeAction==="crowd-breakout")?3.70:
       ((p.liveEvadeAction==="crowd-survival")?2.55:
       ((p.liveEvadeAction==="survival-master")?1.95:
       ((p.liveEvadeAction==="simple-escape")?1.80:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1))))));
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1)))))));
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -10925,7 +11043,7 @@ function updateDestinyPlayer183(p,now,dt){
     // v1.5.5: quick decisions, smooth steering.
     // High emergency authority raises target lateral speed more than acceleration,
     // producing a human-like curved dodge instead of an AI-looking snap.
-    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.72);
+    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.62);
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
@@ -11320,10 +11438,12 @@ function updateDestinyPlayer183(p,now,dt){
     }
 
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.single160
-      ? "single-hard-escape"
-      : (decision.veto153
+    p.liveEvadeAction=decision.veto153
       ? "collision-veto"
+      : (decision.corridor161
+      ? "safe-corridor"
+      : (decision.single160
+      ? "single-hard-escape"
       : (decision.breakout156
       ? "crowd-breakout"
       : (decision.crowd150
@@ -11332,7 +11452,7 @@ function updateDestinyPlayer183(p,now,dt){
       ? "survival-master"
       : (decision.simpleEscape133
       ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive")))))));
+      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))))))));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -15316,6 +15436,21 @@ function seasonCardHtml(p){
     };
   }
   applyPatch160();
+
+
+  function applyPatch161(){
+    window.__OBSERVER_FM_V161__={
+      humanSurvivalFlow:true,
+      continuousSafeCorridor:true,
+      corridorLookaheadSec:1.94,
+      corridorCandidates:12,
+      corridorObserversMax:16,
+      finalCollisionVetoStillActive:true,
+      corridorLateralBoost:3.10,
+      survivalFlowPriority:true
+    };
+  }
+  applyPatch161();
 
   function v36SelfAudit(){
     const issues=[];
