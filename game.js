@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.7.1";
+  const BUILD_ID = "v1.7.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1575,6 +1575,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._corridorLane161=NaN;p._corridorUntil161=0;
       p._threatBurstUntil163=0;p._threatZigSide163=0;p._threatZigAt163=0;
       p._actualEscapeLane170=NaN;p._actualEscapeUntil170=0;
+      p._unifiedLane172=NaN;p._unifiedUntil172=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10886,92 +10887,38 @@ function updateDestinyPlayer183(p,now,dt){
       speedMul:best.minGap<2.8?.82:(best.minGap<3.6?.90:.97)
     };
   }
-
   function freeDrivingDecision130(p,now,info){
-    const prog=info.prog,maxLane=roadHalf120(p,info,prog),d=driver120(p);
+    const prog=info.prog;
+    const maxLane=roadHalf120(p,info,prog);
 
-    // v1.6.1: continuous safe corridor owns the route whenever traffic is dangerous.
-    const corridor161=safeCorridor161(p,now,info);
-    if(corridor161){
-      p._controlMove130=null;p._controlMoveUntil130=0;
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+    // v1.7.2: calm-road planner only.
+    // Survival decisions are centralized in unifiedSurvivalPlanner172.
+    let lane=baseLane120(p,now,info,prog,maxLane);
+    let speedMul=1;
 
-      let lane=corridor161.lane;
-      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-
-      return {
-        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
-        speedMul:corridor161.speedMul,
-        dangerous:true,
-        corridor161:true,
-        minGap:corridor161.minGap,
-        risk:1
-      };
-    }
-
-    // One obvious observer must NEVER be ignored.
-    const single160=singleObserverHardEscape160(p,now,info);
-    if(single160){
-      p._controlMove130=null;p._controlMoveUntil130=0;
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._crowdPlan150=null;p._crowdPlanUntil150=0;
-      p._singleEscapeLane160=single160.lane;
-      p._singleEscapeUntil160=now+150;
-
-      let lane=single160.lane;
-      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {
-        lane:Math.max(-maxLane,Math.min(maxLane,lane)),
-        speedMul:single160.speedMul,
-        dangerous:true,
-        single160:true,
-        minGap:single160.minGap,
-        risk:1
-      };
-    }
-
-    const crowd=crowdDecision150(p,now,info);
-    if(crowd?.dangerous||crowd?.waiting){
-      let lane=crowd.lane;
-      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul:crowd.speedMul,dangerous:true,crowd150:true,waiting150:!!crowd.waiting,minGap:crowd.minGap,risk:crowd.risk};
-    }
-
-    const master=survivalMasterDecision140(p,now,info);
-    if(master?.dangerous){
-      let lane=master.lane;
-      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul:master.speedMul,dangerous:true,master140:true,minGap:2.8,risk:1};
-    }
-
-    const simple=simpleThreatEscape133(p,now,info);
-    if(simple){
-      p._controlMove130=null;p._controlMoveUntil130=0;
-      let lane=simple.lane;
-      if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-      return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul:simple.stopped?.62:.76,dangerous:true,simpleEscape133:true,minGap:simple.minGap,risk:1};
-    }
-
-    if(!p._freePlan130||now>=(p._freePlanUntil130||0)){
-      p._freePlan130=chooseFreeTrajectory130(p,now,info,prog,maxLane);
-      p._freePlanUntil130=now+Math.min(180,(p._freePlan130.holdMs||420));
-    }
-
-    let lane=p._freePlan130?.lane||0,speedMul=1;
     const chase=chaseMode132(p,info);
     if(chase?.active){
-      lane=chase.lane;speedMul=chase.speedMul;
+      lane=chase.lane;
+      speedMul=chase.speedMul;
       p._controlMove130=null;p._controlMoveUntil130=0;
     }else{
       lane+=maybeControlMove130(p,now,maxLane);
-      lane=lane*.96+baseLane120(p,now,info,prog,maxLane)*.04;
       lane=antiMirrorLane132(p,lane,maxLane);
     }
 
-    if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
-    return {lane:Math.max(-maxLane,Math.min(maxLane,lane)),speedMul,dangerous:false,minGap:99,risk:0};
+    if(neonVerticalZone122(p,info,prog)){
+      lane=Math.max(-.82,Math.min(.34,lane));
+    }
+
+    return {
+      lane:Math.max(-maxLane,Math.min(maxLane,lane)),
+      speedMul,
+      dangerous:false,
+      risk:0,
+      minGap:99
+    };
   }
+
 
 
 
@@ -11038,16 +10985,8 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="actual-motion-escape")?4.10:
-      ((p.liveEvadeAction==="threat-burst")?4.20:
-      ((p.liveEvadeAction==="collision-veto")?3.55:
-      ((p.liveEvadeAction==="safe-corridor")?3.25:
-      ((p.liveEvadeAction==="single-hard-escape")?3.80:
-      ((p.liveEvadeAction==="crowd-breakout")?3.70:
-      ((p.liveEvadeAction==="crowd-survival")?2.55:
-      ((p.liveEvadeAction==="survival-master")?1.95:
-      ((p.liveEvadeAction==="simple-escape")?1.80:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1)))))))));
+      (p.liveEvadeAction==="unified-survival")?4.20:
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1);
     const maxLatSpeed=(.048+control*.046)*emergencyBoost;
     const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
     const prevVel=Number(p._laneVel120)||0;
@@ -11055,8 +10994,8 @@ function updateDestinyPlayer183(p,now,dt){
     // v1.5.5: quick decisions, smooth steering.
     // High emergency authority raises target lateral speed more than acceleration,
     // producing a human-like curved dodge instead of an AI-looking snap.
-    const burstAccel163=(p.liveEvadeAction==="threat-burst")?1.18:1;
-    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.68)*burstAccel163;
+    const burstAccel163=1;
+    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.62);
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
@@ -11633,129 +11572,235 @@ function updateDestinyPlayer183(p,now,dt){
     };
   }
 
+
+  // ============================================================
+  // v1.7.2 UNIFIED SURVIVAL PLANNER
+  // One planner owns all danger decisions.
+  // No SafeCorridor -> ThreatBurst -> Breakout -> Veto overwrites.
+  // ============================================================
+
+  function predictedObserver172(o,t){
+    const m=observerMotion131(o);
+    return {
+      x:o.x+(m.stopped?0:m.vx*t),
+      y:o.y+(m.stopped?0:m.vy*t),
+      stopped:m.stopped
+    };
+  }
+
+  function reachableTrajectory172(p,info,targetLane,speedMul,horizon=1.7,stepDt=.06){
+    const d=driver120(p);
+    const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
+
+    let prog=Number(info.prog)||0;
+    let lane=Number(p._lane120)||0;
+    let latVel=Number(p._laneVel120)||0;
+    const baseSpeed=Math.max(6.5,Number(p.speed)||9.7);
+    const out=[];
+
+    for(let t=stepDt;t<=horizon+1e-6;t+=stepDt){
+      const turn=curve120(info,prog);
+      const severity=Math.min(1,turn/.72);
+      const cornerSkill=d.cornering*.38+d.control*.24+d.braking*.20+d.stability*.18;
+      const cornerMul=Math.max(.84,1-severity*(.12*(1-cornerSkill)+.025));
+
+      const cmd=Math.max(0,Math.min(1.03,Number(speedMul)||0));
+      prog=Math.min(info.total,prog+baseSpeed*cmd*cornerMul*stepDt);
+
+      const maxLane=roadHalf120(p,info,prog);
+      const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
+
+      const maxLatSpeed=.048+control*.046;
+      const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-lane)*(.150+control*.100)));
+      const accel=.0080+control*.0130;
+      latVel+=Math.max(-accel,Math.min(accel,targetVel-latVel));
+      latVel*=1-Math.min(.22,severity*(.14-d.stability*.04));
+      lane+=latVel;
+      lane=Math.max(-maxLane-.08,Math.min(maxLane+.08,lane));
+
+      const q=smoothFrame120(info,prog);
+      const nx=-q.uy,ny=q.ux;
+      out.push({t,prog,lane,x:q.x+nx*lane,y:q.y+ny*lane});
+    }
+    return out;
+  }
+
+  function trajectorySafety172(p,info,targetLane,speedMul,nearby,horizon=1.7){
+    const d=driver120(p);
+    const traj=reachableTrajectory172(p,info,targetLane,speedMul,horizon,.06);
+
+    const hitR=playerHitRadius764(p)+.24;
+    let minGap=999,hardHits=0,nearFrames=0,risk=0;
+
+    for(const s of traj){
+      let closeThis=false;
+
+      for(const o of nearby){
+        const po=predictedObserver172(o,s.t);
+        const gap=Math.hypot(s.x-po.x,s.y-po.y);
+        minGap=Math.min(minGap,gap);
+
+        // Make planner's danger model consistent with physical collision radius.
+        if(gap<=hitR+.20)hardHits++;
+
+        const desired=
+          hitR+
+          2.85+
+          d.avoidance*.85+
+          d.risk*.70+
+          (po.stopped?.65:0);
+
+        if(gap<desired)closeThis=true;
+
+        if(gap<desired+2.0){
+          const w=(desired+2.0-gap)/(desired+2.0);
+          risk+=w*w*(2.8-s.t*.38);
+        }
+      }
+
+      if(closeThis)nearFrames++;
+    }
+
+    return {minGap,hardHits,nearFrames,risk};
+  }
+
+  function unifiedSurvivalPlanner172(p,now,info){
+    const d=driver120(p);
+    const maxLane=roadHalf120(p,info,info.prog);
+
+    let nearby=localObservers723(p,15.5+d.prediction*2.7);
+    if(!nearby.length){
+      return null;
+    }
+
+    nearby=nearby
+      .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
+      .sort((a,b)=>a.dist-b.dist)
+      .slice(0,20)
+      .map(x=>x.o);
+
+    // First see if current route is truly safe.
+    const currentLane=Number(p._lane120)||0;
+    const currentSafety=trajectorySafety172(p,info,currentLane,.98,nearby,1.35);
+
+    if(
+      currentSafety.hardHits===0 &&
+      currentSafety.nearFrames===0 &&
+      currentSafety.minGap>4.9 &&
+      currentSafety.risk<.035
+    ){
+      return null;
+    }
+
+    // One unified candidate set; survival dominates all other considerations.
+    const lanes=[-1,-.86,-.72,-.58,-.44,-.30,-.16,0,.16,.30,.44,.58,.72,.86,1]
+      .map(v=>v*maxLane);
+
+    const speeds=[.98,.94,.90,.84,.78];
+
+    let best=null;
+    const identitySide=((p.sourceIndex??p.index??0)%2===0)?-1:1;
+
+    for(const lane of lanes){
+      for(const sm of speeds){
+        const s=trajectorySafety172(p,info,lane,sm,nearby,1.85);
+
+        let score=
+          s.hardHits*10000 +
+          s.risk*120 +
+          s.nearFrames*34 +
+          Math.max(0,4.8-s.minGap)*80;
+
+        // Route/pace cost is tiny compared with survival.
+        score+=Math.abs(lane-currentLane)*.006;
+        score+=(1-sm)*.020;
+
+        // Break mirrored racing when options are otherwise equivalent.
+        if(Math.sign(lane)===identitySide)score-=.04;
+
+        if(!best||score<best.score){
+          best={lane,speedMul:sm,score,...s};
+        }
+      }
+    }
+
+    if(!best)return null;
+
+    // If no safe lane exists, use a brief controlled slowdown but keep moving.
+    if(best.hardHits>0 || best.minGap<2.7){
+      best.speedMul=Math.max(.68,best.speedMul-.12);
+    }else if(best.minGap<3.4){
+      best.speedMul=Math.max(.76,best.speedMul-.08);
+    }
+
+    // Hold only briefly; replanner runs every tick and may change if a new route is safer.
+    p._unifiedLane172=best.lane;
+    p._unifiedUntil172=now+90;
+
+    return {
+      lane:best.lane,
+      speedMul:best.speedMul,
+      dangerous:true,
+      unified172:true,
+      minGap:best.minGap,
+      hardHits:best.hardHits,
+      risk:best.risk
+    };
+  }
   function updatePlayer(p,now,dt){
     if(!p||p.done||p.dead)return;
+
     p.simPrevX=p.x;p.simPrevY=p.y;
 
     if(raceStart&&now-raceStart<p.startReactionMs)return;
     if(now<p.stunUntil)return;
-    if(p.stunUntil){p.stunUntil=0;p.invUntil=now+INV_MS;}
+    if(p.stunUntil){
+      p.stunUntil=0;
+      p.invUntil=now+INV_MS;
+    }
 
     p.cleanConfidenceMs=Math.min(12000,(p.cleanConfidenceMs||0)+dt);
     p.cleanConfidence=Math.max(0,Math.min(1,p.cleanConfidenceMs/12000));
 
     const info=pathInfo120(p);
-    p._v120Prog=info.prog;p._v120Total=info.total;
+    p._v120Prog=info.prog;
+    p._v120Total=info.total;
 
+    // Calm-road decision: free route / competition / variety.
     let decision=freeDrivingDecision130(p,now,info);
 
-    // v1.6.3: if observers are actively threatening, enter burst mode.
-    const burst163=threatBurst163(p,now,info);
-    if(burst163?.active){
+    // v1.7.2: ONE survival planner owns all danger corrections.
+    // It can completely replace the calm-road choice, but no older danger layer
+    // is allowed to overwrite it afterward.
+    const survival172=unifiedSurvivalPlanner172(p,now,info);
+    if(survival172){
       decision={
         ...decision,
-        lane:burst163.lane,
-        speedMul:Math.max(.91,burst163.speedMul),
+        lane:survival172.lane,
+        speedMul:survival172.speedMul,
         dangerous:true,
-        burst163:true,
-        threatCount163:burst163.threatCount
+        unified172:true,
+        minGap:survival172.minGap,
+        risk:survival172.risk
       };
 
-      // stale calm-road choices lose authority immediately
+      // Cancel stale non-survival commitments.
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;
-    }
-
-    // 3+ simultaneous observers still get the open-space breakout pass.
-    const breakout156=crowdBreakout156(p,now,info,decision.lane);
-    if(breakout156){
-      decision={
-        ...decision,
-        lane:breakout156.lane,
-        speedMul:Math.max(.86,breakout156.speedMul),
-        dangerous:true,
-        breakout156:true,
-        minGap:breakout156.minGap
-      };
-
-      // Immediately discard stale plans that would keep driving into the crowd.
       p._crowdPlan150=null;p._crowdPlanUntil150=0;
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._controlMove130=null;p._controlMoveUntil130=0;
-    }
-
-    // v1.7.0: check the RACER'S ACTUAL REACHABLE motion before old geometric veto.
-    const actual170=actualMotionEscape170(p,now,info,decision.lane,decision.speedMul);
-    if(actual170){
+    }else if(now<(p._unifiedUntil172||0)&&Number.isFinite(p._unifiedLane172)){
+      // Tiny continuity bias only; no hard lock.
       decision={
         ...decision,
-        lane:actual170.lane,
-        speedMul:actual170.speedMul,
-        dangerous:true,
-        actual170:true,
-        minGap:actual170.minGap
-      };
-
-      p._crowdPlan150=null;p._crowdPlanUntil150=0;
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._controlMove130=null;p._controlMoveUntil130=0;
-    }
-
-    // final collision veto remains the last geometric safety net.
-    const veto153=collisionVeto153(p,now,info,decision.lane);
-    if(veto153){
-      decision={
-        ...decision,
-        lane:veto153.lane,
-        speedMul:Math.max(.88,Number(decision.speedMul)||1),
-        dangerous:true,
-        veto153:true,
-        minGap:veto153.minGap
-      };
-
-      // Cancel stale commitments immediately.
-      p._crowdPlan150=null;p._crowdPlanUntil150=0;
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._controlMove130=null;p._controlMoveUntil130=0;
-    }else if(now<(p._vetoUntil153||0)&&Number.isFinite(p._vetoLane153)){
-      decision={
-        ...decision,
-        lane:decision.lane*.86+p._vetoLane153*.14,
-        speedMul:Math.max(.94,Number(decision.speedMul)||1),
-        dangerous:true,
-        veto153Hold:true
-      };
-    }else if(now<(p._breakoutUntil156||0)&&Number.isFinite(p._breakoutLane156)){
-      // A very short crowd-breakout bias so the move looks intentional, not jittery.
-      decision={
-        ...decision,
-        lane:decision.lane*.90+p._breakoutLane156*.10,
-        speedMul:Math.max(.94,Number(decision.speedMul)||1),
-        dangerous:true,
-        breakoutHold156:true
+        lane:decision.lane*.82+p._unifiedLane172*.18,
+        speedMul:Math.max(.95,Number(decision.speedMul)||1)
       };
     }
 
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.veto153
-      ? "collision-veto"
-      : (decision.actual170
-      ? "actual-motion-escape"
-      : (decision.burst163
-      ? "threat-burst"
-      : (decision.corridor161
-      ? "safe-corridor"
-      : (decision.single160
-      ? "single-hard-escape"
-      : (decision.breakout156
-      ? "crowd-breakout"
-      : (decision.crowd150
-      ? "crowd-survival"
-      : (decision.master140
-      ? "survival-master"
-      : (decision.simpleEscape133
-      ? "simple-escape"
-      : (decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive"))))))))));
+    p.liveEvadeAction=decision.unified172
+      ? "unified-survival"
+      : (p._controlMove130?.type||"free-drive");
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
@@ -11763,9 +11808,11 @@ function updateDestinyPlayer183(p,now,dt){
     const frac=moved.frac;
 
     recordMovementTelemetry120(p,now,dt,frac);
+
     if(collideObservers120(p,now,frac))return;
     if(finishPlayer120(p,now,dt,frac))return;
   }
+
 
 
 
@@ -15812,6 +15859,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch171();
+
+
+  function applyPatch172(){
+    window.__OBSERVER_FM_V172__={
+      aiGeneration:"UnifiedSurvivalPlanner172",
+      oneDangerPlanner:true,
+      legacyDangerOverwriteBypassed:true,
+      actualReachableTrajectory:true,
+      collisionRadiusAligned:true,
+      survivalCandidates:15,
+      speedCandidates:5,
+      observersEvaluatedMax:20,
+      survivalPriorityAbsolute:true
+    };
+  }
+  applyPatch172();
 
   function v36SelfAudit(){
     const issues=[];
