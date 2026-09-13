@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.2.2";
+  const BUILD_ID = "v1.3.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1564,6 +1564,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._headingUx121=NaN;p._headingUy121=NaN;p._maxLane121=NaN;
       p._avoidPlan120=null;p._avoidPlanUntil120=0;
       p._survivalHoldUntil120=0;p._variant120=null;p._variantUntil120=0;
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._controlMove130=null;p._controlMoveUntil130=0;p._nextControlCheck130=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -10092,7 +10094,7 @@ function updateDestinyPlayer183(p,now,dt){
     let t=den>1e-9?-(r0x*rvx+r0y*rvy)/den:0;
     t=Math.max(0,Math.min(1,t));
     const rx=r0x+rvx*t,ry=r0y+rvy*t;
-    const r=playerHitRadius764(p)+.18;
+    const r=playerHitRadius764(p)+.24;
     return rx*rx+ry*ry<=r*r;
   }
 
@@ -10235,6 +10237,153 @@ function updateDestinyPlayer183(p,now,dt){
     const progressBand=frac>.46&&frac<.72;
     return leftVertical||progressBand;
   }
+
+  // ============================================================
+  // v1.3.0 FREE DRIVING AI
+  // Spline is only a forward reference. Racers plan local trajectories
+  // across the usable road width and commit to them for short periods.
+  // ============================================================
+
+  function freeStyle130(p){
+    if(p._freeStyle130)return p._freeStyle130;
+    const d=driver120(p), per=ensurePersonality120(p);
+    p._freeStyle130={
+      survival:.58+d.risk*.24+d.prediction*.18,
+      creativity:.20+per.wander*.42+d.route*.22,
+      laneCommit:360+d.consistency*340,
+      preferSide:per.side
+    };
+    return p._freeStyle130;
+  }
+
+  function trajectoryRisk130(p,info,prog,lane,horizon,nearby){
+    const d=driver120(p), speed=Math.max(6.5,Number(p.speed)||9.7);
+    let risk=0,minGap=999;
+    for(const t of [horizon*.2,horizon*.4,horizon*.62,horizon*.82,horizon]){
+      const pr=Math.min(info.total,prog+speed*t);
+      const q=smoothFrame120(info,pr);
+      const nx=-q.uy,ny=q.ux;
+      const x=q.x+nx*lane,y=q.y+ny*lane;
+      for(const o of nearby){
+        const ox=o.x+(Number(o.vx)||0)*t, oy=o.y+(Number(o.vy)||0)*t;
+        const gap=Math.hypot(x-ox,y-oy);
+        minGap=Math.min(minGap,gap);
+        const safe=2.7+d.risk*.7+d.avoidance*.6;
+        if(gap<safe+2.2){
+          const w=(safe+2.2-gap)/(safe+2.2);
+          risk+=w*w*(1.55-t*.17);
+        }
+      }
+    }
+    return {risk,minGap};
+  }
+
+  function chooseFreeTrajectory130(p,now,info,prog,maxLane){
+    const d=driver120(p), style=freeStyle130(p);
+    const scan=9.5+d.prediction*4.0+d.focus*.8;
+    const nearby=localObservers723(p,scan);
+    const current=Number(p._lane120)||0;
+    const horizon=1.05+d.prediction*1.15;
+    const candidates=[-.95,-.65,-.35,0,.35,.65,.95].map(v=>v*maxLane);
+    let best=null;
+
+    for(const lane of candidates){
+      const e=trajectoryRisk130(p,info,prog,lane,horizon,nearby);
+      let score=e.risk*(34+d.avoidance*14+d.prediction*9)
+        +Math.max(0,(3.0+d.risk*.75)-e.minGap)*(24+d.risk*10)
+        +Math.abs(lane-current)*(.055-d.control*.02)
+        +Math.abs(lane)*(.016-d.inside*.005);
+
+      if(Math.sign(lane)===style.preferSide)score-=.10;
+      score+=Math.sin((p.sourceIndex??p.index??0)*2.17+lane*.9)*.04;
+
+      if(!best||score<best.score)best={lane,score,risk:e.risk,minGap:e.minGap};
+    }
+
+    if(!best)best={lane:current,score:0,risk:0,minGap:99};
+    best.dangerous=best.minGap<3.7||best.risk>.20;
+    best.holdMs=best.dangerous?500+d.consistency*230:360+d.consistency*320;
+    return best;
+  }
+
+  function maybeControlMove130(p,now,maxLane){
+    const d=driver120(p), style=freeStyle130(p);
+
+    if(now<(p._controlMoveUntil130||0)){
+      const m=p._controlMove130;if(!m)return 0;
+      const dur=Math.max(1,p._controlMoveUntil130-m.started);
+      const t=Math.max(0,Math.min(1,(now-m.started)/dur));
+      if(m.type==="zigzag")return Math.sin(t*Math.PI*2.2+m.phase)*maxLane*(.26+d.control*.18);
+      if(m.type==="wide")return m.side*maxLane*(.58+d.control*.10);
+      if(m.type==="hold")return m.side*maxLane*(.42+d.stability*.15);
+      if(m.type==="feint")return m.side*(t<.48?1:-.70)*maxLane*(.32+d.control*.12);
+      if(m.type==="cutback")return m.side*(t<.34?-1:1)*maxLane*(.25+d.reaction*.18);
+      return 0;
+    }
+
+    if(now<(p._nextControlCheck130||0))return 0;
+    p._nextControlCheck130=now+240;
+    const chance=.04+style.creativity*.035+d.control*.012;
+    if(Math.random()>=chance)return 0;
+
+    const types=["zigzag","wide","hold","feint","cutback"];
+    const type=types[Math.floor(Math.random()*types.length)];
+    const side=Math.random()<.5?-1:1;
+    p._controlMove130={type,side,started:now,phase:Math.random()*Math.PI*2};
+    p._controlMoveUntil130=now+520+Math.random()*980;
+    return maybeControlMove130(p,now,maxLane);
+  }
+
+  function freeDrivingDecision130(p,now,info){
+    const prog=info.prog;
+    const maxLane=roadHalf120(p,info,prog);
+    const d=driver120(p);
+
+    if(!p._freePlan130||now>=(p._freePlanUntil130||0)){
+      p._freePlan130=chooseFreeTrajectory130(p,now,info,prog,maxLane);
+      p._freePlanUntil130=now+(p._freePlan130.holdMs||420);
+    }
+
+    let plan=p._freePlan130;
+    const f=smoothFrame120(info,prog);
+    const near=localObservers723(p,6.3+d.reaction*1.2);
+    let emergency=false;
+
+    for(const o of near){
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const dist=Math.hypot(rx,ry);
+      const fw=rx*f.ux+ry*f.uy;
+      const lat=rx*(-f.uy)+ry*f.ux;
+      if(dist<3.45+d.reaction*.7 || (fw>-.45&&fw<5.9+d.prediction*1.6&&Math.abs(lat)<2.8+d.avoidance*.6)){
+        emergency=true;break;
+      }
+    }
+
+    if(emergency){
+      plan=chooseFreeTrajectory130(p,now,info,prog,maxLane);
+      plan.dangerous=true;
+      p._freePlan130=plan;
+      p._freePlanUntil130=now+540;
+      p._controlMove130=null;p._controlMoveUntil130=0;
+    }
+
+    let lane=plan?.lane||0;
+    let speedMul=1;
+
+    if(plan?.dangerous){
+      speedMul=.80+d.control*.08+d.risk*.05;
+    }else{
+      lane+=maybeControlMove130(p,now,maxLane);
+      const skilled=baseLane120(p,now,info,prog,maxLane);
+      lane=lane*.80+skilled*.20;
+    }
+
+    if(neonVerticalZone122(p,info,prog))lane=Math.max(-.82,Math.min(.34,lane));
+    lane=Math.max(-maxLane,Math.min(maxLane,lane));
+
+    return {lane,speedMul,dangerous:!!plan?.dangerous,minGap:plan?.minGap??99,risk:plan?.risk??0};
+  }
+
   function movementStep120(p,now,dt,info,targetLane,speedMul){
     const d=driver120(p);
     const dtSafe=Math.max(0,Math.min(22,Number(dt)||0));
@@ -10293,10 +10442,10 @@ function updateDestinyPlayer183(p,now,dt){
     const current=Number.isFinite(p._lane120)?p._lane120:0;
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
-    const maxLatSpeed=.038+control*.038;
-    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.125+control*.085)));
+    const maxLatSpeed=.048+control*.046;
+    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)));
     const prevVel=Number(p._laneVel120)||0;
-    const accel=.0065+control*.0105;
+    const accel=.0080+control*.0130;
     let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
     latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
 
@@ -10418,72 +10567,32 @@ function updateDestinyPlayer183(p,now,dt){
   }
   function updatePlayer(p,now,dt){
     if(!p||p.done||p.dead)return;
-
     p.simPrevX=p.x;p.simPrevY=p.y;
 
     if(raceStart&&now-raceStart<p.startReactionMs)return;
-
-    // Existing hit-stun fields remain compatible, but v1.2 league races normally die on contact.
     if(now<p.stunUntil)return;
-    if(p.stunUntil){
-      p.stunUntil=0;
-      p.invUntil=now+INV_MS;
-    }
+    if(p.stunUntil){p.stunUntil=0;p.invUntil=now+INV_MS;}
 
     p.cleanConfidenceMs=Math.min(12000,(p.cleanConfidenceMs||0)+dt);
     p.cleanConfidence=Math.max(0,Math.min(1,p.cleanConfidenceMs/12000));
 
     const info=pathInfo120(p);
-    p._v120Prog=info.prog;
-    p._v120Total=info.total;
+    p._v120Prog=info.prog;p._v120Total=info.total;
 
-    const maxLane=roadHalf120(p,info,info.prog);
-    const threat=observerPlan120(p,now,info,info.prog,maxLane);
+    const decision=freeDrivingDecision130(p,now,info);
+    p.liveEvadeDanger=decision.dangerous?1:0;
+    p.liveEvadeAction=decision.dangerous?"free-path-dodge":(p._controlMove130?.type||"free-drive");
 
-    let targetLane=baseLane120(p,now,info,info.prog,maxLane);
-    let speedMul=1;
+    if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
 
-    if(threat){
-      // Survival always overrides inside/shortest line.
-      targetLane=threat.lane;
-      speedMul*=threat.speedMul;
-      p._survivalHoldLane120=threat.lane;
-      p._survivalHoldUntil120=now+(threat.hard?520:300);
-      p._variant120=null;p._variantUntil120=0;
-      p.liveEvadeDanger=threat.hard?1:.62;
-      p.liveEvadeAction=threat.hard?"hard-dodge":"dodge";
-      p.match.avoids=(p.match.avoids||0)+1;
-    }else if(now<(p._survivalHoldUntil120||0)&&Number.isFinite(p._survivalHoldLane120)){
-      targetLane=p._survivalHoldLane120;
-      speedMul*=.985;
-      p.liveEvadeDanger=.18;
-      p.liveEvadeAction="hold-safe-line";
-    }else{
-      targetLane+=variantOffset120(p,now,maxLane,false);
-      p.liveEvadeDanger=0;
-      p.liveEvadeAction=p._variant120?.type||"race";
-    }
-
-    // Rare controls are stat-sensitive: high control executes them more cleanly.
-    const d=driver120(p);
-    if(p._variant120){
-      speedMul*=.965+d.control*.025;
-    }
-
-    // Start / recovery differences remain tied to visible stats.
-    if(now<(p.resumeEaseUntil||0)){
-      const recovery=statN120(p,"recovery");
-      speedMul*=.80+recovery*.12;
-    }
-
-    const moved=movementStep120(p,now,dt,info,targetLane,speedMul);
+    const moved=movementStep120(p,now,dt,info,decision.lane,decision.speedMul);
     const frac=moved.frac;
 
     recordMovementTelemetry120(p,now,dt,frac);
-
     if(collideObservers120(p,now,frac))return;
     if(finishPlayer120(p,now,dt,frac))return;
   }
+
 
 
   // v4.59.9 rolling AI death blackbox. Keeps only the last ~5.5 seconds.
@@ -14225,6 +14334,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch122();
+
+
+  function applyPatch130(){
+    window.__OBSERVER_FM_V130__={
+      aiGeneration:"FreeDriving130",
+      splineIsReferenceOnly:true,
+      localTrajectoryPlanning:true,
+      multiObserverPrediction:true,
+      committedRouteChoice:true,
+      emergencyReplan:true,
+      humanLikeControls:["zigzag","wide","hold","feint","cutback"],
+      statsAffectPlanning:true,
+      survivalPriority:true
+    };
+  }
+  applyPatch130();
 
   function v36SelfAudit(){
     const issues=[];
