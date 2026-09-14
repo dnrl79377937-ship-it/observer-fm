@@ -1,0 +1,17 @@
+{
+  "version": "v1.2.4",
+  "title": "OBSERVER COUNT UNIFIED",
+  "observerCounts": {
+    "블랙홀": 40,
+    "스카이클리프": 100,
+    "스페이스": 130,
+    "네온드리프트": 100,
+    "스타피쉬": 180,
+    "데스티니게이트": 180,
+    "아이스크라운": 200,
+    "하트": 200,
+    "사막오아시스": 200
+  },
+  "fix": "Actual spawning, UI count, and QA now share observerCountForMap791 as the single source of truth.",
+  "AI": "No AI behavior change."
+}

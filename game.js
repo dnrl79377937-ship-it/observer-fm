@@ -22,18 +22,27 @@
   const mapSelectIcon774 = document.getElementById("mapSelectIcon774");
 
   let MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT=150; // fallback only; v1.2.2 uses observerCountForMap120() // max/default observer pool
+  const OBSERVER_COUNT=200; // allocation/fallback ceiling only; actual per-map spawn uses observerCountForMap791()
   function observerCountForMap791(m=currentMap770()){
-    if(m?.id==="double_hairpin") return 60;
-    if(m?.id==="skyway") return 140;
-    if(m?.id==="cliff_hanger") return 140;
-    return 200;
+    if(!m)return 100;
+    const id=String(m.id||"").toLowerCase();
+    if(id==="double_hairpin")return 40;   // 블랙홀
+    if(id==="cliff_hanger")return 100;    // 스카이클리프
+    if(id==="skyway")return 130;          // 스페이스
+    if(id==="s_map")return 100;           // 네온드리프트
+    if(id==="star_fish")return 180;
+    if(id==="triple_diamond")return 180;  // 데스티니게이트
+    if(id==="ice_ring")return 200;
+    if(id==="neon_city")return 200;       // 하트
+    if(id==="desert_oasis")return 200;
+    return 100;
   }
+
   const HIT_CHANCE = 1.00;
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.2.2";
+  const BUILD_ID = "v1.2.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -943,7 +952,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   };
 
   function engineCoreRules(){
-    return {build:BUILD_ID,matchMode,observerCount:observerCountForMap791(),observerCountMax:OBSERVER_COUNT,playerCount:players.length||8,
+    return {build:BUILD_ID,matchMode,observerCount:observerCountForMap791(),observerCountMax:observerCountForMap791(),playerCount:players.length||8,
       playerHitRadius:unitChassis764().hitRadius,stunMs:STUN_MS,invMs:INV_MS,
       cameraZoom:CAMERA_ZOOM,simHz:Math.round(1000/SIM_STEP_MS),
       playerCollision:false,safeZoneInvulnerability:true,
@@ -8901,7 +8910,7 @@ function updateDestinyPlayer183(p,now,dt){
 
 
   // ============================================================
-  // v1.2.2 UNIFIED MOVEMENT ENGINE
+  // v1.2.4 UNIFIED MOVEMENT ENGINE
   // One place owns player x/y. AI only supplies speed + target lane.
   // Legacy road recovery / teleport guards / rejoin projection do not touch
   // player coordinates while this engine is active.
@@ -11071,7 +11080,7 @@ function updateDestinyPlayer183(p,now,dt){
     // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
     // ----------------------------------------------------------
     if(!decision && state===AI_STATE_1102.SURVIVAL){
-      // v1.2.2 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
+      // v1.2.4 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
       let overlay1113=runExecutionOverlayBridge1113(p,now);
       let micro1107=null;
 
@@ -12190,7 +12199,7 @@ function updateDestinyPlayer183(p,now,dt){
       steps++;
     }
 
-    // v1.2.2: never repay a browser hitch as visible fast-forward.
+    // v1.2.4: never repay a browser hitch as visible fast-forward.
     if(steps>=MAX_SIM_STEPS && simAccumulator>=SIM_STEP_MS){
       // Drop old backlog completely. Leaving 95% of a step caused an alternating
       // 0-step/1-step cadence on some frame rates and looked like micro-stutter.
@@ -15573,33 +15582,11 @@ function seasonCardHtml(p){
 
 
 
-  // v1.2.2 canonical per-map Observer population.
-  const MAP_OBSERVER_COUNTS_120=Object.freeze({
-    blackhole:40,
-    skycliff:100,
-    space:130,
-    neon:100,
-    starfish:180,
-    destiny:180,
-    ice:200,
-    heart:200,
-    desert:200
-  });
-  function observerCountForMap120(map){
-    if(!map)return 150;
-    const id=String(map.id||map.key||map.slug||"").toLowerCase();
-    const name=String(map.name||map.label||"").replace(/\s+/g,"");
-    if(id.includes("black")||name.includes("블랙홀"))return 40;
-    if(id.includes("skycliff")||name.includes("스카이클리프"))return 100;
-    if(id.includes("space")||name.includes("스페이스"))return 130;
-    if(id.includes("neon")||name.includes("네온드리프트"))return 100;
-    if(id.includes("star")||name.includes("스타피쉬"))return 180;
-    if(id.includes("destiny")||name.includes("데스티니게이트"))return 180;
-    if(id.includes("ice")||name.includes("아이스크라운"))return 200;
-    if(id.includes("heart")||name.includes("하트"))return 200;
-    if(id.includes("desert")||name.includes("사막오아시스"))return 200;
-    return 150;
+  // v1.2.4 canonical per-map Observer population.
+function observerCountForMap120(map){
+    return observerCountForMap791(map);
   }
+
 
   function applyPatch1115(){
     window.__OBSERVER_FM_V1115__={
@@ -15619,7 +15606,7 @@ function seasonCardHtml(p){
 
 
   window.__OBSERVER_FM_V120__={
-    version:"v1.2.2",
+    version:"v1.2.4",
     mapObserverCounts:{
       "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
       "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
@@ -15633,7 +15620,7 @@ function seasonCardHtml(p){
 
 
   window.__OBSERVER_FM_V121__={
-    version:"v1.2.2",
+    version:"v1.2.4",
     calmMovement:true,
     flashyControlsReduced:true,
     noObserverBackControlSuppressed:true,
@@ -15642,9 +15629,51 @@ function seasonCardHtml(p){
     observerCountsBase:"v1.2.0",neonDriftObserverCount:100
   };
 
+
+  window.__OBSERVER_FM_V123__={
+    version:"v1.2.4",
+    legacyObserverQaRemoved:true,
+    currentObserverQaAdded:true,
+    neonDriftObserverCount:100,
+    currentMapObserverCounts:{
+      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
+      "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
+      "하트":200,"사막오아시스":200
+    },
+    aiFoundation:"v1.11.5",
+    calmMovement:"v1.2.1",
+    forcedRiskTestButtonRemoved:true
+  };
+
+
+  window.__OBSERVER_FM_V124__={
+    version:"v1.2.4",
+    observerCountSingleSource:true,
+    canonicalObserverFunction:"observerCountForMap791",
+    spawnAndDisplayUnified:true,
+    neonDriftActualObservers:100,
+    currentMapObserverCounts:{
+      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
+      "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
+      "하트":200,"사막오아시스":200
+    },
+    aiBehaviorChanged:false
+  };
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
+
+    // v1.2.4 current Observer balance QA
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==40)issues.push("블랙홀옵저버40");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==100)issues.push("스카이클리프옵저버100");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==130)issues.push("스페이스옵저버130");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.s_map)!==100)issues.push("네온드리프트옵저버100");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==180)issues.push("스타피쉬옵저버180");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.triple_diamond)!==180)issues.push("데스티니게이트옵저버180");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.ice_ring)!==200)issues.push("아이스크라운옵저버200");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.neon_city)!==200)issues.push("하트옵저버200");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.desert_oasis)!==200)issues.push("사막오아시스옵저버200");
     if(!MAP_DEFINITIONS_770.neon_city?.qaSingleRedGate7943||!MAP_DEFINITIONS_770.neon_city?.sharedGate778||!MAP_DEFINITIONS_770.neon_city?.lapRequired775)issues.push("하트공용게이트7943");
     if(!MAP_DEFINITIONS_770.double_hairpin?.qaSpiralCenter7943||!MAP_DEFINITIONS_770.double_hairpin?.qaSmartSpiral797||MAP_DEFINITIONS_770.double_hairpin?.blackHoleExactCenter897||MAP_DEFINITIONS_770.double_hairpin?.blackHoleHardCenter896||MAP_DEFINITIONS_770.double_hairpin?.roadFollowMode778!=="route-center-hard")issues.push("블랙홀스마트나선797");
     if(!MAP_DEFINITIONS_770.skyway?.qaFourRowRoad7943||MAP_DEFINITIONS_770.skyway?.spaceRoadRows897!==4||!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스4줄7943");
@@ -15653,10 +15682,7 @@ function seasonCardHtml(p){
     if(!MAP_DEFINITIONS_770.ice_ring?.qaMRouteLock7942||!MAP_DEFINITIONS_770.ice_ring?.hardForbidden780||MAP_DEFINITIONS_770.ice_ring?.roadFollowMode778!=="route-center-hard")issues.push("아이스크라운M도로7942");
     if(names.length!==12||new Set(names).size!==12)issues.push("선수12");
     if(OBSERVER_COUNT!==130)issues.push("옵저버기본130");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==30)issues.push("블랙홀옵저버30");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==70)issues.push("스페이스옵저버70");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.star_fish)!==100)issues.push("기타맵옵저버100");
-    if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==70)issues.push("스카이클리프옵저버70");
+
     if(TEAM_LEAGUE_RULES_821.heatWinsNeeded!==2||TEAM_LEAGUE_RULES_821.maxHeatsPerSet!==3||TEAM_LEAGUE_RULES_821.regularSets!==6||TEAM_LEAGUE_RULES_821.matchWinsNeeded!==4)issues.push("팀리그규칙821");
     if(TEAM_LEAGUE_ROSTERS_821.A.length!==6||TEAM_LEAGUE_ROSTERS_821.B.length!==6||new Set([...TEAM_LEAGUE_ROSTERS_821.A,...TEAM_LEAGUE_ROSTERS_821.B]).size!==12)issues.push("팀리그로스터821");
     if(MAP_POOL_770.length!==9)issues.push("맵풀9-777");
