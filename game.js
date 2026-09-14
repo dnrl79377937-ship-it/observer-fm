@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.7";
+  const BUILD_ID = "v1.9.8";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,7 +1546,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,reserveTotal:0,reserveSamples:0,specialControls197:0,backControls197:0,spin360s197:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,backControls197:0,spin360s197:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
     reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"기타":0},
     deathLog:[]
@@ -1628,6 +1628,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           gauntletAnalytics191.reserveSamples++;
           if(rr<.18)gauntletAnalytics191.edgeCorridorSelections++;
         }
+        if(decision.edgeEmergency)gauntletAnalytics191.emergencyEdgeCorridors198++;
       }
       if(decision.emergency193){
         gauntletAnalytics191.emergencyEscapes++;
@@ -1690,7 +1691,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤",a.specialControls197||0],["빽컨",a.backControls197||0],["360도컨",a.spin360s197||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤",a.specialControls197||0],["빽컨",a.backControls197||0],["360도컨",a.spin360s197||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -12280,6 +12281,7 @@ function updateDestinyPlayer183(p,now,dt){
 
 
 
+
   function safeCorridor195(p,now,info){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
@@ -12297,37 +12299,70 @@ function updateDestinyPlayer183(p,now,dt){
     const sensor=immediateSensorCheck192(p,9.5);
     if(sensor.count===0||sensor.nearest>8.0)return null;
 
-    // v1.9.7 stage 1: cheap pruning
-    const laneFracs=[-.92,-.68,-.46,-.24,0,.24,.46,.68,.92];
     const speeds=[1.00,.94,.88];
-    const stage1=[];
 
-    for(const frac of laneFracs){
+    // v1.9.8: center-first corridor set.
+    // Normal evasions stay inside ~78% of the available road width.
+    const centerFracs=[-.76,-.56,-.38,-.20,0,.20,.38,.56,.76];
+    const edgeFracs=[-.94,.94];
+
+    function evalCandidate(frac,sm,edgeEmergency=false){
       const lane=frac*maxLane;
+      const near=trajectorySafety172(p,info,lane,sm,nearby,.70);
+
+      const edgeRatio=Math.abs(lane)/Math.max(.001,maxLane);
+      const reserve=Math.max(0,1-edgeRatio);
+
+      // Much stronger edge penalty than v1.9.7.
+      let edgePenalty=0;
+      if(edgeRatio>.72)edgePenalty+=(edgeRatio-.72)*5.8;
+      if(edgeRatio>.82)edgePenalty+=1.8;
+      if(edgeRatio>.90)edgePenalty+=3.0;
+
+      // Emergency edge candidates are allowed, but expensive unless
+      // they actually eliminate a hard hit.
+      if(edgeEmergency)edgePenalty+=2.2;
+
+      const score=
+        near.hardHits*30000+
+        near.risk*160+
+        near.nearFrames*44+
+        Math.max(0,4.3-near.minGap)*110+
+        Math.abs(lane-current)*.018+
+        (1-sm)*.012+
+        edgePenalty-
+        reserve*1.05;
+
+      return {lane,speedMul:sm,near,score,reserve,edgeRatio,edgeEmergency};
+    }
+
+    const stage1=[];
+    for(const frac of centerFracs){
       for(const sm of speeds){
-        const near=trajectorySafety172(p,info,lane,sm,nearby,.70);
-
-        const edgeRatio=Math.abs(lane)/Math.max(.001,maxLane);
-        const reserve=Math.max(0,1-edgeRatio);
-        const edgePenalty=edgeRatio>.84?(edgeRatio-.84)*3.0:0;
-
-        const score=
-          near.hardHits*28000+
-          near.risk*155+
-          near.nearFrames*42+
-          Math.max(0,4.3-near.minGap)*105+
-          Math.abs(lane-current)*.020+
-          (1-sm)*.012+
-          edgePenalty-
-          reserve*.65;
-
-        stage1.push({lane,speedMul:sm,near,score,reserve,edgeRatio});
+        stage1.push(evalCandidate(frac,sm,false));
       }
     }
 
     stage1.sort((a,b)=>a.score-b.score);
 
-    // stage 2: only the best few candidates get the expensive long lookahead.
+    // Only unlock edge corridors if every center candidate still predicts
+    // at least one hard hit, or if center safety is catastrophically poor.
+    const bestCenter=stage1[0];
+    const unlockEdge=
+      !bestCenter ||
+      bestCenter.near.hardHits>0 ||
+      bestCenter.near.minGap<1.65;
+
+    if(unlockEdge){
+      for(const frac of edgeFracs){
+        for(const sm of speeds){
+          stage1.push(evalCandidate(frac,sm,true));
+        }
+      }
+      stage1.sort((a,b)=>a.score-b.score);
+    }
+
+    // expensive long lookahead only for the top few
     const finalists=stage1.slice(0,5);
     let best=null;
 
@@ -12336,11 +12371,15 @@ function updateDestinyPlayer183(p,now,dt){
 
       let score=
         c.score+
-        far.hardHits*15000+
-        far.risk*78+
-        far.nearFrames*19+
-        Math.max(0,3.7-far.minGap)*48-
-        c.reserve*.75;
+        far.hardHits*16000+
+        far.risk*82+
+        far.nearFrames*20+
+        Math.max(0,3.7-far.minGap)*52-
+        c.reserve*.95;
+
+      // keep future escape space; edge corridors get another penalty
+      if(c.edgeRatio>.80)score+=1.4;
+      if(c.edgeEmergency)score+=1.0;
 
       if(!best||score<best.score){
         best={
@@ -12353,7 +12392,8 @@ function updateDestinyPlayer183(p,now,dt){
           futureMinGap:far.minGap,
           risk:c.near.risk,
           reserve:c.reserve,
-          edgeRatio:c.edgeRatio
+          edgeRatio:c.edgeRatio,
+          edgeEmergency:c.edgeEmergency
         };
       }
     }
@@ -12365,8 +12405,17 @@ function updateDestinyPlayer183(p,now,dt){
       p._safeCorridorSwitches195=(p._safeCorridorSwitches195||0)+1;
     }
 
+    // Slight continuity bias: if previous corridor is still reasonably safe,
+    // avoid unnecessary lane hopping.
+    if(Number.isFinite(prev) && Math.abs(prev-best.lane)>.80){
+      const prevEval=trajectorySafety172(p,info,prev,best.speedMul,nearby,.52);
+      if(prevEval.hardHits===0 && prevEval.minGap>2.8){
+        best.lane=prev*.72+best.lane*.28;
+      }
+    }
+
     p._safeCorridorLane195=best.lane;
-    p._safeCorridorUntil195=now+60;
+    p._safeCorridorUntil195=now+65;
 
     return {
       lane:best.lane,
@@ -12379,9 +12428,11 @@ function updateDestinyPlayer183(p,now,dt){
       futureHardHits:best.futureHardHits,
       risk:best.risk,
       reserve:best.reserve,
-      edgeRatio:best.edgeRatio
+      edgeRatio:best.edgeRatio,
+      edgeEmergency:best.edgeEmergency
     };
   }
+
 
 
 
@@ -12647,6 +12698,7 @@ function updateDestinyPlayer183(p,now,dt){
         hardHits:corridor195.hardHits,
         futureHardHits:corridor195.futureHardHits,
         reserve:corridor195.reserve,
+        edgeEmergency:!!corridor195.edgeEmergency,
         risk:corridor195.risk
       };
       p._freePlan130=null;p._freePlanUntil130=0;
@@ -17032,6 +17084,21 @@ function seasonCardHtml(p){
     };
   }
   applyPatch197();
+
+
+  function applyPatch198(){
+    window.__OBSERVER_FM_V198__={
+      centerFirstCorridor:true,
+      normalCorridorWidthRatio:.76,
+      edgeCorridorEmergencyOnly:true,
+      edgeUnlockRequiresUnsafeCenter:true,
+      strongerEdgePenalty:true,
+      corridorContinuityBias:true,
+      performanceProfile:"v1.9.7-preserved",
+      specialControlsPreserved:true
+    };
+  }
+  applyPatch198();
 
   function v36SelfAudit(){
     const issues=[];
