@@ -6,7 +6,7 @@
   <meta http-equiv="Expires" content="0">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observer Avoid FM v1.8.0 — Adaptive Substep AI</title>
+  <title>Observer Avoid FM v1.9.0 — Survival Gauntlet</title>
   <link rel="stylesheet" href="style.css">
 
   <style id="mapSelectStyle774">
@@ -339,6 +339,24 @@
     .league-bans-100 strong{
       color:#ffd35c;
     }
+  
+    .gauntlet-btn-190{
+      display:inline-flex!important;align-items:center;gap:5px;
+      background:#4e2a84!important;border:1px solid #b987ff!important;
+      color:#fff!important;font-weight:900!important
+    }
+    .gauntlet-btn-190.active{background:#7b1fa2!important;box-shadow:0 0 0 2px rgba(200,130,255,.18)}
+    .gauntlet-hud-190{
+      position:fixed;left:14px;bottom:14px;z-index:9999;width:310px;
+      background:rgba(5,10,18,.94);border:1px solid rgba(190,125,255,.58);
+      border-radius:10px;padding:10px 12px;color:#eaf6ff;
+      font-size:11px;line-height:1.45;box-shadow:0 10px 30px rgba(0,0,0,.32)
+    }
+    .gauntlet-hud-190.hidden{display:none}
+    .gauntlet-hud-head-190{display:flex;justify-content:space-between;gap:8px;color:#cda7ff;margin-bottom:6px}
+    .gauntlet-stats-190{white-space:pre-line;color:#d9ecf7}
+    .gauntlet-death-190{margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.12);color:#ffb3b3;white-space:pre-line}
+
   </style>
 
 </head>
@@ -346,7 +364,7 @@
   <header class="topbar">
     <div>
       <h1>Observer Avoid FM</h1>
-      <p>v1.8.0 · TEAM LEAGUE</p>
+      <p>v1.9.0 · TEAM LEAGUE</p>
     </div>
     
     <div class="controls">
@@ -356,6 +374,7 @@
         <span class="map-picker-label-774">맵 선택</span>
         <select id="mapSelect774" class="map-picker-select-774" aria-label="레이싱 맵 선택"></select>
       </div>
+<button id="gauntletBtn190" class="gauntlet-btn-190" type="button">🧪 생존 테스트</button>
 <button id="startBtn">LIVE 시작</button>
       <button id="restartBtn">재시작</button>
       <button id="resultBtn">경기 통계</button> <button id="eloBtn" class="secondaryBtn">ELO 랭킹</button> <button id="balanceBtn" class="secondaryBtn">밸런스 테스트</button> <button id="replayBtn" class="secondaryBtn">리플레이</button>
@@ -363,11 +382,18 @@
     </div>
   </header>
 
-  <main class="layout">
+  
+  <div id="gauntletHud190" class="gauntlet-hud-190 hidden">
+    <div class="gauntlet-hud-head-190"><b>SURVIVAL GAUNTLET</b><span id="gauntletWave190">대기</span></div>
+    <div id="gauntletStats190" class="gauntlet-stats-190">테스트를 시작하세요.</div>
+    <div id="gauntletDeath190" class="gauntlet-death-190"></div>
+  </div>
+
+<main class="layout">
     <section class="broadcast">
       <div class="livebar">
         <span class="live-dot"></span><b>LIVE</b>
-        <span id="cameraLabel">v1.8.0 · TEAM LEAGUE</span>
+        <span id="cameraLabel">v1.9.0 · TEAM LEAGUE</span>
         <button id="focusModeBtn" class="focus-mode-btn" type="button">게임 전체화면</button>
         <select id="povSelect" class="focus-mode-btn" title="AI 선수 POV"><option value="-1">POV: OFF</option></select>
         <button id="pauseBtn" class="pause-btn" type="button">⏸ 일시정지</button>
@@ -566,6 +592,6 @@
     </div>
   </div>
 
-  <script src="game.js?v=1.8.0-adaptive-substep-ai"></script>
+  <script src="game.js?v=1.9.0-survival-gauntlet"></script>
 </body>
 </html>

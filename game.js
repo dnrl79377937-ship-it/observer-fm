@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.8.0";
+  const BUILD_ID = "v1.9.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1520,7 +1520,201 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   function startAiBoost816(p,now=gameNow()){
     return !!p && now<(Number(p._startAiBoostUntil816)||0);
   }
-  function spawnObservers(){
+  
+  let gauntletMode190=false;
+  let gauntletWaveIndex190=0;
+  let gauntletWaveStarted190=0;
+  let gauntletWaveProg190=0;
+  let gauntletLastHud190=0;
+  const GAUNTLET_WAVES_190=[
+    "1마리 정면",
+    "2마리 엇갈림",
+    "4마리 군집",
+    "스탑 옵저버",
+    "좌우 동시 접근",
+    "연속 군집"
+  ];
+  const gauntletStats190={
+    attempts:0,deaths:0,clears:0,wavesPassed:0,
+    lastDeath:null
+  };
+
+  function spawnGauntletObservers190(){
+    const arr=[];
+    const baseSpeed=9.72*OBS_SPEED_RATIO;
+    for(let i=0;i<14;i++){
+      arr.push({
+        id:i,x:3,y:3,vx:0,vy:0,speed:baseSpeed,
+        phase:"move",phaseUntil:1e15,cycleOffset:0,
+        pattern712:"free",_gauntlet190:true,_gauntletActive190:false
+      });
+    }
+    return arr;
+  }
+
+  function gauntletLeader190(){
+    const alive=players.filter(p=>p&&!p.done&&!p.dead);
+    if(!alive.length)return players[0]||null;
+    return alive.slice().sort((a,b)=>currentProgress(b)-currentProgress(a))[0];
+  }
+
+  function gauntletConfigureObserver190(o,info,prog,lane,now,dt,stopped=false){
+    const q=smoothFrame120(info,Math.max(0,Math.min(info.total,prog)));
+    const nx=-q.uy,ny=q.ux;
+    const nxPos=q.x+nx*lane,nyPos=q.y+ny*lane;
+
+    const sec=Math.max(.001,dt/1000);
+    const ox=Number(o.x)||nxPos,oy=Number(o.y)||nyPos;
+    o.vx=stopped?0:(nxPos-ox)/sec;
+    o.vy=stopped?0:(nyPos-oy)/sec;
+    o.x=nxPos;o.y=nyPos;
+    o.phase=stopped?"stop":"move";
+    o.phaseUntil=now+10000;
+    o._gauntletActive190=true;
+  }
+
+  function gauntletStep190(now,dt){
+    if(!gauntletMode190||!players.length||!observers.length)return;
+
+    const lead=gauntletLeader190();
+    if(!lead)return;
+
+    const info=pathInfo120(lead);
+    const prog=Number(info.prog)||0;
+
+    if(!gauntletWaveStarted190){
+      gauntletWaveStarted190=now;
+      gauntletWaveProg190=Math.min(info.total-4,prog+15);
+    }
+
+    const passed=prog>gauntletWaveProg190+7;
+    const timedOut=now-gauntletWaveStarted190>3200;
+    if(passed||timedOut){
+      gauntletStats190.wavesPassed++;
+      gauntletWaveIndex190=(gauntletWaveIndex190+1)%GAUNTLET_WAVES_190.length;
+      gauntletWaveStarted190=now;
+      gauntletWaveProg190=Math.min(info.total-4,prog+14);
+    }
+
+    const wave=gauntletWaveIndex190;
+    const t=Math.max(0,(now-gauntletWaveStarted190)/1000);
+    const width=Math.max(1.7,roadHalf120(lead,info,gauntletWaveProg190));
+    let defs=[];
+
+    if(wave===0){
+      defs=[
+        {dp:0,lane:0,stop:false}
+      ];
+    }else if(wave===1){
+      defs=[
+        {dp:-1.2,lane:-width*.72+Math.min(width*1.35,t*3.2),stop:false},
+        {dp: 1.4,lane: width*.72-Math.min(width*1.35,t*3.0),stop:false}
+      ];
+    }else if(wave===2){
+      defs=[
+        {dp:-1.8,lane:-width*.68,stop:false},
+        {dp:-.5,lane: width*.18,stop:false},
+        {dp: .8,lane:-width*.12,stop:false},
+        {dp: 2.0,lane: width*.66,stop:false}
+      ];
+    }else if(wave===3){
+      defs=[
+        {dp:-.7,lane:-width*.28,stop:true},
+        {dp: .8,lane: width*.30,stop:true},
+        {dp: 2.1,lane:0,stop:true}
+      ];
+    }else if(wave===4){
+      const sweep=Math.min(width*.95,t*2.8);
+      defs=[
+        {dp:-1.0,lane:-width*.95+sweep,stop:false},
+        {dp: .6,lane: width*.95-sweep,stop:false},
+        {dp: 2.1,lane:-width*.70+sweep*.75,stop:false},
+        {dp: 3.4,lane: width*.70-sweep*.75,stop:false}
+      ];
+    }else{
+      defs=[
+        {dp:-2.4,lane:-width*.60,stop:false},
+        {dp:-1.2,lane: width*.40,stop:false},
+        {dp:0,lane:-width*.20,stop:false},
+        {dp:1.1,lane: width*.62,stop:false},
+        {dp:2.2,lane:-width*.68,stop:false},
+        {dp:3.3,lane: width*.12,stop:false}
+      ];
+    }
+
+    for(let i=0;i<observers.length;i++){
+      const o=observers[i];
+      if(i<defs.length){
+        const d=defs[i];
+        gauntletConfigureObserver190(
+          o,info,gauntletWaveProg190+d.dp,d.lane,now,dt,d.stop
+        );
+      }else{
+        // Park unused test observers far behind the current wave.
+        gauntletConfigureObserver190(
+          o,info,Math.max(0,prog-25-i),((i%2)?1:-1)*width*.8,now,dt,true
+        );
+        o._gauntletActive190=false;
+      }
+    }
+  }
+
+  function renderGauntletHud190(now=gameNow()){
+    if(!gauntletMode190)return;
+    if(now-gauntletLastHud190<80)return;
+    gauntletLastHud190=now;
+
+    const hud=document.getElementById("gauntletHud190");
+    const wave=document.getElementById("gauntletWave190");
+    const stats=document.getElementById("gauntletStats190");
+    const death=document.getElementById("gauntletDeath190");
+    if(!hud)return;
+
+    hud.classList.remove("hidden");
+    if(wave)wave.textContent=`${gauntletWaveIndex190+1}/6 · ${GAUNTLET_WAVES_190[gauntletWaveIndex190]}`;
+
+    const alive=players.filter(p=>!p.dead&&!p.done).length;
+    if(stats)stats.textContent=
+      `시도 ${gauntletStats190.attempts} · 생존 ${gauntletStats190.clears} · 사망 ${gauntletStats190.deaths}\n`+
+      `통과 웨이브 ${gauntletStats190.wavesPassed} · 현재 생존 ${alive}/${players.length}`;
+
+    const d=gauntletStats190.lastDeath;
+    if(death){
+      death.textContent=d
+        ? `LAST DEATH\n${d.name} · ${d.action}\n예측 최소거리 ${d.predMin} / 실제거리 ${d.actual}\nlane ${d.lane} · progress ${d.progress}%`
+        : "LAST DEATH · 없음";
+    }
+  }
+
+  function setGauntletMode190(on){
+    gauntletMode190=!!on;
+    gauntletWaveIndex190=0;
+    gauntletWaveStarted190=0;
+    gauntletWaveProg190=0;
+
+    const b=document.getElementById("gauntletBtn190");
+    const hud=document.getElementById("gauntletHud190");
+    if(b){
+      b.classList.toggle("active",gauntletMode190);
+      b.textContent=gauntletMode190?"🧪 생존 테스트 ON":"🧪 생존 테스트";
+    }
+    if(hud)hud.classList.toggle("hidden",!gauntletMode190);
+
+    if(gauntletMode190){
+      gauntletStats190.attempts++;
+      running=false;
+      resetRound();
+      if(typeof hideLeagueBoard100==="function")hideLeagueBoard100();
+      start();
+    }else{
+      running=false;
+      reset();
+      if(typeof showLeagueBoard100==="function")showLeagueBoard100();
+    }
+  }
+
+function spawnObservers(){
+    if(gauntletMode190)return spawnGauntletObservers190();
     const arr=[];
     const avgPlayerSpeed=9.72;
     const baseSpeed=avgPlayerSpeed*OBS_SPEED_RATIO;
@@ -1562,6 +1756,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       p._v120Prog=0;p._v120Total=NaN;
       p._lane120=0;p._laneVel120=0;
       p._headingUx121=NaN;p._headingUy121=NaN;p._maxLane121=NaN;
+      p._laneVelSec181=0;
       p._avoidPlan120=null;p._avoidPlanUntil120=0;
       p._survivalHoldUntil120=0;p._variant120=null;p._variantUntil120=0;
       p._freePlan130=null;p._freePlanUntil130=0;
@@ -10925,58 +11120,83 @@ function updateDestinyPlayer183(p,now,dt){
 
 
 
+
+  // ============================================================
+  // v1.8.1 DT-BASED LATERAL PHYSICS
+  // Same real-world lateral motion whether simulated as 20ms x1 or 4ms x5.
+  // ============================================================
+
+  function lateralPhysics181(current,laneVelSec,wanted,control,turnSeverity,dtSec,boost=1){
+    const maxRate=((.048+control*.046)*boost)/.020; // lane units / second
+    const rawTarget=((wanted-current)*(.150+control*.100)*boost)/.020;
+    const targetRate=Math.max(-maxRate,Math.min(maxRate,rawTarget));
+
+    // Convert old per-20ms velocity increment to acceleration per second^2.
+    const accelPerSec=((.0080+control*.0130)*(1+(boost-1)*.50))/.0004;
+    const dv=Math.max(-accelPerSec*dtSec,Math.min(accelPerSec*dtSec,targetRate-laneVelSec));
+    let vel=laneVelSec+dv;
+
+    // Convert old per-tick damping to time-correct exponential damping.
+    const dampBase=Math.min(.22,turnSeverity*(.14-control*.02));
+    if(dampBase>0){
+      vel*=Math.pow(Math.max(.01,1-dampBase),dtSec/.020);
+    }
+
+    return {
+      vel,
+      lane:current+vel*dtSec
+    };
+  }
   function movementStep120(p,now,dt,info,targetLane,speedMul){
     const d=driver120(p);
     const dtSafe=Math.max(0,Math.min(22,Number(dt)||0));
+    const dtSec=dtSafe/1000;
     const prog=info.prog;
     const turn=curve120(info,prog);
 
     const cornerSkill=d.cornering*.38+d.control*.24+d.braking*.20+d.stability*.18;
     const turnSeverity=Math.min(1,turn/.72);
-
-    // Never "stop to turn". Even a weak cornering stat keeps meaningful forward speed.
     const cornerMul=Math.max(.84,1-turnSeverity*(.12*(1-cornerSkill)+.025));
 
     const commandedSpeed=Math.max(0,Math.min(1.03,Number(speedMul)||0));
-    const rawStep=(p.speed||9.7)*commandedSpeed*cornerMul*dtSafe/1000;
+    const rawStep=(p.speed||9.7)*commandedSpeed*cornerMul*dtSec;
     const step=Math.max(0,Math.min(.245,rawStep));
     const next=Math.min(info.total,prog+step);
 
     const targetFrame=smoothFrame120(info,next);
 
-    // Persistent heading turns continuously instead of snapping at a corner.
     let ux=Number(p._headingUx121),uy=Number(p._headingUy121);
     if(!Number.isFinite(ux)||!Number.isFinite(uy)){
       ux=targetFrame.ux;uy=targetFrame.uy;
     }else{
+      // heading blend is also time-corrected
       const baseTurn=.085+d.control*.030+d.stability*.022+d.cornering*.020;
       const turnBoost=Math.min(.06,turnSeverity*.045);
-      const blend=Math.min(.18,baseTurn+turnBoost);
+      const blend20=Math.min(.18,baseTurn+turnBoost);
+      const blend=1-Math.pow(1-blend20,dtSafe/20);
       ux=ux*(1-blend)+targetFrame.ux*blend;
       uy=uy*(1-blend)+targetFrame.uy*blend;
-      const HL=Math.hypot(ux,uy)||1;
-      ux/=HL;uy/=HL;
+      const HL=Math.hypot(ux,uy)||1;ux/=HL;uy/=HL;
     }
     p._headingUx121=ux;p._headingUy121=uy;
 
     const nx=-uy,ny=ux;
 
-    // Filter road width.
     const rawMax=roadHalf120(p,info,next);
     let maxLane=Number(p._maxLane121);
     if(!Number.isFinite(maxLane))maxLane=rawMax;
-    maxLane+=Math.max(-.045,Math.min(.045,rawMax-maxLane));
-    maxLane=Math.max(1.8,Math.min(4.0,maxLane));
+
+    // width filtering time-corrected
+    const widthStep=.045*(dtSafe/20);
+    maxLane+=Math.max(-widthStep,Math.min(widthStep,rawMax-maxLane));
+    maxLane=Math.max(1.7,Math.min(3.2,maxLane));
+    p._maxLane121=maxLane;
 
     let wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
 
-    // Neon Drift 9->11 vertical inside section:
-    // don't let racers drift too far to the outside/right.
     if(neonVerticalZone122(p,info,next)){
       const insideCap=Math.min(maxLane,.80);
       const outsideCap=Math.min(maxLane,.35);
-      // On this section positive lane corresponds to the problematic outer/right side
-      // in current map orientation; heavily restrict it while preserving small freedom.
       wanted=Math.max(-insideCap,Math.min(outsideCap,wanted));
       maxLane=Math.min(maxLane,1.05);
     }
@@ -10985,61 +11205,54 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="unified-survival")?3.15:
+      (p.liveEvadeAction==="unified-survival")?3.35:
       ((p.liveEvadeAction==="free-path-dodge")?1.50:1);
-    const maxLatSpeed=(.048+control*.046)*emergencyBoost;
-    const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-current)*(.150+control*.100)*emergencyBoost));
-    const prevVel=Number(p._laneVel120)||0;
 
-    // v1.5.5: quick decisions, smooth steering.
-    // High emergency authority raises target lateral speed more than acceleration,
-    // producing a human-like curved dodge instead of an AI-looking snap.
-    const burstAccel163=1;
-    // v1.8.0: acceleration is time-scaled so 5 microsteps equal one normal tick.
-    const timeScale180=Math.max(.15,Math.min(1,dtSafe/20));
-    const accel=(.0080+control*.0130)*(1+(emergencyBoost-1)*.50)*timeScale180;
-    let latVel=prevVel+Math.max(-accel,Math.min(accel,targetVel-prevVel));
-    latVel*=1-Math.min(.22,turnSeverity*(.14-d.stability*.04));
+    let laneVelSec=Number(p._laneVelSec181);
+    if(!Number.isFinite(laneVelSec)){
+      laneVelSec=(Number(p._laneVel120)||0)/.020;
+    }
 
-    let lane=current+latVel*timeScale180;
+    const lateral=lateralPhysics181(
+      current,laneVelSec,wanted,control,turnSeverity,dtSec,emergencyBoost
+    );
+
+    let lane=lateral.lane;
+    laneVelSec=lateral.vel;
     lane=Math.max(-maxLane-.08,Math.min(maxLane+.08,lane));
 
-    // Incremental actual movement:
-    // move forward using current continuous heading instead of reconstructing absolute
-    // x/y from the path frame every tick.
     let x=p.x+ux*step;
     let y=p.y+uy*step;
 
-    // Apply lateral steering as a small physical sideways motion.
-    x+=nx*latVel*timeScale180;
-    y+=ny*latVel*timeScale180;
+    // Physical sideways movement now uses units/second * dt exactly once.
+    const lateralMove=lane-current;
+    x+=nx*lateralMove;
+    y+=ny*lateralMove;
 
-    // Soft attraction toward desired path+lateral target.
-    // Capped correction prevents teleporting while still preventing long-term drift.
     const desiredX=targetFrame.x+nx*lane;
     const desiredY=targetFrame.y+ny*lane;
     const ex=desiredX-x,ey=desiredY-y;
     const err=Math.hypot(ex,ey);
 
     if(err>1e-6){
-      const correctionCap=(.040+control*.018)*timeScale180;
-      const correction=Math.min(correctionCap,err*.12);
+      const correctionCap=(.040+control*.018)*(dtSafe/20);
+      const correction=Math.min(correctionCap,err*.12*(dtSafe/20));
       x+=ex/err*correction;
       y+=ey/err*correction;
     }
 
-    // Absolute safety guard: no single sim tick may visually jump too far.
     const dx=x-p.x,dy=y-p.y;
     const moved=Math.hypot(dx,dy);
-    const maxMove=.32;
-    if(moved>maxMove){
+    const maxMove=.32*(dtSafe/20);
+    if(moved>maxMove && maxMove>0){
       const k=maxMove/moved;
-      x=p.x+dx*k;
-      y=p.y+dy*k;
+      x=p.x+dx*k;y=p.y+dy*k;
     }
 
     p.x=x;p.y=y;
-    p._lane120=lane;p._laneVel120=latVel;
+    p._lane120=lane;
+    p._laneVelSec181=laneVelSec;
+    p._laneVel120=laneVelSec*.020; // legacy compatibility
     p._v120Prog=next;p._v120Total=info.total;
 
     if(info.destiny){
@@ -11055,9 +11268,11 @@ function updateDestinyPlayer183(p,now,dt){
 
 
 
+
   function finishPlayer120(p,now,dt,frac){
     if(frac<.997)return false;
     p.done=true;
+    if(gauntletMode190)gauntletStats190.clears++;
     const preciseNow=now-Math.min(20,Math.max(0,dt))*.15;
     p.finishTime=Math.max(0,preciseNow-raceStart);
     registerFinishRecord(p,p.finishTime);
@@ -11099,6 +11314,19 @@ function updateDestinyPlayer183(p,now,dt){
     const broad=playerHitRadius764(p)+1.35;
     for(const o of playerNearbyObservers(p,broad)){
       if(!sweptObserverHit120(p,o))continue;
+      if(gauntletMode190){
+        const dbg=p._debugDecision190||{};
+        const actual=Math.hypot(p.x-o.x,p.y-o.y);
+        gauntletStats190.deaths++;
+        gauntletStats190.lastDeath={
+          name:p.name,
+          action:dbg.action||"unknown",
+          lane:dbg.lane??"-",
+          predMin:dbg.predMin??"-",
+          actual:+actual.toFixed(2),
+          progress:+(frac*100).toFixed(1)
+        };
+      }
       p.hits++;
       p.dead=true;
       p.match.collisions++;
@@ -11589,14 +11817,17 @@ function updateDestinyPlayer183(p,now,dt){
       stopped:m.stopped
     };
   }
-
-  function reachableTrajectory172(p,info,targetLane,speedMul,horizon=1.7,stepDt=.06){
+  function reachableTrajectory172(p,info,targetLane,speedMul,horizon=1.7,stepDt=.05){
     const d=driver120(p);
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     let prog=Number(info.prog)||0;
     let lane=Number(p._lane120)||0;
-    let latVel=Number(p._laneVel120)||0;
+    let laneVelSec=Number(p._laneVelSec181);
+    if(!Number.isFinite(laneVelSec)){
+      laneVelSec=(Number(p._laneVel120)||0)/.020;
+    }
+
     const baseSpeed=Math.max(6.5,Number(p.speed)||9.7);
     const out=[];
 
@@ -11612,20 +11843,25 @@ function updateDestinyPlayer183(p,now,dt){
       const maxLane=roadHalf120(p,info,prog);
       const wanted=Math.max(-maxLane,Math.min(maxLane,Number(targetLane)||0));
 
-      const maxLatSpeed=.048+control*.046;
-      const targetVel=Math.max(-maxLatSpeed,Math.min(maxLatSpeed,(wanted-lane)*(.150+control*.100)));
-      const accel=.0080+control*.0130;
-      latVel+=Math.max(-accel,Math.min(accel,targetVel-latVel));
-      latVel*=1-Math.min(.22,severity*(.14-d.stability*.04));
-      lane+=latVel;
+      // Planner and real movement now use the exact same lateral dynamics.
+      const lateral=lateralPhysics181(
+        lane,laneVelSec,wanted,control,severity,stepDt,3.35
+      );
+      lane=lateral.lane;
+      laneVelSec=lateral.vel;
       lane=Math.max(-maxLane-.08,Math.min(maxLane+.08,lane));
 
       const q=smoothFrame120(info,prog);
       const nx=-q.uy,ny=q.ux;
-      out.push({t,prog,lane,x:q.x+nx*lane,y:q.y+ny*lane});
+      out.push({
+        t,prog,lane,
+        x:q.x+nx*lane,
+        y:q.y+ny*lane
+      });
     }
     return out;
   }
+
   function trajectorySafety172(p,info,targetLane,speedMul,nearby,horizon=1.7){
     const d=driver120(p);
     const traj=reachableTrajectory172(p,info,targetLane,speedMul,horizon,.05);
@@ -11814,6 +12050,13 @@ function updateDestinyPlayer183(p,now,dt){
       : (p._controlMove130?.type||"free-drive");
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
+
+    p._debugDecision190={
+      action:decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive"),
+      lane:+(Number(decision.lane)||0).toFixed(2),
+      predMin:Number.isFinite(decision.minGap)?+decision.minGap.toFixed(2):null,
+      speedMul:+(Number(decision.speedMul)||1).toFixed(2)
+    };
 
     const moved=movementStep120(p,now,dt,info,decision.lane,decision.speedMul);
     const frac=moved.frac;
@@ -12602,6 +12845,7 @@ function updateDestinyPlayer183(p,now,dt){
       const subNow=startNow+subDt*(s+1);
 
       updateObservers(subNow,subDt);
+      if(gauntletMode190)gauntletStep190(subNow,subDt);
 
       // Invalidate nearby-observer caches every microstep because both racers
       // and observers have genuinely moved.
@@ -12647,6 +12891,7 @@ function updateDestinyPlayer183(p,now,dt){
     rebuildRaceFrameCache668(now);
     prevCamX730=camX;prevCamY730=camY;
     updateCamera(dt);
+    if(gauntletMode190)renderGauntletHud190(now);
     captureReplayFrame(now);
   }
 
@@ -14635,6 +14880,8 @@ function seasonCardHtml(p){
   if(pauseBtn) pauseBtn.addEventListener("click",togglePause);
   const leagueProceed100=document.getElementById("leagueProceed100");
   if(leagueProceed100)leagueProceed100.addEventListener("click",beginLeagueSet100);
+  const gauntletBtn190=document.getElementById("gauntletBtn190");
+  if(gauntletBtn190)gauntletBtn190.addEventListener("click",()=>setGauntletMode190(!gauntletMode190));
   startBtn.addEventListener("click",()=>{if(league100?.phase==="bracket")beginLeagueSet100();else start();});
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("replayBtn").addEventListener("click",openReplay);
@@ -15990,6 +16237,34 @@ function seasonCardHtml(p){
     };
   }
   applyPatch180();
+
+
+  function applyPatch181(){
+    window.__OBSERVER_FM_V181__={
+      dtBasedLateralPhysics:true,
+      substepDoubleScalingFixed:true,
+      predictionMatchesMovement:true,
+      laneVelocityUnits:"lane/sec",
+      sameMotionAt20msAnd4ms:true,
+      unifiedSurvivalBoost:3.35
+    };
+  }
+  applyPatch181();
+
+
+  function applyPatch190(){
+    window.__OBSERVER_FM_V190__={
+      survivalGauntlet:true,
+      forcedThreatWaves:6,
+      debugDeathTelemetry:true,
+      deterministicTestObservers:14,
+      waveTypes:[
+        "single-front","cross-two","cluster-four",
+        "stopped-wall","dual-side-approach","chain-cluster"
+      ]
+    };
+  }
+  applyPatch190();
 
   function v36SelfAudit(){
     const issues=[];
