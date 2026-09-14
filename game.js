@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.10.1";
+  const BUILD_ID = "v1.10.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,7 +1546,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
     reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"기타":0},
     deathLog:[]
@@ -1639,7 +1639,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       }
       if(decision.emergency193){
         gauntletAnalytics191.emergencyEscapes++;
-        gauntletAnalytics191.emergencyFallbacks++;
       }
       gauntletAnalytics191.corridorSwitches=players.reduce((sum,q)=>sum+(q._safeCorridorSwitches195||0),0);
       p._gaDangerSeen191=1;
@@ -1698,7 +1697,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",a.executionPlans1101||0],["Execution 재계획",a.executionReplans1101||0],["Execution 완료",a.executionCompletions1101||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",a.executionPlans1101||0],["Execution 재계획",a.executionReplans1101||0],["Execution 완료",a.executionCompletions1101||0],["AI 상태 전환",a.stateChanges1102||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1951,6 +1950,8 @@ function spawnObservers(){
       p._safeCorridorLane195=NaN;p._safeCorridorUntil195=0;p._safeCorridorSwitches195=0;
       p._executionPlan1101=null;p._executionReplans1101=0;p._executionCompleted1101=0;
       p._verifiedEscapeStart1101=0;p._verifiedEscapeDeadline1101=0;p._verifiedEscapePending1101=false;
+      p._aiState1102=AI_STATE_1102.NORMAL;p._aiStateSince1102=0;p._aiStateChanges1102=0;
+      p._emergencyAction1102=null;p._emergencyActionUntil1102=0;
       p._specialControl197=null;p._specialControlUntil197=0;p._lastSpecialControl197=null;p._lastSpecialCountAt197=0;
       p._visualSpin197=0;p._reverseControl197=false;
     });
@@ -11523,11 +11524,10 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="emergency-escape")?4.55:
-      ((p.liveEvadeAction==="execution-ai")?4.05:
-      ((p.liveEvadeAction==="safe-corridor")?3.90:
-      ((p.liveEvadeAction==="unified-survival")?3.30:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1))));
+      (p.liveEvadeAction==="emergency-state")?4.55:
+      ((p.liveEvadeAction==="execution-state")?4.05:
+      ((p.liveEvadeAction==="special-control")?2.10:
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1)));
 
     let laneVelSec=Number(p._laneVelSec181);
     if(!Number.isFinite(laneVelSec)){
@@ -12345,6 +12345,75 @@ function updateDestinyPlayer183(p,now,dt){
   // Executor owns movement for a brief window unless safety materially changes.
   // ============================================================
 
+
+  const AI_STATE_1102={
+    NORMAL:"NORMAL",
+    SPECIAL:"SPECIAL_CONTROL",
+    SURVIVAL:"SURVIVAL_EXECUTION",
+    EMERGENCY:"EMERGENCY"
+  };
+
+  function ensureAiState1102(p){
+    if(!p._aiState1102)p._aiState1102=AI_STATE_1102.NORMAL;
+    return p._aiState1102;
+  }
+
+  function setAiState1102(p,state,now){
+    const prev=ensureAiState1102(p);
+    if(prev===state)return false;
+    p._aiState1102=state;
+    p._aiStateSince1102=now;
+    p._aiStateChanges1102=(p._aiStateChanges1102||0)+1;
+    return true;
+  }
+
+  function clearEmergencyAction1102(p){
+    p._emergencyAction1102=null;
+    p._emergencyActionUntil1102=0;
+  }
+
+  function buildEmergencyAction1102(p,now,info){
+    const e=emergencyEscape193(p,now,info);
+    if(!e)return null;
+
+    const duration=125;
+    return {
+      createdAt:now,
+      until:now+duration,
+      lane:e.lane,
+      speedMul:e.speedMul,
+      minGap:e.minGap,
+      hardHits:e.hardHits||0
+    };
+  }
+
+  function runEmergencyAction1102(p,now){
+    const a=p._emergencyAction1102;
+    if(!a)return null;
+    if(now>=a.until){
+      clearEmergencyAction1102(p);
+      return null;
+    }
+    return {
+      lane:a.lane,
+      speedMul:a.speedMul,
+      dangerous:true,
+      emergency1102:true,
+      minGap:a.minGap,
+      hardHits:a.hardHits
+    };
+  }
+
+  function specialControlCanContinue1102(p,info){
+    if(!p._specialControl197)return false;
+    const nearby=robustNearby192(p,8.0);
+    if(!nearby.length)return true;
+
+    const lane=Number(p._lane120)||0;
+    const check=trajectorySafety172(p,info,lane,1,nearby,.34);
+    return check.hardHits===0 && check.minGap>=1.45;
+  }
+
   function executionThreatSignature1101(p,info){
     const f=smoothFrame120(info,info.prog);
     const nx=-f.uy,ny=f.ux;
@@ -12883,6 +12952,7 @@ function updateDestinyPlayer183(p,now,dt){
     };
   }
 
+
   function updatePlayer(p,now,dt){
     if(!p||p.done||p.dead)return;
 
@@ -12902,157 +12972,197 @@ function updateDestinyPlayer183(p,now,dt){
     p._v120Prog=info.prog;
     p._v120Total=info.total;
 
-    // Calm-road decision: free route / competition / variety.
-    let decision=freeDrivingDecision130(p,now,info);
+    ensureAiState1102(p);
+    updateVerifiedEscape1101(p,now);
 
-    // 1) Existing execution plan has first authority.
-    const execution1101=executeEscapePlan1101(p,now,info);
-    let corridor195=null;
+    let decision=null;
+    let state=p._aiState1102;
 
-    if(execution1101){
-      decision={
-        ...decision,
-        ...execution1101,
-        execution1101:true
-      };
-    }else{
-      // 2) Build a fresh corridor and convert it into an executable A->B->C sequence.
-      corridor195=safeCorridor195(p,now,info);
-
-      if(corridor195){
-        p._executionPlan1101=buildExecutionPlan1101(p,now,info,corridor195);
-        if(gauntletMode190)gauntletAnalytics191.executionPlans1101++;
-        if(!p._verifiedEscapePending1101)startVerifiedEscape1101(p,now);
-
-        const first=executeEscapePlan1101(p,now,info);
-
-        if(first){
-          decision={
-            ...decision,
-            ...first,
-            corridor195:true,
-            minGap:corridor195.minGap,
-            futureMinGap:corridor195.futureMinGap,
-            hardHits:corridor195.hardHits,
-            futureHardHits:corridor195.futureHardHits,
-            reserve:corridor195.reserve,
-            edgeEmergency:!!corridor195.edgeEmergency,
-            risk:corridor195.risk
-          };
-        }
+    // ----------------------------------------------------------
+    // EMERGENCY: owns movement until its short action completes.
+    // ----------------------------------------------------------
+    if(state===AI_STATE_1102.EMERGENCY){
+      const e=runEmergencyAction1102(p,now);
+      if(e){
+        decision=e;
+      }else{
+        setAiState1102(p,AI_STATE_1102.NORMAL,now);
+        state=AI_STATE_1102.NORMAL;
       }
     }
 
-    // Survival cancels special controls ONLY when an actual collision is forecast.
-    if((decision.execution1101||decision.corridor195) && p._specialControl197){
-      const scNearby1101=robustNearby192(p,8.0);
-      const scCheck1101=trajectorySafety172(
-        p,info,
-        Number(decision.lane)||Number(p._lane120)||0,
-        Math.max(.90,Number(decision.speedMul)||1),
-        scNearby1101,.34
-      );
+    // ----------------------------------------------------------
+    // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
+    // ----------------------------------------------------------
+    if(!decision && state===AI_STATE_1102.SURVIVAL){
+      const ex=executeEscapePlan1101(p,now,info);
+      if(ex){
+        decision={...ex,execution1101:true};
+      }else{
+        setAiState1102(p,AI_STATE_1102.NORMAL,now);
+        state=AI_STATE_1102.NORMAL;
+      }
+    }
 
-      if(scCheck1101.hardHits>0 || scCheck1101.minGap<1.45){
-        if(!p._specialControl197.completed && gauntletMode190){
+    // ----------------------------------------------------------
+    // SPECIAL CONTROL: protected unless a real collision forecast appears.
+    // ----------------------------------------------------------
+    if(!decision && state===AI_STATE_1102.SPECIAL){
+      if(p._specialControl197 && specialControlCanContinue1102(p,info)){
+        const maxLane=roadHalf120(p,info,info.prog);
+        let base=baseLane120(p,now,info,info.prog,maxLane);
+        const s=specialControlLane197(p,now,base,maxLane);
+
+        if(s.type){
+          decision={
+            lane:s.lane,
+            speedMul:s.speedMul,
+            dangerous:false,
+            special1102:true
+          };
+          p._visualSpin197=s.headingSpin||0;
+          p._reverseControl197=!!s.reverse;
+        }else{
+          setAiState1102(p,AI_STATE_1102.NORMAL,now);
+          state=AI_STATE_1102.NORMAL;
+        }
+      }else{
+        if(p._specialControl197 && !p._specialControl197.completed && gauntletMode190){
           gauntletAnalytics191.specialInterrupted197=(gauntletAnalytics191.specialInterrupted197||0)+1;
         }
         p._specialControl197=null;p._specialControlUntil197=0;
         p._visualSpin197=0;p._reverseControl197=false;
+        setAiState1102(p,AI_STATE_1102.NORMAL,now);
+        state=AI_STATE_1102.NORMAL;
       }
     }
 
-    // 3) Emergency is now truly last resort.
-    const ttc195=emergencyTtc195(p,info);
-    const density1100=robustNearby192(p,7.5).length;
-    const emergencyThreshold1101=
-      density1100>=5?.16:
-      density1100>=3?.14:
-      .11;
+    // ----------------------------------------------------------
+    // NORMAL: choose exactly ONE transition.
+    // Priority: emergency -> survival execution -> special -> free drive
+    // ----------------------------------------------------------
+    if(!decision && state===AI_STATE_1102.NORMAL){
+      const density=robustNearby192(p,7.5).length;
+      const ttc=emergencyTtc195(p,info);
+      const emergencyThreshold=
+        density>=5?.16:
+        density>=3?.14:
+        .11;
 
-    const executionHardFail1101=
-      !!(decision.execution1101 && Number(decision.hardHits)>0);
-
-    const emergency193=
-      (ttc195<=emergencyThreshold1101 || executionHardFail1101)
-      ? emergencyEscape193(p,now,info)
-      : null;
-    if(emergency193){
-      decision={
-        ...decision,
-        lane:emergency193.lane,
-        speedMul:emergency193.speedMul,
-        dangerous:true,
-        emergency193:true,
-        minGap:emergency193.minGap,
-        risk:1
-      };
-
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._controlMove130=null;p._controlMoveUntil130=0;
-      p._crowdPlan150=null;p._crowdPlanUntil150=0;
-    }else{
-      // v1.9.9: if Safe Corridor is actively executing and still collision-free,
-      // don't immediately overwrite it with the generic planner.
-      let allowUnified199=true;
-      if(decision.corridor195 && Number(decision.hardHits)===0){
-        const currentCorridorCheck199=trajectorySafety172(
-          p,info,decision.lane,Math.max(.88,Number(decision.speedMul)||1),
-          robustNearby192(p,10.5),.42
-        );
-        if(currentCorridorCheck199.hardHits===0 && currentCorridorCheck199.minGap>2.35){
-          allowUnified199=false;
+      if(ttc<=emergencyThreshold){
+        const act=buildEmergencyAction1102(p,now,info);
+        if(act){
+          p._emergencyAction1102=act;
+          p._emergencyActionUntil1102=act.until;
+          setAiState1102(p,AI_STATE_1102.EMERGENCY,now);
+          if(gauntletMode190)gauntletAnalytics191.emergencyFallbacks++;
+          decision=runEmergencyAction1102(p,now);
         }
       }
 
-      const survival172=allowUnified199?unifiedSurvivalPlanner172(p,now,info):null;
-      if(survival172){
-      decision={
-        ...decision,
-        lane:survival172.lane,
-        speedMul:survival172.speedMul,
-        dangerous:true,
-        unified172:true,
-        minGap:survival172.minGap,
-        risk:survival172.risk
-      };
+      if(!decision){
+        const corridor=safeCorridor195(p,now,info);
+        if(corridor){
+          p._executionPlan1101=buildExecutionPlan1101(p,now,info,corridor);
+          if(gauntletMode190)gauntletAnalytics191.executionPlans1101++;
+          if(!p._verifiedEscapePending1101)startVerifiedEscape1101(p,now);
 
-      // Cancel stale non-survival commitments.
-      p._freePlan130=null;p._freePlanUntil130=0;
-      p._controlMove130=null;p._controlMoveUntil130=0;
-      p._crowdPlan150=null;p._crowdPlanUntil150=0;
-      }else if(now<(p._unifiedUntil172||0)&&Number.isFinite(p._unifiedLane172)){
-        // Tiny continuity bias only; no hard lock.
-        decision={
-        ...decision,
-        lane:decision.lane*.82+p._unifiedLane172*.18,
-          speedMul:Math.max(.95,Number(decision.speedMul)||1)
-        };
+          setAiState1102(p,AI_STATE_1102.SURVIVAL,now);
+          const ex=executeEscapePlan1101(p,now,info);
+
+          if(ex){
+            decision={
+              ...ex,
+              execution1101:true,
+              corridor195:true,
+              minGap:corridor.minGap,
+              futureMinGap:corridor.futureMinGap,
+              hardHits:corridor.hardHits,
+              futureHardHits:corridor.futureHardHits,
+              reserve:corridor.reserve,
+              edgeEmergency:!!corridor.edgeEmergency,
+              risk:corridor.risk
+            };
+          }
+        }
+      }
+
+      if(!decision){
+        const maxLane=roadHalf120(p,info,info.prog);
+        const special=maybeSpecialControl197(p,now,info,maxLane);
+
+        if(special){
+          setAiState1102(p,AI_STATE_1102.SPECIAL,now);
+
+          let base=baseLane120(p,now,info,info.prog,maxLane);
+          const s=specialControlLane197(p,now,base,maxLane);
+
+          if(s.type){
+            decision={
+              lane:s.lane,
+              speedMul:s.speedMul,
+              dangerous:false,
+              special1102:true
+            };
+            p._visualSpin197=s.headingSpin||0;
+            p._reverseControl197=!!s.reverse;
+          }
+        }
+      }
+
+      if(!decision){
+        decision=freeDrivingDecision130(p,now,info);
       }
     }
 
+    // ----------------------------------------------------------
+    // Last-resort emergency override ONLY if state is not already emergency
+    // and a hard collision is imminent.
+    // ----------------------------------------------------------
+    if(p._aiState1102!==AI_STATE_1102.EMERGENCY){
+      const nearby=robustNearby192(p,7.5);
+      if(nearby.length){
+        const lane=Number(decision?.lane)||Number(p._lane120)||0;
+        const sm=Math.max(.82,Number(decision?.speedMul)||1);
+        const hardCheck=trajectorySafety172(p,info,lane,sm,nearby,.22);
+
+        if(hardCheck.hardHits>0 && hardCheck.minGap<1.15){
+          const act=buildEmergencyAction1102(p,now,info);
+          if(act){
+            p._emergencyAction1102=act;
+            p._emergencyActionUntil1102=act.until;
+            setAiState1102(p,AI_STATE_1102.EMERGENCY,now);
+
+            if(gauntletMode190)gauntletAnalytics191.emergencyFallbacks++;
+            decision=runEmergencyAction1102(p,now)||decision;
+          }
+        }
+      }
+    }
+
+    if(!decision){
+      decision=freeDrivingDecision130(p,now,info);
+    }
+
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.emergency193
-      ? "emergency-escape"
-      : (decision.execution1101
-      ? "execution-ai"
-      : (decision.corridor195
-      ? "safe-corridor"
-      : (decision.unified172
-      ? "unified-survival"
-      : (p._controlMove130?.type||"free-drive"))));
+    p.liveEvadeAction=
+      p._aiState1102===AI_STATE_1102.EMERGENCY?"emergency-state":
+      p._aiState1102===AI_STATE_1102.SURVIVAL?"execution-state":
+      p._aiState1102===AI_STATE_1102.SPECIAL?"special-control":
+      "free-drive";
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
-    updateVerifiedEscape1101(p,now);
+
     if(gauntletMode190){
       recordAvoidDecision191(p,decision,now);
       gauntletAnalytics191.executionReplans1101=players.reduce((s,q)=>s+(q._executionReplans1101||0),0);
       gauntletAnalytics191.executionCompletions1101=players.reduce((s,q)=>s+(q._executionCompleted1101||0),0);
+      gauntletAnalytics191.stateChanges1102=players.reduce((s,q)=>s+(q._aiStateChanges1102||0),0);
     }
 
     const sensor192=immediateSensorCheck192(p,9.5);
     p._debugDecision190={
-      action:decision.emergency193?"emergency-escape":(decision.execution1101?"execution-ai":(decision.corridor195?"safe-corridor":(decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive")))),
+      action:p.liveEvadeAction,
       lane:+(Number(decision.lane)||0).toFixed(2),
       predMin:Number.isFinite(decision.minGap)?+decision.minGap.toFixed(2):null,
       speedMul:+(Number(decision.speedMul)||1).toFixed(2),
@@ -13070,6 +13180,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(collideObservers120(p,now,frac))return;
     if(finishPlayer120(p,now,dt,frac))return;
   }
+
 
 
 
@@ -17440,6 +17551,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch1101();
+
+
+  function applyPatch1102(){
+    window.__OBSERVER_FM_V1102__={
+      unifiedStateMachine:true,
+      states:["NORMAL","SPECIAL_CONTROL","SURVIVAL_EXECUTION","EMERGENCY"],
+      exactlyOneStateOwner:true,
+      emergencyActionDurationMs:125,
+      emergencyNoPerMicrostepRestart:true,
+      specialControlProtected:true,
+      survivalExecutionProtected:true,
+      staleStateReset:true,
+      codeAudit1102:true
+    };
+  }
+  applyPatch1102();
 
   function v36SelfAudit(){
     const issues=[];
