@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.1";
+  const BUILD_ID = "v1.9.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1554,9 +1554,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   function pct191(v){return `${(Number(v)||0).toFixed(1)}%`;}
 
+
   function classifyDeath191(p,dbg,actual,nearbyCount){
-    const pred=Number(dbg?.predMin), action=String(dbg?.action||"");
-    if(!action||action==="free-drive")return "위험 미감지";
+    const pred=Number(dbg?.predMin);
+    const sensor=Number(dbg?.sensorNearest);
+    const action=String(dbg?.action||"");
+
+    if(Number.isFinite(sensor)&&sensor<4.5&&(!action||action==="free-drive"))return "위험 미감지";
+    if(Number.isFinite(pred)&&pred>20&&Number.isFinite(sensor)&&sensor<6)return "옵저버 예측 실패";
     if(Number.isFinite(pred)&&pred>4.0&&actual<1.5)return "충돌판정 불일치";
     if(Number.isFinite(pred)&&pred>3.2&&actual<2.0)return "옵저버 예측 실패";
     if(nearbyCount>=4)return "연속 위협 대응 실패";
@@ -1564,6 +1569,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(action.includes("survival")||action.includes("escape")||action.includes("veto"))return "경로 선택 실패";
     return "기타";
   }
+
 
   function recordGauntletProgress191(){
     if(!gauntletMode190||!players.length)return;
@@ -1582,25 +1588,52 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(n){gauntletAnalytics191.progressSamples++;gauntletAnalytics191.progressSum+=sum/n;}
   }
 
+
   function recordAvoidDecision191(p,decision,now){
     if(!gauntletMode190||!decision)return;
+
+    const sensor=immediateSensorCheck192(p,9.5);
+    const threatNow=sensor.count>0&&sensor.nearest<6.5;
+
+    if(threatNow&&!p._gaThreatFirstSeen192){
+      p._gaThreatFirstSeen192=now;
+      p._gaFirstCommandRecorded192=false;
+    }
+
+    const laneDelta=Math.abs((Number(decision.lane)||0)-(Number(p._lane120)||0));
+    const evasiveCommand=decision.dangerous||laneDelta>.15||Number(decision.speedMul)<.96;
+
+    if(threatNow&&p._gaThreatFirstSeen192&&!p._gaFirstCommandRecorded192&&evasiveCommand){
+      gauntletAnalytics191.reactionTimeTotalMs+=Math.max(0,now-p._gaThreatFirstSeen192);
+      gauntletAnalytics191.reactionSamples++;
+      p._gaFirstCommandRecorded192=true;
+    }
+
+    if(!threatNow){
+      p._gaThreatFirstSeen192=0;
+      p._gaFirstCommandRecorded192=false;
+    }
+
     if(decision.dangerous){
       gauntletAnalytics191.avoidAttempts++;
-      if(!p._gaDangerSeen191)p._gaDangerSeen191=now;
+      p._gaDangerSeen191=1;
+
       const pg=Number(decision.minGap);
       if(Number.isFinite(pg)){
         gauntletAnalytics191.predictedGapMin=Math.min(gauntletAnalytics191.predictedGapMin,pg);
-        gauntletAnalytics191.predictedGapTotal+=pg;gauntletAnalytics191.predictedGapSamples++;
+        gauntletAnalytics191.predictedGapTotal+=pg;
+        gauntletAnalytics191.predictedGapSamples++;
       }
       if(Number(decision.speedMul)<.95)gauntletAnalytics191.slowdowns++;
+
       const action=String(p.liveEvadeAction||"");
       if(action.includes("zig")||action.includes("doublemove")||action.includes("cutback"))gauntletAnalytics191.zigzags++;
-    }else if(p._gaDangerSeen191){
+    }else if(!threatNow&&p._gaDangerSeen191){
       gauntletAnalytics191.avoidSuccess++;
-      gauntletAnalytics191.reactionTimeTotalMs+=Math.max(0,now-p._gaDangerSeen191);
-      gauntletAnalytics191.reactionSamples++;p._gaDangerSeen191=0;
+      p._gaDangerSeen191=0;
     }
   }
+
 
   function finishGauntletAttempt191(now){
     const start=gauntletAnalytics191.attemptStartedAt||now;
@@ -1647,7 +1680,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(reasonHost)reasonHost.innerHTML=Object.entries(a.reasons).map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
 
     const logHost=document.getElementById("gauntletDeathLog191");
-    if(logHost)logHost.innerHTML=a.deathLog.map((d,i)=>`<tr><td>${i+1}</td><td>${d.wave}</td><td>${d.reason}</td><td>${d.action}</td><td>${d.predMin}</td><td>${d.actual}</td><td>${d.nearby}</td><td>${d.lane}</td><td>${d.progress}%</td><td>${d.speedMul}</td></tr>`).join("");
+    if(logHost)logHost.innerHTML=a.deathLog.map((d,i)=>`<tr><td>${i+1}</td><td>${d.wave}</td><td>${d.reason}</td><td>${d.action}</td><td>${d.predMin}</td><td>${d.sensorNearest??"-"}</td><td>${d.actual}</td><td>${d.nearby}</td><td>${d.lane}</td><td>${d.progress}%</td><td>${d.speedMul}</td></tr>`).join("");
   }
 
   function openGauntletAnalytics191(){const e=document.getElementById("gauntletAnalytics191");if(e)e.classList.remove("hidden");renderGauntletAnalytics191();}
@@ -11432,12 +11465,18 @@ function updateDestinyPlayer183(p,now,dt){
     for(const o of playerNearbyObservers(p,broad)){
       if(!sweptObserverHit120(p,o))continue;
       if(gauntletMode190){
-        const dbg=p._debugDecision190||{},actual=Math.hypot(p.x-o.x,p.y-o.y),nearCount=localObservers723(p,8.0).length;
+        const dbg=p._debugDecision190||{},actual=Math.hypot(p.x-o.x,p.y-o.y),nearCount=robustNearby192(p,8.0).length;
         const reason=classifyDeath191(p,dbg,actual,nearCount);
         gauntletStats190.deaths++;gauntletAnalytics191.avoidFail++;finishGauntletAttempt191(now);
         const w=gauntletAnalytics191.wave[gauntletWaveIndex190];if(w){w.attempts++;w.deaths++;}
         gauntletAnalytics191.reasons[reason]=(gauntletAnalytics191.reasons[reason]||0)+1;
-        const row={wave:GAUNTLET_WAVES_190[gauntletWaveIndex190]||"-",reason,action:dbg.action||"unknown",lane:dbg.lane??"-",predMin:dbg.predMin??"-",actual:+actual.toFixed(2),nearby:nearCount,progress:+(frac*100).toFixed(1),speedMul:dbg.speedMul??"-"};
+        const row={
+          wave:GAUNTLET_WAVES_190[gauntletWaveIndex190]||"-",
+          reason,action:dbg.action||"unknown",lane:dbg.lane??"-",
+          predMin:dbg.predMin??"-",sensorNearest:dbg.sensorNearest??"-",
+          actual:+actual.toFixed(2),nearby:nearCount,
+          progress:+(frac*100).toFixed(1),speedMul:dbg.speedMul??"-"
+        };
         gauntletAnalytics191.deathLog.unshift(row);gauntletAnalytics191.deathLog=gauntletAnalytics191.deathLog.slice(0,20);
         gauntletStats190.lastDeath={name:p.name,action:row.action,lane:row.lane,predMin:row.predMin,actual:row.actual,progress:row.progress};
       }
@@ -11925,11 +11964,15 @@ function updateDestinyPlayer183(p,now,dt){
 
   function predictedObserver172(o,t){
     const m=observerMotion131(o);
-    return {
-      x:o.x+(m.stopped?0:m.vx*t),
-      y:o.y+(m.stopped?0:m.vy*t),
-      stopped:m.stopped
-    };
+    let vx=m.stopped?0:(Number(m.vx)||0);
+    let vy=m.stopped?0:(Number(m.vy)||0);
+    const physicalMax=Math.max(1,(Number(o.speed)||9.72*OBS_SPEED_RATIO)*1.18);
+    const mag=Math.hypot(vx,vy);
+    if(mag>physicalMax){
+      const k=physicalMax/mag;
+      vx*=k;vy*=k;
+    }
+    return {x:o.x+vx*t,y:o.y+vy*t,stopped:m.stopped,vx,vy};
   }
   function reachableTrajectory172(p,info,targetLane,speedMul,horizon=1.7,stepDt=.05){
     const d=driver120(p);
@@ -12014,11 +12057,34 @@ function updateDestinyPlayer183(p,now,dt){
     return {minGap,hardHits,nearFrames,risk};
   }
 
+
+  function immediateSensorCheck192(p,radius=9.5){
+    let nearest=999,count=0;
+    const r2=radius*radius;
+    for(const o of observers){
+      const dx=o.x-p.x,dy=o.y-p.y,d2=dx*dx+dy*dy;
+      if(d2>r2)continue;
+      count++;
+      nearest=Math.min(nearest,Math.sqrt(d2));
+    }
+    return {count,nearest};
+  }
+
+  function robustNearby192(p,radius){
+    const out=[];
+    const r2=radius*radius;
+    for(const o of observers){
+      const dx=o.x-p.x,dy=o.y-p.y;
+      if(dx*dx+dy*dy<=r2)out.push(o);
+    }
+    return out;
+  }
+
   function unifiedSurvivalPlanner172(p,now,info){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
 
-    let nearby=localObservers723(p,13.5+d.prediction*2.4);
+    let nearby=robustNearby192(p,13.5+d.prediction*2.4);
     if(!nearby.length)return null;
 
     nearby=nearby
@@ -12032,13 +12098,22 @@ function updateDestinyPlayer183(p,now,dt){
 
     const currentSafety=trajectorySafety172(p,info,currentLane,currentSpeed,nearby,1.25);
 
+    const rawSensor192=immediateSensorCheck192(p,9.5);
+
     if(
       currentSafety.hardHits===0 &&
       currentSafety.nearFrames===0 &&
       currentSafety.minGap>4.5 &&
-      currentSafety.risk<.03
+      currentSafety.risk<.03 &&
+      !(rawSensor192.count>0 && rawSensor192.nearest<6.0)
     ){
       return null;
+    }
+
+    if(rawSensor192.count>0 && rawSensor192.nearest<6.0 && currentSafety.minGap>20){
+      currentSafety.minGap=rawSensor192.nearest;
+      currentSafety.risk=Math.max(currentSafety.risk,.45);
+      currentSafety.nearFrames=Math.max(currentSafety.nearFrames,1);
     }
 
     // v1.7.3: local evasions first.
@@ -12166,11 +12241,14 @@ function updateDestinyPlayer183(p,now,dt){
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
     if(gauntletMode190)recordAvoidDecision191(p,decision,now);
 
+    const sensor192=immediateSensorCheck192(p,9.5);
     p._debugDecision190={
       action:decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive"),
       lane:+(Number(decision.lane)||0).toFixed(2),
       predMin:Number.isFinite(decision.minGap)?+decision.minGap.toFixed(2):null,
-      speedMul:+(Number(decision.speedMul)||1).toFixed(2)
+      speedMul:+(Number(decision.speedMul)||1).toFixed(2),
+      sensorNearest:Number.isFinite(sensor192.nearest)?+sensor192.nearest.toFixed(2):null,
+      sensorCount:sensor192.count
     };
 
     const moved=movementStep120(p,now,dt,info,decision.lane,decision.speedMul);
@@ -12966,9 +13044,8 @@ function updateDestinyPlayer183(p,now,dt){
       // and observers have genuinely moved.
       playerNearbyFrameSerial++;
 
-      // Rebuild the spatial grid once at the start of a danger tick.
-      // 4ms observer motion is too small to justify rebuilding it five times.
-      if(s===0 && substeps>1){
+      // v1.9.2: refresh the spatial grid every danger microstep.
+      if(substeps>1){
         rebuildObserverGrid();
       }
 
@@ -16394,6 +16471,20 @@ function seasonCardHtml(p){
     window.__OBSERVER_FM_V191__={survivalAnalytics:true,waveAnalytics:true,deathReasonClassifier:true,recentDeathLogMax:20,avoidSuccessTracking:true,motionStatsTracking:true};
   }
   applyPatch191();
+
+
+  function applyPatch192(){
+    window.__OBSERVER_FM_V192__={
+      predictionSensorFix:true,
+      observerVelocityClamp:true,
+      dangerGridRefreshEveryMicrostep:true,
+      directSensorFailsafe:true,
+      robustNearbyDirectScan:true,
+      realReactionTimeMetric:true,
+      predictionVsSensorTelemetry:true
+    };
+  }
+  applyPatch192();
 
   function v36SelfAudit(){
     const issues=[];
