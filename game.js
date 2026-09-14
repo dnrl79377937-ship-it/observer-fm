@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.11.3";
+  const BUILD_ID = "v1.11.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10328,6 +10328,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(now>=a.until){
       p._executionOverlayBridge1113=null;
       p._executionOverlayResumes1113=(p._executionOverlayResumes1113||0)+1;
+      if(gauntletMode190)gauntletAnalytics191.executionOverlayResumes1113=(gauntletAnalytics191.executionOverlayResumes1113||0)+1;
       return null;
     }
     return {lane:a.lane,speedMul:a.speedMul,dangerous:true,execution1101:true,executionOverlayBridge1113:true,minGap:a.minGap,hardHits:a.hardHits};
@@ -11046,7 +11047,7 @@ function updateDestinyPlayer183(p,now,dt){
     // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
     // ----------------------------------------------------------
     if(!decision && state===AI_STATE_1102.SURVIVAL){
-      // v1.11.3: overlay bridge is a temporary decision only.
+      // v1.11.4 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
       let overlay1113=runExecutionOverlayBridge1113(p,now);
       let micro1107=null;
 
@@ -11067,6 +11068,7 @@ function updateDestinyPlayer183(p,now,dt){
             if(built1113){
               p._executionOverlayBridge1113=built1113;
               p._executionOverlayBridges1113=(p._executionOverlayBridges1113||0)+1;
+              if(gauntletMode190)gauntletAnalytics191.executionOverlayBridges1113=(gauntletAnalytics191.executionOverlayBridges1113||0)+1;
               overlay1113=runExecutionOverlayBridge1113(p,now);
             }
           }else if(check1113.hardHits>0 && check1113.minGap<1.35){
@@ -11331,8 +11333,6 @@ function updateDestinyPlayer183(p,now,dt){
       gauntletAnalytics191.stallRescues1110=players.reduce((s,q)=>s+(q._stallRescues1110||0),0);
       gauntletAnalytics191.denseExecutionStarts1111=players.reduce((s,q)=>s+(q._denseExecutionStarts1111||0),0);
       gauntletAnalytics191.denseEmergencyOverrides1111=players.reduce((s,q)=>s+(q._denseEmergencyOverrides1111||0),0);
-      gauntletAnalytics191.executionOverlayBridges1113=players.reduce((s,q)=>s+(q._executionOverlayBridges1113||0),0);
-      gauntletAnalytics191.executionOverlayResumes1113=players.reduce((s,q)=>s+(q._executionOverlayResumes1113||0),0);
       gauntletAnalytics191.stateChanges1102=players.reduce((s,q)=>s+(q._aiStateChanges1102||0),0);
     }
 
