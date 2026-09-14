@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.10.8";
+  const BUILD_ID = "v1.10.9";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -10209,18 +10209,23 @@ function updateDestinyPlayer183(p,now,dt){
 
     const current=Number(p._lane120)||0;
     const maxLane=roadHalf120(p,info,info.prog);
-    const nearby=robustNearby192(p,8.5);
+    const nearby=robustNearby192(p,9.0);
     if(!nearby.length)return null;
 
-    const offsets=[-.95,-.55,.55,.95];
-    const speeds=[.94,1.00];
-    const horizons=[.12,.20];
+    // v1.10.9 Micro-Dodge 2: immediate dodge + secondary collision screening.
+    // In dense crowds a tiny one-step dodge is too fragile, so let the
+    // existing Execution corridor own movement instead of fighting it.
+    if(nearby.length>=4)return null;
+
+    const offsets=[-.95,-.62,-.36,.36,.62,.95];
+    const speeds=[.92,.97,1.00];
+    const horizons=[.12,.20,.34,.52,.72];
     let best=null;
 
     for(const off of offsets){
       const lane=Math.max(-maxLane,Math.min(maxLane,current+off));
       for(const sm of speeds){
-        let hardHits=0,risk=0,minGap=999,nearFrames=0;
+        let hardHits=0,risk=0,minGap=999,nearFrames=0,futureHits=0,futureRisk=0;
 
         for(const h of horizons){
           const s=trajectorySafety172(p,info,lane,sm,nearby,h);
@@ -10228,24 +10233,34 @@ function updateDestinyPlayer183(p,now,dt){
           risk+=s.risk;
           minGap=Math.min(minGap,s.minGap);
           nearFrames+=s.nearFrames;
+          if(h>=.34){
+            futureHits+=s.hardHits;
+            futureRisk+=s.risk;
+          }
         }
 
         const edgeRatio=Math.abs(lane)/Math.max(.001,maxLane);
+        const moveCost=Math.abs(lane-current);
         const score=
-          hardHits*50000+
-          risk*180+
-          nearFrames*48+
-          Math.max(0,2.5-minGap)*120+
-          edgeRatio*.30;
+          hardHits*60000+
+          futureHits*90000+
+          risk*145+
+          futureRisk*220+
+          nearFrames*42+
+          Math.max(0,2.65-minGap)*135+
+          edgeRatio*.35+
+          moveCost*.20;
 
         if(!best||score<best.score){
-          best={lane,speedMul:sm,minGap,hardHits,score};
+          best={lane,speedMul:sm,minGap,hardHits,futureHits,score};
         }
       }
     }
 
     if(!best)return null;
-    return {lane:best.lane,speedMul:best.speedMul,minGap:best.minGap,hardHits:best.hardHits,until:now+70};
+    // Reject a dodge that merely postpones a predicted hard collision.
+    if(best.futureHits>0)return null;
+    return {lane:best.lane,speedMul:best.speedMul,minGap:best.minGap,hardHits:best.hardHits,until:now+82};
   }
 
   function runExecutionMicroDodge1107(p,now){
