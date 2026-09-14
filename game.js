@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.10.3";
+  const BUILD_ID = "v1.10.4";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,9 +1546,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,executionPartialReplans1103:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,executionPartialReplans1103:0,executionFailures1104:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
-    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"기타":0},
+    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"Emergency 진입 지연":0,"Execution 연속위협 실패":0,"기타":0},
     deathLog:[]
   };
 
@@ -1569,6 +1569,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(Math.abs(Number(p._lane120)||0)>2.35 && action==="safe-corridor")return "가장자리 고립";
     if(action==="safe-corridor" && Number.isFinite(pred) && pred<1.4)return "통로 선택 지연";
     if(Math.abs(Number(p._laneVelSec181)||0)<.35 && action.includes("survival"))return "이동속도 부족";
+    if(action==="emergency-state" && actual<.85)return "Emergency 진입 지연";
+    if(action==="execution-state" && nearbyCount>=4)return "Execution 연속위협 실패";
     if(action.includes("survival")||action.includes("escape")||action.includes("corridor")||action.includes("veto"))return "경로 선택 실패";
     return "기타";
   }
@@ -1697,7 +1699,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",a.executionPlans1101||0],["Execution 재계획",a.executionReplans1101||0],["부분 재계획",a.executionPartialReplans1103||0],["Execution 완료",a.executionCompletions1101||0],["Execution 완료율",a.executionPlans1101?((a.executionCompletions1101/a.executionPlans1101)*100).toFixed(1)+"%":"-"],["AI 상태 전환",a.stateChanges1102||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",a.executionPlans1101||0],["Execution 재계획",a.executionReplans1101||0],["부분 재계획",a.executionPartialReplans1103||0],["Execution 완료",a.executionCompletions1101||0],["Execution 실패",a.executionFailures1104||0],["Execution 완료율",a.executionPlans1101?((a.executionCompletions1101/a.executionPlans1101)*100).toFixed(1)+"%":"-"],["AI 상태 전환",a.stateChanges1102||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1950,6 +1952,7 @@ function spawnObservers(){
       p._safeCorridorLane195=NaN;p._safeCorridorUntil195=0;p._safeCorridorSwitches195=0;
       p._executionPlan1101=null;p._executionReplans1101=0;p._executionCompleted1101=0;
       p._executionPartialReplans1103=0;
+      p._executionFailed1104=0;p._executionJustFinished1104=0;
       p._verifiedEscapeStart1101=0;p._verifiedEscapeDeadline1101=0;p._verifiedEscapePending1101=false;
       p._aiState1102=AI_STATE_1102.NORMAL;p._aiStateSince1102=0;p._aiStateChanges1102=0;
       p._emergencyAction1102=null;p._emergencyActionUntil1102=0;
@@ -12408,7 +12411,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     if(!best)return null;
 
-    const duration=135;
+    const duration=150;
     return {
       createdAt:now,
       until:now+duration,
@@ -12569,6 +12572,7 @@ function updateDestinyPlayer183(p,now,dt){
   }
 
 
+
   function executeEscapePlan1101(p,now,info){
     const plan=p._executionPlan1101;
     if(!plan)return null;
@@ -12583,6 +12587,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(change==="FULL"){
       p._executionPlan1101=null;
       p._executionReplans1101=(p._executionReplans1101||0)+1;
+      p._executionFailed1104=(p._executionFailed1104||0)+1;
       return null;
     }
 
@@ -12595,21 +12600,22 @@ function updateDestinyPlayer183(p,now,dt){
     const current=Number(p._lane120)||0;
     const dist=Math.abs(target-current);
 
-    // Actual lane-arrival completion.
-    const reached=dist<.20;
-
-    // Per-stage timeout prevents getting stuck forever.
+    const reached=dist<.22;
     const timeout=Number(plan.stageTimeouts?.[phase])||170;
-    const timedOut=now-(plan.phaseStartedAt||plan.createdAt)>=timeout;
+    const elapsed=now-(plan.phaseStartedAt||plan.createdAt);
+    const timedOut=elapsed>=timeout;
 
+    // Complete current stage either by real arrival or timeout.
     if(reached||timedOut){
       plan.phase++;
       plan.phaseStartedAt=now;
 
+      // IMPORTANT: explicitly finish the plan here.
       if(plan.phase>=plan.points.length){
         plan.completed=true;
         p._executionPlan1101=null;
         p._executionCompleted1101=(p._executionCompleted1101||0)+1;
+        p._executionJustFinished1104=now;
         return null;
       }
 
@@ -12628,6 +12634,7 @@ function updateDestinyPlayer183(p,now,dt){
       phase1103:phase
     };
   }
+
 
 
   function startVerifiedEscape1101(p,now){
@@ -13087,8 +13094,10 @@ function updateDestinyPlayer183(p,now,dt){
       if(ex){
         decision={...ex,execution1101:true};
       }else{
+        // v1.10.4: execution ended or failed -> ALWAYS release ownership immediately.
         setAiState1102(p,AI_STATE_1102.NORMAL,now);
         state=AI_STATE_1102.NORMAL;
+        p._executionPlan1101=null;
       }
     }
 
@@ -13133,9 +13142,9 @@ function updateDestinyPlayer183(p,now,dt){
       const density=robustNearby192(p,7.5).length;
       const ttc=emergencyTtc195(p,info);
       const emergencyThreshold=
-        density>=5?.16:
-        density>=3?.14:
-        .11;
+        density>=5?.20:
+        density>=3?.17:
+        .13;
 
       if(ttc<=emergencyThreshold){
         const act=buildEmergencyAction1102(p,now,info);
@@ -13148,7 +13157,7 @@ function updateDestinyPlayer183(p,now,dt){
         }
       }
 
-      if(!decision){
+      if(!decision && now-(p._executionJustFinished1104||0)>55){
         const corridor=safeCorridor195(p,now,info);
         if(corridor){
           p._executionPlan1101=buildExecutionPlan1101(p,now,info,corridor);
@@ -13212,9 +13221,9 @@ function updateDestinyPlayer183(p,now,dt){
       if(nearby.length){
         const lane=Number(decision?.lane)||Number(p._lane120)||0;
         const sm=Math.max(.82,Number(decision?.speedMul)||1);
-        const hardCheck=trajectorySafety172(p,info,lane,sm,nearby,.22);
+        const hardCheck=trajectorySafety172(p,info,lane,sm,nearby,.28);
 
-        if(hardCheck.hardHits>0 && hardCheck.minGap<1.15){
+        if(hardCheck.hardHits>0 && hardCheck.minGap<1.35){
           const act=buildEmergencyAction1102(p,now,info);
           if(act){
             p._emergencyAction1102=act;
@@ -13246,6 +13255,7 @@ function updateDestinyPlayer183(p,now,dt){
       gauntletAnalytics191.executionReplans1101=players.reduce((s,q)=>s+(q._executionReplans1101||0),0);
       gauntletAnalytics191.executionCompletions1101=players.reduce((s,q)=>s+(q._executionCompleted1101||0),0);
       gauntletAnalytics191.executionPartialReplans1103=players.reduce((s,q)=>s+(q._executionPartialReplans1103||0),0);
+      gauntletAnalytics191.executionFailures1104=players.reduce((s,q)=>s+(q._executionFailed1104||0),0);
       gauntletAnalytics191.stateChanges1102=players.reduce((s,q)=>s+(q._aiStateChanges1102||0),0);
     }
 
@@ -17672,6 +17682,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch1103();
+
+
+  function applyPatch1104(){
+    window.__OBSERVER_FM_V1104__={
+      executionFinishFix:true,
+      explicitSurvivalStateRelease:true,
+      postExecutionCooldownMs:55,
+      earlierEmergencyEntry:true,
+      emergencyThresholdRange:".13-.20",
+      emergencyHardCheckHorizon:.28,
+      emergencyActionDurationMs:150,
+      executionFailureTelemetry:true,
+      codeAudit1104:true
+    };
+  }
+  applyPatch1104();
 
   function v36SelfAudit(){
     const issues=[];
