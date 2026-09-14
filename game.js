@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.4";
+  const BUILD_ID = "v1.9.5";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,7 +1546,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,earlyEscapes:0,escapeDirectionSwitches:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
     reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"기타":0},
     deathLog:[]
@@ -1616,9 +1616,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     if(decision.dangerous){
       gauntletAnalytics191.avoidAttempts++;
-      if(decision.emergency193)gauntletAnalytics191.emergencyEscapes++;
-      if(decision.early194)gauntletAnalytics191.earlyEscapes++;
-      gauntletAnalytics191.escapeDirectionSwitches=players.reduce((sum,q)=>sum+(q._escapeSwitches194||0),0);
+      if(decision.corridor195)gauntletAnalytics191.safeCorridors++;
+      if(decision.emergency193){
+        gauntletAnalytics191.emergencyEscapes++;
+        gauntletAnalytics191.emergencyFallbacks++;
+      }
+      gauntletAnalytics191.corridorSwitches=players.reduce((sum,q)=>sum+(q._safeCorridorSwitches195||0),0);
       p._gaDangerSeen191=1;
 
       const pg=Number(decision.minGap);
@@ -1675,7 +1678,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Early Escape",a.earlyEscapes||0],["Emergency Escape",a.emergencyEscapes||0],["회피방향 전환",a.escapeDirectionSwitches||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1926,6 +1929,7 @@ function spawnObservers(){
       p._unifiedLane172=NaN;p._unifiedUntil172=0;
       p._emergencyLane193=NaN;p._emergencyUntil193=0;
       p._escapeCommitSide194=0;p._escapeCommitUntil194=0;p._escapeSwitches194=0;
+      p._safeCorridorLane195=NaN;p._safeCorridorUntil195=0;p._safeCorridorSwitches195=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -11361,7 +11365,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     const emergencyBoost=
       (p.liveEvadeAction==="emergency-escape")?4.60:
-      ((p.liveEvadeAction==="early-escape")?3.85:
+      ((p.liveEvadeAction==="safe-corridor")?3.95:
       ((p.liveEvadeAction==="unified-survival")?3.35:
       ((p.liveEvadeAction==="free-path-dodge")?1.50:1)));
 
@@ -12165,6 +12169,55 @@ function updateDestinyPlayer183(p,now,dt){
   }
 
 
+
+  function safeCorridor195(p,now,info){
+    const d=driver120(p);
+    const maxLane=roadHalf120(p,info,info.prog);
+    const current=Number(p._lane120)||0;
+
+    let nearby=robustNearby192(p,13.0+d.prediction*2.0);
+    if(!nearby.length)return null;
+    nearby=nearby.map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
+      .sort((a,b)=>a.dist-b.dist).slice(0,18).map(x=>x.o);
+
+    const sensor=immediateSensorCheck192(p,10.0);
+    if(sensor.count===0||sensor.nearest>7.8)return null;
+
+    const lanes=[-1,-.78,-.56,-.34,-.16,0,.16,.34,.56,.78,1].map(v=>v*maxLane);
+    const speeds=[1.00,.96,.92,.86];
+    let best=null;
+
+    for(const lane of lanes){
+      for(const sm of speeds){
+        const s=trajectorySafety172(p,info,lane,sm,nearby,.95);
+        const score=
+          s.hardHits*25000+
+          s.risk*145+
+          s.nearFrames*40+
+          Math.max(0,4.2-s.minGap)*100+
+          Math.abs(lane-current)*.025+
+          (1-sm)*.018;
+        if(!best||score<best.score)best={lane,speedMul:sm,score,...s};
+      }
+    }
+    if(!best)return null;
+
+    const prev=Number(p._safeCorridorLane195);
+    if(Number.isFinite(prev)&&Math.abs(prev-best.lane)>.55){
+      p._safeCorridorSwitches195=(p._safeCorridorSwitches195||0)+1;
+    }
+    p._safeCorridorLane195=best.lane;
+    p._safeCorridorUntil195=now+45;
+
+    return {lane:best.lane,speedMul:best.speedMul,dangerous:true,corridor195:true,minGap:best.minGap,hardHits:best.hardHits,risk:best.risk};
+  }
+
+  function emergencyTtc195(p,info){
+    const threat=imminentThreat193(p,info);
+    if(!threat)return Infinity;
+    return Number.isFinite(threat.ttc)?threat.ttc:Infinity;
+  }
+
   function earlyEscape194(p,now,info){
     const f=smoothFrame120(info,info.prog);
     const nx=-f.uy,ny=f.ux;
@@ -12408,24 +12461,24 @@ function updateDestinyPlayer183(p,now,dt){
     // Calm-road decision: free route / competition / variety.
     let decision=freeDrivingDecision130(p,now,info);
 
-    const early194=earlyEscape194(p,now,info);
-    if(early194){
+    const corridor195=safeCorridor195(p,now,info);
+    if(corridor195){
       decision={
         ...decision,
-        lane:early194.lane,
-        speedMul:early194.speedMul,
+        lane:corridor195.lane,
+        speedMul:corridor195.speedMul,
         dangerous:true,
-        early194:true,
-        minGap:early194.minGap,
-        risk:1
+        corridor195:true,
+        minGap:corridor195.minGap,
+        risk:corridor195.risk
       };
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;
     }
 
-    // imminent collision still has absolute priority.
-    const emergency193=emergencyEscape193(p,now,info);
+    const ttc195=emergencyTtc195(p,info);
+    const emergency193=ttc195<=.20?emergencyEscape193(p,now,info):null;
     if(emergency193){
       decision={
         ...decision,
@@ -12471,8 +12524,8 @@ function updateDestinyPlayer183(p,now,dt){
     p.liveEvadeDanger=decision.dangerous?1:0;
     p.liveEvadeAction=decision.emergency193
       ? "emergency-escape"
-      : (decision.early194
-      ? "early-escape"
+      : (decision.corridor195
+      ? "safe-corridor"
       : (decision.unified172
       ? "unified-survival"
       : (p._controlMove130?.type||"free-drive")));
@@ -12482,7 +12535,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     const sensor192=immediateSensorCheck192(p,9.5);
     p._debugDecision190={
-      action:decision.emergency193?"emergency-escape":(decision.early194?"early-escape":(decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive"))),
+      action:decision.emergency193?"emergency-escape":(decision.corridor195?"safe-corridor":(decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive"))),
       lane:+(Number(decision.lane)||0).toFixed(2),
       predMin:Number.isFinite(decision.minGap)?+decision.minGap.toFixed(2):null,
       speedMul:+(Number(decision.speedMul)||1).toFixed(2),
@@ -16752,6 +16805,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch194();
+
+
+  function applyPatch195(){
+    window.__OBSERVER_FM_V195__={
+      safeCorridorPlanner:true,
+      corridorCandidates:11,
+      corridorLookaheadSec:.95,
+      fixedDirectionCommitRemoved:true,
+      emergencyOnlyBelowTtc:.20,
+      safeCorridorBoost:3.95,
+      emergencyFallbackTelemetry:true
+    };
+  }
+  applyPatch195();
 
   function v36SelfAudit(){
     const issues=[];
