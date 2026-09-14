@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.2";
+  const BUILD_ID = "v1.9.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,7 +1546,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
     reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"기타":0},
     deathLog:[]
@@ -1616,6 +1616,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     if(decision.dangerous){
       gauntletAnalytics191.avoidAttempts++;
+      if(decision.emergency193)gauntletAnalytics191.emergencyEscapes++;
       p._gaDangerSeen191=1;
 
       const pg=Number(decision.minGap);
@@ -1672,7 +1673,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Emergency Escape",a.emergencyEscapes||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1921,6 +1922,7 @@ function spawnObservers(){
       p._threatBurstUntil163=0;p._threatZigSide163=0;p._threatZigAt163=0;
       p._actualEscapeLane170=NaN;p._actualEscapeUntil170=0;
       p._unifiedLane172=NaN;p._unifiedUntil172=0;
+      p._emergencyLane193=NaN;p._emergencyUntil193=0;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -11355,8 +11357,9 @@ function updateDestinyPlayer183(p,now,dt){
     const control=d.control*.44+d.stability*.32+d.reaction*.12+d.consistency*.12;
 
     const emergencyBoost=
-      (p.liveEvadeAction==="unified-survival")?3.35:
-      ((p.liveEvadeAction==="free-path-dodge")?1.50:1);
+      (p.liveEvadeAction==="emergency-escape")?4.60:
+      ((p.liveEvadeAction==="unified-survival")?3.35:
+      ((p.liveEvadeAction==="free-path-dodge")?1.50:1));
 
     let laneVelSec=Number(p._laneVelSec181);
     if(!Number.isFinite(laneVelSec)){
@@ -12080,6 +12083,127 @@ function updateDestinyPlayer183(p,now,dt){
     return out;
   }
 
+
+  // ============================================================
+  // v1.9.3 EMERGENCY ESCAPE
+  // When collision is imminent, ignore racing-line logic and escape the
+  // collision circle as quickly as physically possible.
+  // ============================================================
+
+  function imminentThreat193(p,info){
+    const d=driver120(p);
+    const f=smoothFrame120(info,info.prog);
+    const nx=-f.uy,ny=f.ux;
+    let best=null;
+
+    for(const o of robustNearby192(p,8.5)){
+      const m=observerMotion131(o);
+      const rx=o.x-p.x,ry=o.y-p.y;
+      const fw=rx*f.ux+ry*f.uy;
+      const lat=rx*nx+ry*ny;
+      const dist=Math.hypot(rx,ry);
+
+      // Relative closing speed along the current heading.
+      const ovx=m.stopped?0:(Number(m.vx)||0);
+      const ovy=m.stopped?0:(Number(m.vy)||0);
+      const obsForward=ovx*f.ux+ovy*f.uy;
+      const playerForward=(Number(p.speed)||9.7);
+      const closing=Math.max(.1,playerForward-obsForward);
+
+      const ttc=(fw>0)?fw/closing:0;
+      const hitR=playerHitRadius764(p)+.35;
+
+      const threatening=
+        dist<hitR+3.1 ||
+        (fw>-.5 && fw<6.5 && Math.abs(lat)<hitR+2.2 && ttc<.85);
+
+      if(!threatening)continue;
+
+      const urgency=
+        (hitR+3.4-dist)*3.0 +
+        Math.max(0,.9-ttc)*5.0 +
+        Math.max(0,2.4-Math.abs(lat))*1.5;
+
+      if(!best||urgency>best.urgency){
+        best={o,m,dist,fw,lat,ttc,urgency,hitR};
+      }
+    }
+    return best;
+  }
+
+  function escapeCandidate193(p,info,threat,side,speedMul){
+    const d=driver120(p);
+    const current=Number(p._lane120)||0;
+    const maxLane=roadHalf120(p,info,info.prog);
+
+    // Don't jump full-width. Escape just beyond the collision corridor.
+    const basePush=
+      threat.dist<threat.hitR+1.2 ? 1.55 :
+      threat.dist<threat.hitR+2.0 ? 1.25 : .95;
+
+    const targetLane=Math.max(
+      -maxLane,
+      Math.min(maxLane,current+side*basePush)
+    );
+
+    const nearby=robustNearby192(p,10.5);
+    const s=trajectorySafety172(p,info,targetLane,speedMul,nearby,1.05);
+
+    // Strongly prioritize zero predicted hits.
+    const score=
+      s.hardHits*18000 +
+      s.risk*150 +
+      s.nearFrames*42 +
+      Math.max(0,4.1-s.minGap)*95 +
+      Math.abs(targetLane-current)*.020;
+
+    return {lane:targetLane,speedMul,score,...s};
+  }
+
+  function emergencyEscape193(p,now,info){
+    const threat=imminentThreat193(p,info);
+    if(!threat)return null;
+
+    // Primary escape direction = away from threat lateral side.
+    let primarySide=threat.lat>=0?-1:1;
+    if(Math.abs(threat.lat)<.18){
+      // Centered threat: use driver identity to split two racers.
+      primarySide=((p.sourceIndex??p.index??0)%2===0)?-1:1;
+    }
+
+    const candidates=[];
+    for(const side of [primarySide,-primarySide]){
+      // Speed choice is contextual:
+      // - if threat is directly ahead and moving slower/stopped, mild braking helps
+      // - if threat is offset and gap opens forward, keep or slightly raise speed
+      const directAhead=Math.abs(threat.lat)<1.1 && threat.fw>0;
+      const speeds=directAhead ? [.82,.90,.98] : [.94,1.00,1.03];
+
+      for(const sm of speeds){
+        candidates.push(escapeCandidate193(p,info,threat,side,sm));
+      }
+    }
+
+    candidates.sort((a,b)=>a.score-b.score);
+    const best=candidates[0];
+    if(!best)return null;
+
+    // Continuous re-plan: never hard-lock the previous emergency side.
+    p._emergencyLane193=best.lane;
+    p._emergencyUntil193=now+55;
+
+    return {
+      lane:best.lane,
+      speedMul:best.speedMul,
+      dangerous:true,
+      emergency193:true,
+      minGap:best.minGap,
+      hardHits:best.hardHits,
+      ttc:threat.ttc,
+      threatLat:threat.lat
+    };
+  }
+
   function unifiedSurvivalPlanner172(p,now,info){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
@@ -12205,11 +12329,26 @@ function updateDestinyPlayer183(p,now,dt){
     // Calm-road decision: free route / competition / variety.
     let decision=freeDrivingDecision130(p,now,info);
 
-    // v1.7.2: ONE survival planner owns all danger corrections.
-    // It can completely replace the calm-road choice, but no older danger layer
-    // is allowed to overwrite it afterward.
-    const survival172=unifiedSurvivalPlanner172(p,now,info);
-    if(survival172){
+    // v1.9.3: imminent collision gets absolute priority.
+    const emergency193=emergencyEscape193(p,now,info);
+    if(emergency193){
+      decision={
+        ...decision,
+        lane:emergency193.lane,
+        speedMul:emergency193.speedMul,
+        dangerous:true,
+        emergency193:true,
+        minGap:emergency193.minGap,
+        risk:1
+      };
+
+      p._freePlan130=null;p._freePlanUntil130=0;
+      p._controlMove130=null;p._controlMoveUntil130=0;
+      p._crowdPlan150=null;p._crowdPlanUntil150=0;
+    }else{
+      // Unified survival remains the general danger planner.
+      const survival172=unifiedSurvivalPlanner172(p,now,info);
+      if(survival172){
       decision={
         ...decision,
         lane:survival172.lane,
@@ -12224,26 +12363,29 @@ function updateDestinyPlayer183(p,now,dt){
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;
-    }else if(now<(p._unifiedUntil172||0)&&Number.isFinite(p._unifiedLane172)){
-      // Tiny continuity bias only; no hard lock.
-      decision={
+      }else if(now<(p._unifiedUntil172||0)&&Number.isFinite(p._unifiedLane172)){
+        // Tiny continuity bias only; no hard lock.
+        decision={
         ...decision,
         lane:decision.lane*.82+p._unifiedLane172*.18,
-        speedMul:Math.max(.95,Number(decision.speedMul)||1)
-      };
+          speedMul:Math.max(.95,Number(decision.speedMul)||1)
+        };
+      }
     }
 
     p.liveEvadeDanger=decision.dangerous?1:0;
-    p.liveEvadeAction=decision.unified172
+    p.liveEvadeAction=decision.emergency193
+      ? "emergency-escape"
+      : (decision.unified172
       ? "unified-survival"
-      : (p._controlMove130?.type||"free-drive");
+      : (p._controlMove130?.type||"free-drive"));
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
     if(gauntletMode190)recordAvoidDecision191(p,decision,now);
 
     const sensor192=immediateSensorCheck192(p,9.5);
     p._debugDecision190={
-      action:decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive"),
+      action:decision.emergency193?"emergency-escape":(decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive")),
       lane:+(Number(decision.lane)||0).toFixed(2),
       predMin:Number.isFinite(decision.minGap)?+decision.minGap.toFixed(2):null,
       speedMul:+(Number(decision.speedMul)||1).toFixed(2),
@@ -16485,6 +16627,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch192();
+
+
+  function applyPatch193(){
+    window.__OBSERVER_FM_V193__={
+      emergencyEscape:true,
+      emergencyPriorityAbsolute:true,
+      imminentTTCDetection:true,
+      continuousThreatReplan:true,
+      contextSpeedChoice:true,
+      emergencyLateralBoost:4.60,
+      singleThreatEscapeStrengthened:true
+    };
+  }
+  applyPatch193();
 
   function v36SelfAudit(){
     const issues=[];
