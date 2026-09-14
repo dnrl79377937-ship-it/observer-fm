@@ -22,7 +22,7 @@
   const mapSelectIcon774 = document.getElementById("mapSelectIcon774");
 
   let MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT=150; // fallback only; v1.2.0 uses observerCountForMap120() // max/default observer pool
+  const OBSERVER_COUNT=150; // fallback only; v1.2.2 uses observerCountForMap120() // max/default observer pool
   function observerCountForMap791(m=currentMap770()){
     if(m?.id==="double_hairpin") return 60;
     if(m?.id==="skyway") return 140;
@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.2.0";
+  const BUILD_ID = "v1.2.2";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -8901,7 +8901,7 @@ function updateDestinyPlayer183(p,now,dt){
 
 
   // ============================================================
-  // v1.2.0 UNIFIED MOVEMENT ENGINE
+  // v1.2.2 UNIFIED MOVEMENT ENGINE
   // One place owns player x/y. AI only supplies speed + target lane.
   // Legacy road recovery / teleport guards / rejoin projection do not touch
   // player coordinates while this engine is active.
@@ -9431,7 +9431,8 @@ function updateDestinyPlayer183(p,now,dt){
 
   function maybeSpecialControl197(p,now,info,maxLane){
     const sensor=immediateSensorCheck192(p,8.8);
-    if(sensor.count>0&&sensor.nearest<6.5)return null;
+    if(sensor.count===0)return null;
+    if(sensor.nearest<6.0)return null;
 
     if(now<(p._specialControlUntil197||0) && p._specialControl197){
       return p._specialControl197;
@@ -9439,7 +9440,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     const d=driver120(p);
     const creativity=(d.control*.45+d.route*.25+d.reaction*.15+d.consistency*.15);
-    const chance=.014+creativity*.024;
+    const chance=.006+creativity*.010;
 
     if(Math.random()>chance)return null;
 
@@ -11070,7 +11071,7 @@ function updateDestinyPlayer183(p,now,dt){
     // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
     // ----------------------------------------------------------
     if(!decision && state===AI_STATE_1102.SURVIVAL){
-      // v1.2.0 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
+      // v1.2.2 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
       let overlay1113=runExecutionOverlayBridge1113(p,now);
       let micro1107=null;
 
@@ -12189,7 +12190,7 @@ function updateDestinyPlayer183(p,now,dt){
       steps++;
     }
 
-    // v1.2.0: never repay a browser hitch as visible fast-forward.
+    // v1.2.2: never repay a browser hitch as visible fast-forward.
     if(steps>=MAX_SIM_STEPS && simAccumulator>=SIM_STEP_MS){
       // Drop old backlog completely. Leaving 95% of a step caused an alternating
       // 0-step/1-step cadence on some frame rates and looked like micro-stutter.
@@ -15572,12 +15573,12 @@ function seasonCardHtml(p){
 
 
 
-  // v1.2.0 canonical per-map Observer population.
+  // v1.2.2 canonical per-map Observer population.
   const MAP_OBSERVER_COUNTS_120=Object.freeze({
     blackhole:40,
     skycliff:100,
     space:130,
-    neon:150,
+    neon:100,
     starfish:180,
     destiny:180,
     ice:200,
@@ -15591,7 +15592,7 @@ function seasonCardHtml(p){
     if(id.includes("black")||name.includes("블랙홀"))return 40;
     if(id.includes("skycliff")||name.includes("스카이클리프"))return 100;
     if(id.includes("space")||name.includes("스페이스"))return 130;
-    if(id.includes("neon")||name.includes("네온드리프트"))return 150;
+    if(id.includes("neon")||name.includes("네온드리프트"))return 100;
     if(id.includes("star")||name.includes("스타피쉬"))return 180;
     if(id.includes("destiny")||name.includes("데스티니게이트"))return 180;
     if(id.includes("ice")||name.includes("아이스크라운"))return 200;
@@ -15618,9 +15619,9 @@ function seasonCardHtml(p){
 
 
   window.__OBSERVER_FM_V120__={
-    version:"v1.2.0",
+    version:"v1.2.2",
     mapObserverCounts:{
-      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":150,
+      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
       "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
       "하트":200,"사막오아시스":200
     },
@@ -15628,6 +15629,17 @@ function seasonCardHtml(p){
     aiFoundation:"v1.11.5",
     aiBehaviorChanged:false,
     forcedRiskTestButtonRemoved:true
+  };
+
+
+  window.__OBSERVER_FM_V121__={
+    version:"v1.2.2",
+    calmMovement:true,
+    flashyControlsReduced:true,
+    noObserverBackControlSuppressed:true,
+    idleLaneDeadZone:true,
+    aiFoundation:"v1.11.5",
+    observerCountsBase:"v1.2.0",neonDriftObserverCount:100
   };
 
   function v36SelfAudit(){
