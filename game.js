@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.11.2";
+  const BUILD_ID = "v1.11.3";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1533,9 +1533,9 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,executionPartialReplans1103:0,executionFailures1104:0,executionStageTimeouts1105:0,microDodges1107:0,microDodgeResumes1107:0,executionInvalidSudden1108:0,executionInvalidSideFlip1108:0,executionInvalidCrowd1108:0,executionTimedOut1108:0,stallRescues1110:0,denseExecutionStarts1111:0,denseEmergencyOverrides1111:0,executionBridges1112:0,executionEmergencyResumes1112:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,executionPartialReplans1103:0,executionFailures1104:0,executionStageTimeouts1105:0,microDodges1107:0,microDodgeResumes1107:0,executionInvalidSudden1108:0,executionInvalidSideFlip1108:0,executionInvalidCrowd1108:0,executionTimedOut1108:0,stallRescues1110:0,denseExecutionStarts1111:0,denseEmergencyOverrides1111:0,executionOverlayBridges1113:0,executionOverlayResumes1113:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
-    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"Emergency 경로 실패":0,"Execution 연속위협 실패":0,"Micro-Dodge 복합위협 실패":0,"Micro-Dodge 경로 실패":0,"Execution 경로 실패":0,"특이 컨트롤 중 충돌":0,"자유주행 위험 진입":0,"Execution-Emergency 브릿지 복합위협 실패":0,"Execution-Emergency 브릿지 경로 실패":0,"기타":0},
+    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"Emergency 경로 실패":0,"Execution 연속위협 실패":0,"Micro-Dodge 복합위협 실패":0,"Micro-Dodge 경로 실패":0,"Execution 경로 실패":0,"특이 컨트롤 중 충돌":0,"자유주행 위험 진입":0,"Execution Overlay 복합위협 실패":0,"Execution Overlay 경로 실패":0,"기타":0},
     deathLog:[]
   };
 
@@ -1556,8 +1556,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(Math.abs(Number(p._lane120)||0)>2.35 && action==="safe-corridor")return "가장자리 고립";
     if(action==="safe-corridor" && Number.isFinite(pred) && pred<1.4)return "통로 선택 지연";
     if(Math.abs(Number(p._laneVelSec181)||0)<.35 && action.includes("survival"))return "이동속도 부족";
-    if(action==="execution-emergency-bridge" && nearbyCount>=4)return "Execution-Emergency 브릿지 복합위협 실패";
-    if(action==="execution-emergency-bridge")return "Execution-Emergency 브릿지 경로 실패";
+    if(action==="execution-overlay-bridge" && nearbyCount>=4)return "Execution Overlay 복합위협 실패";
+    if(action==="execution-overlay-bridge")return "Execution Overlay 경로 실패";
     if(action==="emergency-state" && actual<.85)return "Emergency 경로 실패";
     if(action==="micro-dodge" && nearbyCount>=4)return "Micro-Dodge 복합위협 실패";
     if(action==="micro-dodge" && actual<.85)return "Micro-Dodge 경로 실패";
@@ -1696,7 +1696,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",(a.executionLifecycle1105?.CREATED??a.executionPlans1101??0)],["Execution 재계획",a.executionReplans1101||0],["부분 재계획",a.executionPartialReplans1103||0],["Execution 완료",(a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)],["Execution 실패",a.executionFailures1104||0],["단계 Timeout",a.executionStageTimeouts1105||0],["Execution 완료율",(a.executionLifecycle1105?.CREATED??a.executionPlans1101)?((((a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)/(a.executionLifecycle1105?.CREATED??a.executionPlans1101))*100).toFixed(1)+"%"):"-"],["AI 상태 전환",a.stateChanges1102||0],["Micro-Dodge",a.microDodges1107||0],["Execution 복귀",a.microDodgeResumes1107||0],["INVALID sudden",a.executionInvalidSudden1108||0],["부분재계획 side-flip",a.executionInvalidSideFlip1108||0],["부분재계획 crowd",a.executionInvalidCrowd1108||0],["Execution TIMEOUT",a.executionTimedOut1108||0],["Stall Rescue",a.stallRescues1110||0],["4+ Execution 우선",a.denseExecutionStarts1111||0],["4+ 긴급 강제전환",a.denseEmergencyOverrides1111||0],["Execution-Emergency Bridge",a.executionBridges1112||0],["Bridge 후 Execution 복귀",a.executionEmergencyResumes1112||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",(a.executionLifecycle1105?.CREATED??a.executionPlans1101??0)],["Execution 재계획",a.executionReplans1101||0],["부분 재계획",a.executionPartialReplans1103||0],["Execution 완료",(a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)],["Execution 실패",a.executionFailures1104||0],["단계 Timeout",a.executionStageTimeouts1105||0],["Execution 완료율",(a.executionLifecycle1105?.CREATED??a.executionPlans1101)?((((a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)/(a.executionLifecycle1105?.CREATED??a.executionPlans1101))*100).toFixed(1)+"%"):"-"],["AI 상태 전환",a.stateChanges1102||0],["Micro-Dodge",a.microDodges1107||0],["Execution 복귀",a.microDodgeResumes1107||0],["INVALID sudden",a.executionInvalidSudden1108||0],["부분재계획 side-flip",a.executionInvalidSideFlip1108||0],["부분재계획 crowd",a.executionInvalidCrowd1108||0],["Execution TIMEOUT",a.executionTimedOut1108||0],["Stall Rescue",a.stallRescues1110||0],["4+ Execution 우선",a.denseExecutionStarts1111||0],["4+ 긴급 강제전환",a.denseEmergencyOverrides1111||0],["Execution Overlay Bridge",a.executionOverlayBridges1113||0],["Overlay 종료 후 Execution 지속",a.executionOverlayResumes1113||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1977,7 +1977,7 @@ function spawnObservers(){
       p._executionInvalidSudden1108=0;p._executionInvalidSideFlip1108=0;p._executionInvalidCrowd1108=0;p._executionTimedOut1108=0;
       p._stallRescues1110=0;
       p._denseExecutionStarts1111=0;p._denseEmergencyOverrides1111=0;
-      p._executionEmergencyBridge1112=null;p._executionEmergencyResumes1112=0;
+      p._executionOverlayBridge1113=null;p._executionOverlayBridges1113=0;p._executionOverlayResumes1113=0;
       p._verifiedEscapeStart1101=0;p._verifiedEscapeDeadline1101=0;p._verifiedEscapePending1101=false;
       p._aiState1102=AI_STATE_1102.NORMAL;p._aiStateSince1102=0;p._aiStateChanges1102=0;
       p._emergencyAction1102=null;p._emergencyActionUntil1102=0;
@@ -10217,7 +10217,7 @@ function updateDestinyPlayer183(p,now,dt){
     const nearby=robustNearby192(p,9.0);
     if(!nearby.length)return null;
 
-    // v1.11.2 Micro-Dodge 2: immediate dodge + secondary collision screening.
+    // v1.11.3 Micro-Dodge 2: immediate dodge + secondary collision screening.
     // In dense crowds a tiny one-step dodge is too fragile, so let the
     // existing Execution corridor own movement instead of fighting it.
     if(nearby.length>=4)return null;
@@ -10288,20 +10288,19 @@ function updateDestinyPlayer183(p,now,dt){
   }
 
 
-  function buildExecutionEmergencyBridge1112(p,now,info){
+  function buildExecutionOverlayBridge1113(p,now,info){
     const plan=p._executionPlan1101;
     if(!plan)return null;
-
     const maxLane=roadHalf120(p,info,info.prog);
     const current=Number(p._lane120)||0;
     const phase=Math.max(0,Math.min((plan.points?.length||1)-1,plan.phase|0));
-    const executionTarget=Number(plan.points?.[phase]);
-    const baseLane=Number.isFinite(executionTarget)?executionTarget:current;
+    const target=Number(plan.points?.[phase]);
+    const baseLane=Number.isFinite(target)?target:current;
     const nearby=robustNearby192(p,9.0);
     if(!nearby.length)return null;
 
-    const corrections=[-.70,-.40,-.20,0,.20,.40,.70];
-    const speeds=[.92,.98,1.03];
+    const corrections=[-.55,-.30,-.15,0,.15,.30,.55];
+    const speeds=[.94,.99,1.03];
     const horizons=[.10,.18,.28,.40];
     let best=null;
 
@@ -10311,66 +10310,27 @@ function updateDestinyPlayer183(p,now,dt){
         let hardHits=0,risk=0,nearFrames=0,minGap=999;
         for(const h of horizons){
           const s=trajectorySafety172(p,info,lane,sm,nearby,h);
-          hardHits+=s.hardHits;
-          risk+=s.risk;
-          nearFrames+=s.nearFrames;
-          minGap=Math.min(minGap,s.minGap);
+          hardHits+=s.hardHits;risk+=s.risk;nearFrames+=s.nearFrames;minGap=Math.min(minGap,s.minGap);
         }
-
         const deviation=Math.abs(lane-baseLane);
         const edgeRatio=Math.abs(lane)/Math.max(.001,maxLane);
-        const score=
-          hardHits*70000+
-          risk*180+
-          nearFrames*52+
-          Math.max(0,2.8-minGap)*145+
-          deviation*1.8+
-          edgeRatio*.45;
-
-        if(!best||score<best.score){
-          best={lane,speedMul:sm,minGap,hardHits,score,deviation};
-        }
+        const score=hardHits*72000+risk*175+nearFrames*50+Math.max(0,2.7-minGap)*140+deviation*2.2+edgeRatio*.40;
+        if(!best||score<best.score)best={lane,speedMul:sm,minGap,hardHits,score};
       }
     }
-
     if(!best)return null;
-    return {
-      createdAt:now,
-      until:now+115,
-      lane:best.lane,
-      speedMul:best.speedMul,
-      minGap:best.minGap,
-      hardHits:best.hardHits,
-      resumeExecution:true,
-      bridge1112:true
-    };
+    return {lane:best.lane,speedMul:best.speedMul,minGap:best.minGap,hardHits:best.hardHits,until:now+100};
   }
 
-  function runExecutionEmergencyBridge1112(p,now){
-    const a=p._executionEmergencyBridge1112;
+  function runExecutionOverlayBridge1113(p,now){
+    const a=p._executionOverlayBridge1113;
     if(!a)return null;
-
     if(now>=a.until){
-      p._executionEmergencyBridge1112=null;
-      if(p._executionPlan1101){
-        setAiState1102(p,AI_STATE_1102.SURVIVAL,now);
-        p._executionEmergencyResumes1112=(p._executionEmergencyResumes1112||0)+1;
-      }else{
-        setAiState1102(p,AI_STATE_1102.NORMAL,now);
-      }
+      p._executionOverlayBridge1113=null;
+      p._executionOverlayResumes1113=(p._executionOverlayResumes1113||0)+1;
       return null;
     }
-
-    return {
-      lane:a.lane,
-      speedMul:a.speedMul,
-      dangerous:true,
-      emergency1102:true,
-      executionBridge1112:true,
-      execution1101:true,
-      minGap:a.minGap,
-      hardHits:a.hardHits
-    };
+    return {lane:a.lane,speedMul:a.speedMul,dangerous:true,execution1101:true,executionOverlayBridge1113:true,minGap:a.minGap,hardHits:a.hardHits};
   }
 
   function buildEmergencyAction1102(p,now,info){
@@ -10693,7 +10653,7 @@ function updateDestinyPlayer183(p,now,dt){
     const elapsed=now-(plan.phaseStartedAt||plan.createdAt);
     const timedOut=elapsed>=timeout;
 
-    // v1.11.2: before a dense stage actually times out, try one cheap
+    // v1.11.3: before a dense stage actually times out, try one cheap
     // partial replan so the unit can keep moving instead of expiring in place.
     if(!reached && !timedOut && elapsed>=timeout*.72 && (plan._stallAdjusted1110||0)<1){
       const sig1110=executionThreatSignature1101(p,info);
@@ -11073,14 +11033,12 @@ function updateDestinyPlayer183(p,now,dt){
     // EMERGENCY: owns movement until its short action completes.
     // ----------------------------------------------------------
     if(state===AI_STATE_1102.EMERGENCY){
-      const e=p._executionEmergencyBridge1112
-        ? runExecutionEmergencyBridge1112(p,now)
-        : runEmergencyAction1102(p,now);
-
+      const e=runEmergencyAction1102(p,now);
       if(e){
         decision=e;
       }else{
-        state=p._aiState1102;
+        setAiState1102(p,AI_STATE_1102.NORMAL,now);
+        state=AI_STATE_1102.NORMAL;
       }
     }
 
@@ -11088,20 +11046,30 @@ function updateDestinyPlayer183(p,now,dt){
     // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
     // ----------------------------------------------------------
     if(!decision && state===AI_STATE_1102.SURVIVAL){
-      // v1.10.7: micro-dodge never changes state or destroys the plan.
-      let micro1107=runExecutionMicroDodge1107(p,now);
+      // v1.11.3: overlay bridge is a temporary decision only.
+      let overlay1113=runExecutionOverlayBridge1113(p,now);
+      let micro1107=null;
 
-      if(!micro1107 && p._executionPlan1101){
-        const plan1107=p._executionPlan1101;
-        const phase1107=Math.max(0,Math.min((plan1107.points?.length||1)-1,plan1107.phase|0));
-        const target1107=Number(plan1107.points?.[phase1107]);
-        const lane1107=Number.isFinite(target1107)?target1107:(Number(p._lane120)||0);
-        const sm1107=Math.max(.90,Number(plan1107.speed?.[phase1107])||.95);
-        const nearby1107=robustNearby192(p,7.5);
+      if(!overlay1113)micro1107=runExecutionMicroDodge1107(p,now);
 
-        if(nearby1107.length){
-          const check1107=trajectorySafety172(p,info,lane1107,sm1107,nearby1107,.18);
-          if(check1107.hardHits>0 && check1107.minGap<1.35){
+      if(!overlay1113 && !micro1107 && p._executionPlan1101){
+        const plan1113=p._executionPlan1101;
+        const phase1113=Math.max(0,Math.min((plan1113.points?.length||1)-1,plan1113.phase|0));
+        const target1113=Number(plan1113.points?.[phase1113]);
+        const lane1113=Number.isFinite(target1113)?target1113:(Number(p._lane120)||0);
+        const sm1113=Math.max(.90,Number(plan1113.speed?.[phase1113])||.95);
+        const nearby1113=robustNearby192(p,7.5);
+
+        if(nearby1113.length){
+          const check1113=trajectorySafety172(p,info,lane1113,sm1113,nearby1113,.18);
+          if(nearby1113.length>=4 && check1113.hardHits>0 && check1113.minGap<1.10){
+            const built1113=buildExecutionOverlayBridge1113(p,now,info);
+            if(built1113){
+              p._executionOverlayBridge1113=built1113;
+              p._executionOverlayBridges1113=(p._executionOverlayBridges1113||0)+1;
+              overlay1113=runExecutionOverlayBridge1113(p,now);
+            }
+          }else if(check1113.hardHits>0 && check1113.minGap<1.35){
             const built1107=buildExecutionMicroDodge1107(p,now,info);
             if(built1107){
               p._microDodge1107=built1107;
@@ -11112,7 +11080,9 @@ function updateDestinyPlayer183(p,now,dt){
         }
       }
 
-      if(micro1107){
+      if(overlay1113){
+        decision=overlay1113;
+      }else if(micro1107){
         decision=micro1107;
       }else{
         const ex=executeEscapePlan1101(p,now,info);
@@ -11171,7 +11141,7 @@ function updateDestinyPlayer183(p,now,dt){
       const immediateEmergency1111=ttc<=.09;
       let corridorTried1111=false;
 
-      // v1.11.2 dense-threat priority:
+      // v1.11.3 dense-threat priority:
       // 4+ nearby threats should keep a planned escape corridor whenever possible.
       // Full emergency is reserved for truly immediate collision risk.
       if(dense1111 && !immediateEmergency1111 && now-(p._executionJustFinished1104||0)>55){
@@ -11301,36 +11271,16 @@ function updateDestinyPlayer183(p,now,dt){
                 }
               }
               decision=runExecutionMicroDodge1107(p,now)||decision;
-              if(!decision && hardCheck.minGap<.90){
-                traceEmergencyDetected1105(p,now);
-                traceEmergencyRequested1105(p,now);
-                const bridge1112=buildExecutionEmergencyBridge1112(p,now,info);
-                if(bridge1112){
-                  p._executionEmergencyBridge1112=bridge1112;
-                  setAiState1102(p,AI_STATE_1102.EMERGENCY,now);
-                  traceEmergencyEntered1105(p,now);
-                  if(gauntletMode190){
-                    gauntletAnalytics191.emergencyFallbacks++;
-                    gauntletAnalytics191.executionBridges1112=(gauntletAnalytics191.executionBridges1112||0)+1;
-                  }
-                  decision=runExecutionEmergencyBridge1112(p,now)||decision;
+            }else if(hardCheck.minGap<.95){
+              if(!p._executionOverlayBridge1113){
+                const built1113=buildExecutionOverlayBridge1113(p,now,info);
+                if(built1113){
+                  p._executionOverlayBridge1113=built1113;
+                  p._executionOverlayBridges1113=(p._executionOverlayBridges1113||0)+1;
+                  p._denseEmergencyOverrides1111=(p._denseEmergencyOverrides1111||0)+1;
                 }
               }
-            }else if(hardCheck.minGap<.85){
-              traceEmergencyDetected1105(p,now);
-              traceEmergencyRequested1105(p,now);
-              const bridge1112=buildExecutionEmergencyBridge1112(p,now,info);
-              if(bridge1112){
-                p._executionEmergencyBridge1112=bridge1112;
-                setAiState1102(p,AI_STATE_1102.EMERGENCY,now);
-                traceEmergencyEntered1105(p,now);
-                if(gauntletMode190){
-                  gauntletAnalytics191.emergencyFallbacks++;
-                  gauntletAnalytics191.executionBridges1112=(gauntletAnalytics191.executionBridges1112||0)+1;
-                }
-                decision=runExecutionEmergencyBridge1112(p,now)||decision;
-                p._denseEmergencyOverrides1111=(p._denseEmergencyOverrides1111||0)+1;
-              }
+              decision=runExecutionOverlayBridge1113(p,now)||decision;
             }
           }else{
             traceEmergencyDetected1105(p,now);
@@ -11356,7 +11306,7 @@ function updateDestinyPlayer183(p,now,dt){
 
     p.liveEvadeDanger=decision.dangerous?1:0;
     p.liveEvadeAction=
-      decision?.executionBridge1112?"execution-emergency-bridge":
+      decision?.executionOverlayBridge1113?"execution-overlay-bridge":
       decision?.microDodge1107?"micro-dodge":
       p._aiState1102===AI_STATE_1102.EMERGENCY?"emergency-state":
       p._aiState1102===AI_STATE_1102.SURVIVAL?"execution-state":
@@ -11381,7 +11331,8 @@ function updateDestinyPlayer183(p,now,dt){
       gauntletAnalytics191.stallRescues1110=players.reduce((s,q)=>s+(q._stallRescues1110||0),0);
       gauntletAnalytics191.denseExecutionStarts1111=players.reduce((s,q)=>s+(q._denseExecutionStarts1111||0),0);
       gauntletAnalytics191.denseEmergencyOverrides1111=players.reduce((s,q)=>s+(q._denseEmergencyOverrides1111||0),0);
-      gauntletAnalytics191.executionEmergencyResumes1112=players.reduce((s,q)=>s+(q._executionEmergencyResumes1112||0),0);
+      gauntletAnalytics191.executionOverlayBridges1113=players.reduce((s,q)=>s+(q._executionOverlayBridges1113||0),0);
+      gauntletAnalytics191.executionOverlayResumes1113=players.reduce((s,q)=>s+(q._executionOverlayResumes1113||0),0);
       gauntletAnalytics191.stateChanges1102=players.reduce((s,q)=>s+(q._aiStateChanges1102||0),0);
     }
 
@@ -15580,19 +15531,20 @@ function seasonCardHtml(p){
   applyPatch1111();
 
 
-  function applyPatch1112(){
-    window.__OBSERVER_FM_V1112__={
-      executionEmergencyBridge:true,
-      executionPlanContinuityPreserved:true,
-      bridgeDurationMs:115,
-      denseEmergencyUsesExecutionTarget:true,
-      microDodgeFallbackToBridge:true,
-      emergencyContinuityPriority:true,
+  function applyPatch1113(){
+    window.__OBSERVER_FM_V1113__={
+      restoredFrom:"v1.11.1",
+      normalExecutionCreationUntouched:true,
+      overlayBridge:true,
+      overlayDoesNotChangeState:true,
+      overlayPreservesExecutionPlan:true,
+      overlayDurationMs:100,
+      denseThreatOverlayOnly:true,
       allMapsSharedAI:true,
-      codeAudit1112:true
+      codeAudit1113:true
     };
   }
-  applyPatch1112();
+  applyPatch1113();
 
   function v36SelfAudit(){
     const issues=[];
