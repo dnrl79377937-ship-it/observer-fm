@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.8";
+  const BUILD_ID = "v1.9.9";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,7 +1546,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,backControls197:0,spin360s197:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
     reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"기타":0},
     deathLog:[]
@@ -1691,7 +1691,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤",a.specialControls197||0],["빽컨",a.backControls197||0],["360도컨",a.spin360s197||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1944,6 +1944,7 @@ function spawnObservers(){
       p._escapeCommitSide194=0;p._escapeCommitUntil194=0;p._escapeSwitches194=0;
       p._safeCorridorLane195=NaN;p._safeCorridorUntil195=0;p._safeCorridorSwitches195=0;
       p._specialControl197=null;p._specialControlUntil197=0;p._lastSpecialControl197=null;p._lastSpecialCountAt197=0;
+      p._visualSpin197=0;p._reverseControl197=false;
     });
     observers=spawnObservers();
     unifiedCameraLeader121=-1;unifiedCameraHoldUntil121=0;
@@ -11256,10 +11257,10 @@ function updateDestinyPlayer183(p,now,dt){
     };
   }
 
+
   function maybeSpecialControl197(p,now,info,maxLane){
-    // Never perform showy controls near danger.
-    const sensor=immediateSensorCheck192(p,8.5);
-    if(sensor.count>0&&sensor.nearest<7.2)return null;
+    const sensor=immediateSensorCheck192(p,8.8);
+    if(sensor.count>0&&sensor.nearest<7.4)return null;
 
     if(now<(p._specialControlUntil197||0) && p._specialControl197){
       return p._specialControl197;
@@ -11267,73 +11268,110 @@ function updateDestinyPlayer183(p,now,dt){
 
     const d=driver120(p);
     const creativity=(d.control*.45+d.route*.25+d.reaction*.15+d.consistency*.15);
-    const chance=.010+creativity*.018; // low but visibly present
+    const chance=.012+creativity*.020;
 
     if(Math.random()>chance)return null;
 
     const r=Math.random();
-    let type, duration, amp, speedMul=1;
+    let type,duration,amp,speedMul=1;
 
-    if(r<.28){
+    if(r<.30){
       type="zigzag";
-      duration=360+Math.random()*220;
-      amp=maxLane*(.18+.10*d.control);
+      duration=620+Math.random()*220;
+      amp=maxLane*(.28+.10*d.control);
     }else if(r<.50){
       type="backcontrol";
-      duration=220+Math.random()*140;
-      amp=maxLane*(.08+.05*d.control);
-      speedMul=.78;
+      duration=520+Math.random()*180;
+      amp=maxLane*(.10+.04*d.control);
+      speedMul=1;
     }else if(r<.67){
       type="spin360";
-      duration=420+Math.random()*180;
-      amp=maxLane*(.22+.08*d.control);
-      speedMul=.90;
-    }else if(r<.82){
+      duration=680+Math.random()*180;
+      amp=maxLane*(.10+.04*d.control);
+      speedMul=.93;
+    }else if(r<.84){
       type="feint";
-      duration=260+Math.random()*160;
-      amp=maxLane*(.16+.07*d.control);
+      duration=520+Math.random()*180;
+      amp=maxLane*(.24+.08*d.control);
     }else{
       type="cutback";
-      duration=300+Math.random()*180;
-      amp=maxLane*(.20+.08*d.control);
+      duration=580+Math.random()*180;
+      amp=maxLane*(.28+.08*d.control);
     }
 
     const side=((p.sourceIndex??p.index??0)%2===0)?-1:1;
-    p._specialControl197={type,start:now,duration,amp,side,speedMul};
+    const c={type,start:now,duration,amp,side,speedMul,completed:false,counted:false};
+    p._specialControl197=c;
     p._specialControlUntil197=now+duration;
-    return p._specialControl197;
+
+    // Attempt count only. Successful visible execution is counted later.
+    if(gauntletMode190){
+      gauntletAnalytics191.specialAttempts197=(gauntletAnalytics191.specialAttempts197||0)+1;
+    }
+
+    return c;
   }
 
   function specialControlLane197(p,now,base,maxLane){
     const c=p._specialControl197;
-    if(!c||now>=(p._specialControlUntil197||0)){
-      p._specialControl197=null;
-      return {lane:base,speedMul:1,type:null};
-    }
+    if(!c)return {lane:base,speedMul:1,type:null,headingSpin:0,reverse:false};
 
     const t=Math.max(0,Math.min(1,(now-c.start)/Math.max(1,c.duration)));
-    let off=0,speedMul=c.speedMul||1;
+
+    if(t>=1){
+      if(!c.counted){
+        c.counted=true;
+        c.completed=true;
+        if(gauntletMode190){
+          gauntletAnalytics191.specialControls197++;
+          if(c.type==="zigzag")gauntletAnalytics191.zigzags++;
+          if(c.type==="backcontrol")gauntletAnalytics191.backControls197++;
+          if(c.type==="spin360")gauntletAnalytics191.spin360s197++;
+        }
+      }
+      p._specialControl197=null;
+      p._specialControlUntil197=0;
+      return {lane:base,speedMul:1,type:null,headingSpin:0,reverse:false};
+    }
+
+    let off=0,speedMul=c.speedMul||1,headingSpin=0,reverse=false;
 
     if(c.type==="zigzag"){
-      off=Math.sin(t*Math.PI*4)*c.amp;
+      // 2.5 visible left-right cycles.
+      off=Math.sin(t*Math.PI*5)*c.amp;
     }else if(c.type==="backcontrol"){
+      // Real back-control: short reverse, then immediate forward recovery.
+      if(t<.24){
+        speedMul=-.34;
+        reverse=true;
+      }else if(t<.46){
+        speedMul=1.03;
+      }else{
+        speedMul=1.00;
+      }
       off=Math.sin(t*Math.PI)*c.amp*c.side;
-      speedMul=t<.42?.72:.98;
     }else if(c.type==="spin360"){
+      // Visual 360 heading rotation while mostly holding line.
+      headingSpin=t*Math.PI*2;
       off=Math.sin(t*Math.PI*2)*c.amp;
-      speedMul=.90;
+      speedMul=.93;
     }else if(c.type==="feint"){
-      off=(t<.45?1:-.65)*c.amp*c.side;
+      off=(t<.42?1:-.75)*c.amp*c.side;
     }else if(c.type==="cutback"){
-      off=(t<.50?1:-1)*c.amp*c.side;
+      if(t<.35)off=c.amp*c.side;
+      else if(t<.72)off=-c.amp*c.side;
+      else off=c.amp*.30*c.side;
     }
 
     return {
       lane:Math.max(-maxLane,Math.min(maxLane,base+off)),
       speedMul,
-      type:c.type
+      type:c.type,
+      headingSpin,
+      reverse
     };
   }
+
 
   function freeDrivingDecision130(p,now,info){
     const prog=info.prog;
@@ -11358,14 +11396,13 @@ function updateDestinyPlayer183(p,now,dt){
       if(special){
         const s=specialControlLane197(p,now,lane,maxLane);
         lane=s.lane;
-        speedMul*=s.speedMul;
-        if(p._lastSpecialControl197!==s.type || now-(p._lastSpecialCountAt197||0)>250){
-          gauntletAnalytics191.specialControls197++;
-          if(s.type==="backcontrol")gauntletAnalytics191.backControls197++;
-          if(s.type==="spin360")gauntletAnalytics191.spin360s197++;
-          p._lastSpecialCountAt197=now;
-        }
+        speedMul=s.speedMul;
         p._lastSpecialControl197=s.type;
+        p._visualSpin197=s.headingSpin||0;
+        p._reverseControl197=!!s.reverse;
+      }else{
+        p._visualSpin197=0;
+        p._reverseControl197=false;
       }
     }
 
@@ -11426,10 +11463,11 @@ function updateDestinyPlayer183(p,now,dt){
     const turnSeverity=Math.min(1,turn/.72);
     const cornerMul=Math.max(.84,1-turnSeverity*(.12*(1-cornerSkill)+.025));
 
-    const commandedSpeed=Math.max(0,Math.min(1.03,Number(speedMul)||0));
+    const rawCommand=Number(speedMul);
+    const commandedSpeed=Math.max(-.38,Math.min(1.03,Number.isFinite(rawCommand)?rawCommand:1));
     const rawStep=(p.speed||9.7)*commandedSpeed*cornerMul*dtSec;
-    const step=Math.max(0,Math.min(.245,rawStep));
-    const next=Math.min(info.total,prog+step);
+    const step=Math.max(-.085,Math.min(.245,rawStep));
+    const next=Math.max(0,Math.min(info.total,prog+step));
 
     const targetFrame=smoothFrame120(info,next);
 
@@ -12704,12 +12742,16 @@ function updateDestinyPlayer183(p,now,dt){
       p._freePlan130=null;p._freePlanUntil130=0;
       p._controlMove130=null;p._controlMoveUntil130=0;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;
+      if(p._specialControl197 && !p._specialControl197.completed && gauntletMode190){
+        gauntletAnalytics191.specialInterrupted197=(gauntletAnalytics191.specialInterrupted197||0)+1;
+      }
       p._specialControl197=null;p._specialControlUntil197=0;
+      p._visualSpin197=0;p._reverseControl197=false;
     }
 
     const ttc195=emergencyTtc195(p,info);
     const corridorBad195=!!(decision.corridor195 && Number(decision.hardHits)>0);
-    const emergency193=(ttc195<=.14 || corridorBad195)?emergencyEscape193(p,now,info):null;
+    const emergency193=(ttc195<=.10 || corridorBad195)?emergencyEscape193(p,now,info):null;
     if(emergency193){
       decision={
         ...decision,
@@ -12725,8 +12767,20 @@ function updateDestinyPlayer183(p,now,dt){
       p._controlMove130=null;p._controlMoveUntil130=0;
       p._crowdPlan150=null;p._crowdPlanUntil150=0;
     }else{
-      // Unified survival remains the general danger planner.
-      const survival172=unifiedSurvivalPlanner172(p,now,info);
+      // v1.9.9: if Safe Corridor is actively executing and still collision-free,
+      // don't immediately overwrite it with the generic planner.
+      let allowUnified199=true;
+      if(decision.corridor195 && Number(decision.hardHits)===0){
+        const currentCorridorCheck199=trajectorySafety172(
+          p,info,decision.lane,Math.max(.88,Number(decision.speedMul)||1),
+          robustNearby192(p,10.5),.42
+        );
+        if(currentCorridorCheck199.hardHits===0 && currentCorridorCheck199.minGap>2.35){
+          allowUnified199=false;
+        }
+      }
+
+      const survival172=allowUnified199?unifiedSurvivalPlanner172(p,now,info):null;
       if(survival172){
       decision={
         ...decision,
@@ -13783,6 +13837,12 @@ function updateDestinyPlayer183(p,now,dt){
     ctx.fill();
 
     return Math.ceil(visibleObserverRender.length/obsRenderStep);
+  }
+
+
+  function visualHeading199(p,baseAngle){
+    const spin=Number(p._visualSpin197)||0;
+    return baseAngle+spin;
   }
 
   function drawPlayer(p,view,rank){
@@ -17099,6 +17159,21 @@ function seasonCardHtml(p){
     };
   }
   applyPatch198();
+
+
+  function applyPatch199(){
+    window.__OBSERVER_FM_V199__={
+      realSpecialControls:true,
+      specialCompletionBasedStats:true,
+      visibleZigzagCycles:2.5,
+      realBackControl:true,
+      visualSpin360:true,
+      survivalCancelsSpecialControls:true,
+      safeCorridorExecutionAuthority:true,
+      emergencyOnlyBelowTtc:.10
+    };
+  }
+  applyPatch199();
 
   function v36SelfAudit(){
     const issues=[];
