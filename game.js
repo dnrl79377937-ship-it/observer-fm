@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.0";
+  const BUILD_ID = "v1.9.1";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1534,10 +1534,125 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     "좌우 동시 접근",
     "연속 군집"
   ];
+
   const gauntletStats190={
     attempts:0,deaths:0,clears:0,wavesPassed:0,
     lastDeath:null
   };
+
+  const gauntletAnalytics191={
+    attemptStartedAt:0,progressSamples:0,progressSum:0,bestProgress:0,
+    survivalTimeTotalMs:0,completedAttempts:0,
+    avoidAttempts:0,avoidSuccess:0,avoidFail:0,
+    reactionTimeTotalMs:0,reactionSamples:0,
+    predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,
+    wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
+    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"기타":0},
+    deathLog:[]
+  };
+
+  function pct191(v){return `${(Number(v)||0).toFixed(1)}%`;}
+
+  function classifyDeath191(p,dbg,actual,nearbyCount){
+    const pred=Number(dbg?.predMin), action=String(dbg?.action||"");
+    if(!action||action==="free-drive")return "위험 미감지";
+    if(Number.isFinite(pred)&&pred>4.0&&actual<1.5)return "충돌판정 불일치";
+    if(Number.isFinite(pred)&&pred>3.2&&actual<2.0)return "옵저버 예측 실패";
+    if(nearbyCount>=4)return "연속 위협 대응 실패";
+    if(Math.abs(Number(p._laneVelSec181)||0)<.35&&action.includes("survival"))return "이동속도 부족";
+    if(action.includes("survival")||action.includes("escape")||action.includes("veto"))return "경로 선택 실패";
+    return "기타";
+  }
+
+  function recordGauntletProgress191(){
+    if(!gauntletMode190||!players.length)return;
+    let sum=0,n=0;
+    for(const p of players){
+      if(!p)continue;
+      const prog=Math.max(0,Math.min(1,currentProgress(p)/(routeLength||1)));
+      sum+=prog;n++;gauntletAnalytics191.bestProgress=Math.max(gauntletAnalytics191.bestProgress,prog);
+      const lat=Math.abs(Number(p._lane120)||0);
+      gauntletAnalytics191.lateralTotal+=lat;gauntletAnalytics191.lateralSamples++;
+      gauntletAnalytics191.lateralMax=Math.max(gauntletAnalytics191.lateralMax,lat);
+      const s=Math.sign(Number(p._laneVelSec181)||0),prev=Math.sign(Number(p._gaPrevLatSign191)||0);
+      if(s&&prev&&s!==prev)gauntletAnalytics191.directionChanges++;
+      if(s)p._gaPrevLatSign191=s;
+    }
+    if(n){gauntletAnalytics191.progressSamples++;gauntletAnalytics191.progressSum+=sum/n;}
+  }
+
+  function recordAvoidDecision191(p,decision,now){
+    if(!gauntletMode190||!decision)return;
+    if(decision.dangerous){
+      gauntletAnalytics191.avoidAttempts++;
+      if(!p._gaDangerSeen191)p._gaDangerSeen191=now;
+      const pg=Number(decision.minGap);
+      if(Number.isFinite(pg)){
+        gauntletAnalytics191.predictedGapMin=Math.min(gauntletAnalytics191.predictedGapMin,pg);
+        gauntletAnalytics191.predictedGapTotal+=pg;gauntletAnalytics191.predictedGapSamples++;
+      }
+      if(Number(decision.speedMul)<.95)gauntletAnalytics191.slowdowns++;
+      const action=String(p.liveEvadeAction||"");
+      if(action.includes("zig")||action.includes("doublemove")||action.includes("cutback"))gauntletAnalytics191.zigzags++;
+    }else if(p._gaDangerSeen191){
+      gauntletAnalytics191.avoidSuccess++;
+      gauntletAnalytics191.reactionTimeTotalMs+=Math.max(0,now-p._gaDangerSeen191);
+      gauntletAnalytics191.reactionSamples++;p._gaDangerSeen191=0;
+    }
+  }
+
+  function finishGauntletAttempt191(now){
+    const start=gauntletAnalytics191.attemptStartedAt||now;
+    gauntletAnalytics191.survivalTimeTotalMs+=Math.max(0,now-start);
+    gauntletAnalytics191.completedAttempts++;
+    gauntletAnalytics191.attemptStartedAt=now;
+  }
+
+  function resetGauntletAnalytics191(){
+    Object.assign(gauntletAnalytics191,{
+      attemptStartedAt:gameNow(),progressSamples:0,progressSum:0,bestProgress:0,
+      survivalTimeTotalMs:0,completedAttempts:0,avoidAttempts:0,avoidSuccess:0,avoidFail:0,
+      reactionTimeTotalMs:0,reactionSamples:0,predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
+      lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,
+      wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),deathLog:[]
+    });
+    for(const k of Object.keys(gauntletAnalytics191.reasons))gauntletAnalytics191.reasons[k]=0;
+    gauntletStats190.attempts=gauntletStats190.deaths=gauntletStats190.clears=gauntletStats190.wavesPassed=0;gauntletStats190.lastDeath=null;
+    renderGauntletAnalytics191();renderGauntletHud190(gameNow());
+  }
+
+  function renderGauntletAnalytics191(){
+    const a=gauntletAnalytics191,attempts=gauntletStats190.attempts||0,clears=gauntletStats190.clears||0,deaths=gauntletStats190.deaths||0;
+    const completed=a.completedAttempts||Math.max(1,clears+deaths),avgTime=completed?a.survivalTimeTotalMs/completed/1000:0;
+    const avgProg=a.progressSamples?a.progressSum/a.progressSamples*100:0,clearRate=attempts?clears/attempts*100:0;
+    const avoidDen=a.avoidSuccess+a.avoidFail,avoidRate=avoidDen?a.avoidSuccess/avoidDen*100:0;
+    const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+    set("gaKpiAttempts191",attempts);set("gaKpiClears191",clears);set("gaKpiDeaths191",deaths);set("gaKpiClearRate191",pct191(clearRate));
+    set("gaKpiAvgTime191",`${avgTime.toFixed(1)}s`);set("gaKpiAvgProg191",pct191(avgProg));set("gaKpiBestProg191",pct191(a.bestProgress*100));set("gaKpiAvoidRate191",pct191(avoidRate));
+
+    const waveHost=document.getElementById("gauntletWaveTable191");
+    if(waveHost)waveHost.innerHTML='<table class="gauntlet-wave-table-191"><thead><tr><th>웨이브</th><th>시도</th><th>통과</th><th>사망</th><th>통과율</th></tr></thead><tbody>'+
+      a.wave.map(w=>`<tr><td>${w.name}</td><td>${w.attempts}</td><td>${w.passed}</td><td>${w.deaths}</td><td>${pct191(w.attempts?w.passed/w.attempts*100:0)}</td></tr>`).join("")+'</tbody></table>';
+
+    const aiHost=document.getElementById("gauntletAiStats191");
+    if(aiHost){
+      const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
+      const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns]];
+      aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
+    }
+
+    const reasonHost=document.getElementById("gauntletDeathReasons191");
+    if(reasonHost)reasonHost.innerHTML=Object.entries(a.reasons).map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
+
+    const logHost=document.getElementById("gauntletDeathLog191");
+    if(logHost)logHost.innerHTML=a.deathLog.map((d,i)=>`<tr><td>${i+1}</td><td>${d.wave}</td><td>${d.reason}</td><td>${d.action}</td><td>${d.predMin}</td><td>${d.actual}</td><td>${d.nearby}</td><td>${d.lane}</td><td>${d.progress}%</td><td>${d.speedMul}</td></tr>`).join("");
+  }
+
+  function openGauntletAnalytics191(){const e=document.getElementById("gauntletAnalytics191");if(e)e.classList.remove("hidden");renderGauntletAnalytics191();}
+  function closeGauntletAnalytics191(){const e=document.getElementById("gauntletAnalytics191");if(e)e.classList.add("hidden");}
+
 
   function spawnGauntletObservers190(){
     const arr=[];
@@ -1590,6 +1705,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const passed=prog>gauntletWaveProg190+7;
     const timedOut=now-gauntletWaveStarted190>3200;
     if(passed||timedOut){
+      const w=gauntletAnalytics191.wave[gauntletWaveIndex190];
+      if(w){w.attempts++;if(passed)w.passed++;}
       gauntletStats190.wavesPassed++;
       gauntletWaveIndex190=(gauntletWaveIndex190+1)%GAUNTLET_WAVES_190.length;
       gauntletWaveStarted190=now;
@@ -1701,7 +1818,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(hud)hud.classList.toggle("hidden",!gauntletMode190);
 
     if(gauntletMode190){
-      gauntletStats190.attempts++;
+      gauntletStats190.attempts++;gauntletAnalytics191.attemptStartedAt=gameNow();
       running=false;
       resetRound();
       if(typeof hideLeagueBoard100==="function")hideLeagueBoard100();
@@ -11272,7 +11389,7 @@ function updateDestinyPlayer183(p,now,dt){
   function finishPlayer120(p,now,dt,frac){
     if(frac<.997)return false;
     p.done=true;
-    if(gauntletMode190)gauntletStats190.clears++;
+    if(gauntletMode190){gauntletStats190.clears++;finishGauntletAttempt191(now);}
     const preciseNow=now-Math.min(20,Math.max(0,dt))*.15;
     p.finishTime=Math.max(0,preciseNow-raceStart);
     registerFinishRecord(p,p.finishTime);
@@ -11315,17 +11432,14 @@ function updateDestinyPlayer183(p,now,dt){
     for(const o of playerNearbyObservers(p,broad)){
       if(!sweptObserverHit120(p,o))continue;
       if(gauntletMode190){
-        const dbg=p._debugDecision190||{};
-        const actual=Math.hypot(p.x-o.x,p.y-o.y);
-        gauntletStats190.deaths++;
-        gauntletStats190.lastDeath={
-          name:p.name,
-          action:dbg.action||"unknown",
-          lane:dbg.lane??"-",
-          predMin:dbg.predMin??"-",
-          actual:+actual.toFixed(2),
-          progress:+(frac*100).toFixed(1)
-        };
+        const dbg=p._debugDecision190||{},actual=Math.hypot(p.x-o.x,p.y-o.y),nearCount=localObservers723(p,8.0).length;
+        const reason=classifyDeath191(p,dbg,actual,nearCount);
+        gauntletStats190.deaths++;gauntletAnalytics191.avoidFail++;finishGauntletAttempt191(now);
+        const w=gauntletAnalytics191.wave[gauntletWaveIndex190];if(w){w.attempts++;w.deaths++;}
+        gauntletAnalytics191.reasons[reason]=(gauntletAnalytics191.reasons[reason]||0)+1;
+        const row={wave:GAUNTLET_WAVES_190[gauntletWaveIndex190]||"-",reason,action:dbg.action||"unknown",lane:dbg.lane??"-",predMin:dbg.predMin??"-",actual:+actual.toFixed(2),nearby:nearCount,progress:+(frac*100).toFixed(1),speedMul:dbg.speedMul??"-"};
+        gauntletAnalytics191.deathLog.unshift(row);gauntletAnalytics191.deathLog=gauntletAnalytics191.deathLog.slice(0,20);
+        gauntletStats190.lastDeath={name:p.name,action:row.action,lane:row.lane,predMin:row.predMin,actual:row.actual,progress:row.progress};
       }
       p.hits++;
       p.dead=true;
@@ -12050,6 +12164,7 @@ function updateDestinyPlayer183(p,now,dt){
       : (p._controlMove130?.type||"free-drive");
 
     if(decision.dangerous)p.match.avoids=(p.match.avoids||0)+1;
+    if(gauntletMode190)recordAvoidDecision191(p,decision,now);
 
     p._debugDecision190={
       action:decision.unified172?"unified-survival":(p._controlMove130?.type||"free-drive"),
@@ -12891,7 +13006,7 @@ function updateDestinyPlayer183(p,now,dt){
     rebuildRaceFrameCache668(now);
     prevCamX730=camX;prevCamY730=camY;
     updateCamera(dt);
-    if(gauntletMode190)renderGauntletHud190(now);
+    if(gauntletMode190){recordGauntletProgress191();renderGauntletHud190(now);renderGauntletAnalytics191();}
     captureReplayFrame(now);
   }
 
@@ -14882,6 +14997,14 @@ function seasonCardHtml(p){
   if(leagueProceed100)leagueProceed100.addEventListener("click",beginLeagueSet100);
   const gauntletBtn190=document.getElementById("gauntletBtn190");
   if(gauntletBtn190)gauntletBtn190.addEventListener("click",()=>setGauntletMode190(!gauntletMode190));
+  const gauntletAnalyticsBtn191=document.getElementById("gauntletAnalyticsBtn191");
+  if(gauntletAnalyticsBtn191)gauntletAnalyticsBtn191.addEventListener("click",openGauntletAnalytics191);
+  const gauntletCloseAnalytics191=document.getElementById("gauntletCloseAnalytics191");
+  if(gauntletCloseAnalytics191)gauntletCloseAnalytics191.addEventListener("click",closeGauntletAnalytics191);
+  const gauntletResetStats191=document.getElementById("gauntletResetStats191");
+  if(gauntletResetStats191)gauntletResetStats191.addEventListener("click",resetGauntletAnalytics191);
+  const gauntletAnalyticsModal191=document.getElementById("gauntletAnalytics191");
+  if(gauntletAnalyticsModal191)gauntletAnalyticsModal191.addEventListener("click",e=>{if(e.target===gauntletAnalyticsModal191)closeGauntletAnalytics191();});
   startBtn.addEventListener("click",()=>{if(league100?.phase==="bracket")beginLeagueSet100();else start();});
   restartBtn.addEventListener("click",()=>{ reset(); start(); });
   document.getElementById("replayBtn").addEventListener("click",openReplay);
@@ -16265,6 +16388,12 @@ function seasonCardHtml(p){
     };
   }
   applyPatch190();
+
+
+  function applyPatch191(){
+    window.__OBSERVER_FM_V191__={survivalAnalytics:true,waveAnalytics:true,deathReasonClassifier:true,recentDeathLogMax:20,avoidSuccessTracking:true,motionStatsTracking:true};
+  }
+  applyPatch191();
 
   function v36SelfAudit(){
     const issues=[];
