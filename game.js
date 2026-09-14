@@ -22,7 +22,7 @@
   const mapSelectIcon774 = document.getElementById("mapSelectIcon774");
 
   let MAP_W = 172, MAP_H = 178;
-  const OBSERVER_COUNT = 130; // max/default observer pool
+  const OBSERVER_COUNT=150; // fallback only; v1.2.0 uses observerCountForMap120() // max/default observer pool
   function observerCountForMap791(m=currentMap770()){
     if(m?.id==="double_hairpin") return 60;
     if(m?.id==="skyway") return 140;
@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.11.5";
+  const BUILD_ID = "v1.2.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -11070,7 +11070,7 @@ function updateDestinyPlayer183(p,now,dt){
     // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
     // ----------------------------------------------------------
     if(!decision && state===AI_STATE_1102.SURVIVAL){
-      // v1.11.5 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
+      // v1.2.0 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
       let overlay1113=runExecutionOverlayBridge1113(p,now);
       let micro1107=null;
 
@@ -15571,6 +15571,35 @@ function seasonCardHtml(p){
   applyPatch1113();
 
 
+
+  // v1.2.0 canonical per-map Observer population.
+  const MAP_OBSERVER_COUNTS_120=Object.freeze({
+    blackhole:40,
+    skycliff:100,
+    space:130,
+    neon:150,
+    starfish:180,
+    destiny:180,
+    ice:200,
+    heart:200,
+    desert:200
+  });
+  function observerCountForMap120(map){
+    if(!map)return 150;
+    const id=String(map.id||map.key||map.slug||"").toLowerCase();
+    const name=String(map.name||map.label||"").replace(/\s+/g,"");
+    if(id.includes("black")||name.includes("블랙홀"))return 40;
+    if(id.includes("skycliff")||name.includes("스카이클리프"))return 100;
+    if(id.includes("space")||name.includes("스페이스"))return 130;
+    if(id.includes("neon")||name.includes("네온드리프트"))return 150;
+    if(id.includes("star")||name.includes("스타피쉬"))return 180;
+    if(id.includes("destiny")||name.includes("데스티니게이트"))return 180;
+    if(id.includes("ice")||name.includes("아이스크라운"))return 200;
+    if(id.includes("heart")||name.includes("하트"))return 200;
+    if(id.includes("desert")||name.includes("사막오아시스"))return 200;
+    return 150;
+  }
+
   function applyPatch1115(){
     window.__OBSERVER_FM_V1115__={
       aiBehaviorFrozen:true,
@@ -15586,6 +15615,20 @@ function seasonCardHtml(p){
     };
   }
   applyPatch1115();
+
+
+  window.__OBSERVER_FM_V120__={
+    version:"v1.2.0",
+    mapObserverCounts:{
+      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":150,
+      "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
+      "하트":200,"사막오아시스":200
+    },
+    sharedAIAllMaps:true,
+    aiFoundation:"v1.11.5",
+    aiBehaviorChanged:false,
+    forcedRiskTestButtonRemoved:true
+  };
 
   function v36SelfAudit(){
     const issues=[];
