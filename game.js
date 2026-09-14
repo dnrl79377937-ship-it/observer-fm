@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.11.4";
+  const BUILD_ID = "v1.11.5";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1533,7 +1533,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,executionPartialReplans1103:0,executionFailures1104:0,executionStageTimeouts1105:0,microDodges1107:0,microDodgeResumes1107:0,executionInvalidSudden1108:0,executionInvalidSideFlip1108:0,executionInvalidCrowd1108:0,executionTimedOut1108:0,stallRescues1110:0,denseExecutionStarts1111:0,denseEmergencyOverrides1111:0,executionOverlayBridges1113:0,executionOverlayResumes1113:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,emergencyEdgeCorridors198:0,reserveTotal:0,reserveSamples:0,specialControls197:0,specialAttempts197:0,specialInterrupted197:0,backControls197:0,spin360s197:0,chainedSuccess1100:0,chainedFail1100:0,futureOptionsTotal1100:0,futureOptionsSamples1100:0,executionPlans1101:0,executionReplans1101:0,executionCompletions1101:0,stateChanges1102:0,executionPartialReplans1103:0,executionFailures1104:0,executionStageTimeouts1105:0,microDodges1107:0,microDodgeResumes1107:0,executionInvalidSudden1108:0,executionInvalidSideFlip1108:0,executionInvalidCrowd1108:0,executionTimedOut1108:0,stallRescues1110:0,denseExecutionStarts1111:0,denseEmergencyOverrides1111:0,executionOverlayBridges1113:0,executionOverlayResumes1113:0,executionOverlayActive1115:0,executionOverlayAccountingError1115:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
     reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"Emergency 경로 실패":0,"Execution 연속위협 실패":0,"Micro-Dodge 복합위협 실패":0,"Micro-Dodge 경로 실패":0,"Execution 경로 실패":0,"특이 컨트롤 중 충돌":0,"자유주행 위험 진입":0,"Execution Overlay 복합위협 실패":0,"Execution Overlay 경로 실패":0,"기타":0},
     deathLog:[]
@@ -1696,7 +1696,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",(a.executionLifecycle1105?.CREATED??a.executionPlans1101??0)],["Execution 재계획",a.executionReplans1101||0],["부분 재계획",a.executionPartialReplans1103||0],["Execution 완료",(a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)],["Execution 실패",a.executionFailures1104||0],["단계 Timeout",a.executionStageTimeouts1105||0],["Execution 완료율",(a.executionLifecycle1105?.CREATED??a.executionPlans1101)?((((a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)/(a.executionLifecycle1105?.CREATED??a.executionPlans1101))*100).toFixed(1)+"%"):"-"],["AI 상태 전환",a.stateChanges1102||0],["Micro-Dodge",a.microDodges1107||0],["Execution 복귀",a.microDodgeResumes1107||0],["INVALID sudden",a.executionInvalidSudden1108||0],["부분재계획 side-flip",a.executionInvalidSideFlip1108||0],["부분재계획 crowd",a.executionInvalidCrowd1108||0],["Execution TIMEOUT",a.executionTimedOut1108||0],["Stall Rescue",a.stallRescues1110||0],["4+ Execution 우선",a.denseExecutionStarts1111||0],["4+ 긴급 강제전환",a.denseEmergencyOverrides1111||0],["Execution Overlay Bridge",a.executionOverlayBridges1113||0],["Overlay 종료 후 Execution 지속",a.executionOverlayResumes1113||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["긴급 가장자리",a.emergencyEdgeCorridors198||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"],["특이 컨트롤 시도",a.specialAttempts197||0],["특이 컨트롤 완료",a.specialControls197||0],["특이 완료율",a.specialAttempts197?((a.specialControls197/a.specialAttempts197)*100).toFixed(1)+"%":"-"],["중도 취소",a.specialInterrupted197||0],["빽컨 완료",a.backControls197||0],["360도컨 완료",a.spin360s197||0],["연속 회피 성공",a.chainedSuccess1100||0],["연속 회피 실패",a.chainedFail1100||0],["평균 다음 탈출경로",a.futureOptionsSamples1100?(a.futureOptionsTotal1100/a.futureOptionsSamples1100).toFixed(2):"-"],["Execution Plan",(a.executionLifecycle1105?.CREATED??a.executionPlans1101??0)],["Execution 재계획",a.executionReplans1101||0],["부분 재계획",a.executionPartialReplans1103||0],["Execution 완료",(a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)],["Execution 실패",a.executionFailures1104||0],["단계 Timeout",a.executionStageTimeouts1105||0],["Execution 완료율",(a.executionLifecycle1105?.CREATED??a.executionPlans1101)?((((a.executionLifecycle1105?.COMPLETED??a.executionCompletions1101??0)/(a.executionLifecycle1105?.CREATED??a.executionPlans1101))*100).toFixed(1)+"%"):"-"],["AI 상태 전환",a.stateChanges1102||0],["Micro-Dodge",a.microDodges1107||0],["Execution 복귀",a.microDodgeResumes1107||0],["INVALID sudden",a.executionInvalidSudden1108||0],["부분재계획 side-flip",a.executionInvalidSideFlip1108||0],["부분재계획 crowd",a.executionInvalidCrowd1108||0],["Execution TIMEOUT",a.executionTimedOut1108||0],["Stall Rescue",a.stallRescues1110||0],["4+ Execution 우선",a.denseExecutionStarts1111||0],["4+ 긴급 강제전환",a.denseEmergencyOverrides1111||0],["Execution Overlay Bridge",a.executionOverlayBridges1113||0],["Overlay 종료 후 Execution 지속",a.executionOverlayResumes1113||0],["현재 Overlay 실행중",a.executionOverlayActive1115||0],["Overlay 집계 오류",a.executionOverlayAccountingError1115||0]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -1978,6 +1978,7 @@ function spawnObservers(){
       p._stallRescues1110=0;
       p._denseExecutionStarts1111=0;p._denseEmergencyOverrides1111=0;
       p._executionOverlayBridge1113=null;p._executionOverlayBridges1113=0;p._executionOverlayResumes1113=0;
+      p._lastExecutionOverlayId1115=0;
       p._verifiedEscapeStart1101=0;p._verifiedEscapeDeadline1101=0;p._verifiedEscapePending1101=false;
       p._aiState1102=AI_STATE_1102.NORMAL;p._aiStateSince1102=0;p._aiStateChanges1102=0;
       p._emergencyAction1102=null;p._emergencyActionUntil1102=0;
@@ -10322,13 +10323,35 @@ function updateDestinyPlayer183(p,now,dt){
     return {lane:best.lane,speedMul:best.speedMul,minGap:best.minGap,hardHits:best.hardHits,until:now+100};
   }
 
+
+  let executionOverlaySeq1115=0;
+
+  function startExecutionOverlayBridge1115(p,built){
+    if(!p||!built)return false;
+    const id=++executionOverlaySeq1115;
+    built.overlayId1115=id;
+    built.countedStart1115=true;
+    p._executionOverlayBridge1113=built;
+    p._executionOverlayBridges1113=(p._executionOverlayBridges1113||0)+1;
+    p._lastExecutionOverlayId1115=id;
+    if(gauntletMode190){
+      gauntletAnalytics191.executionOverlayBridges1113=(gauntletAnalytics191.executionOverlayBridges1113||0)+1;
+    }
+    return true;
+  }
+
   function runExecutionOverlayBridge1113(p,now){
     const a=p._executionOverlayBridge1113;
     if(!a)return null;
     if(now>=a.until){
       p._executionOverlayBridge1113=null;
-      p._executionOverlayResumes1113=(p._executionOverlayResumes1113||0)+1;
-      if(gauntletMode190)gauntletAnalytics191.executionOverlayResumes1113=(gauntletAnalytics191.executionOverlayResumes1113||0)+1;
+      if(a.countedStart1115 && !a.countedResume1115){
+        a.countedResume1115=true;
+        p._executionOverlayResumes1113=(p._executionOverlayResumes1113||0)+1;
+        if(gauntletMode190){
+          gauntletAnalytics191.executionOverlayResumes1113=(gauntletAnalytics191.executionOverlayResumes1113||0)+1;
+        }
+      }
       return null;
     }
     return {lane:a.lane,speedMul:a.speedMul,dangerous:true,execution1101:true,executionOverlayBridge1113:true,minGap:a.minGap,hardHits:a.hardHits};
@@ -11047,7 +11070,7 @@ function updateDestinyPlayer183(p,now,dt){
     // SURVIVAL EXECUTION: A -> B -> C sequence owns movement.
     // ----------------------------------------------------------
     if(!decision && state===AI_STATE_1102.SURVIVAL){
-      // v1.11.4 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
+      // v1.11.5 FINAL FOUNDATION: overlay bridge is temporary; Execution ownership is preserved.
       let overlay1113=runExecutionOverlayBridge1113(p,now);
       let micro1107=null;
 
@@ -11065,10 +11088,7 @@ function updateDestinyPlayer183(p,now,dt){
           const check1113=trajectorySafety172(p,info,lane1113,sm1113,nearby1113,.18);
           if(nearby1113.length>=4 && check1113.hardHits>0 && check1113.minGap<1.10){
             const built1113=buildExecutionOverlayBridge1113(p,now,info);
-            if(built1113){
-              p._executionOverlayBridge1113=built1113;
-              p._executionOverlayBridges1113=(p._executionOverlayBridges1113||0)+1;
-              if(gauntletMode190)gauntletAnalytics191.executionOverlayBridges1113=(gauntletAnalytics191.executionOverlayBridges1113||0)+1;
+            if(built1113 && startExecutionOverlayBridge1115(p,built1113)){
               overlay1113=runExecutionOverlayBridge1113(p,now);
             }
           }else if(check1113.hardHits>0 && check1113.minGap<1.35){
@@ -11276,9 +11296,7 @@ function updateDestinyPlayer183(p,now,dt){
             }else if(hardCheck.minGap<.95){
               if(!p._executionOverlayBridge1113){
                 const built1113=buildExecutionOverlayBridge1113(p,now,info);
-                if(built1113){
-                  p._executionOverlayBridge1113=built1113;
-                  p._executionOverlayBridges1113=(p._executionOverlayBridges1113||0)+1;
+                if(built1113 && startExecutionOverlayBridge1115(p,built1113)){
                   p._denseEmergencyOverrides1111=(p._denseEmergencyOverrides1111||0)+1;
                 }
               }
@@ -11333,6 +11351,12 @@ function updateDestinyPlayer183(p,now,dt){
       gauntletAnalytics191.stallRescues1110=players.reduce((s,q)=>s+(q._stallRescues1110||0),0);
       gauntletAnalytics191.denseExecutionStarts1111=players.reduce((s,q)=>s+(q._denseExecutionStarts1111||0),0);
       gauntletAnalytics191.denseEmergencyOverrides1111=players.reduce((s,q)=>s+(q._denseEmergencyOverrides1111||0),0);
+      gauntletAnalytics191.executionOverlayActive1115=players.reduce((s,q)=>s+(q._executionOverlayBridge1113?1:0),0);
+      gauntletAnalytics191.executionOverlayAccountingError1115=Math.max(
+        0,
+        (gauntletAnalytics191.executionOverlayResumes1113||0)-
+        (gauntletAnalytics191.executionOverlayBridges1113||0)
+      );
       gauntletAnalytics191.stateChanges1102=players.reduce((s,q)=>s+(q._aiStateChanges1102||0),0);
     }
 
@@ -15545,6 +15569,23 @@ function seasonCardHtml(p){
     };
   }
   applyPatch1113();
+
+
+  function applyPatch1115(){
+    window.__OBSERVER_FM_V1115__={
+      aiBehaviorFrozen:true,
+      basedOn:"v1.11.4",
+      overlayAccountingCentralized:true,
+      overlayResumeCountBoundToStart:true,
+      overlayAccountingInvariant:"resume <= start",
+      executionCoreUnchanged:true,
+      emergencyCoreUnchanged:true,
+      allMapsSharedAI:true,
+      finalFoundationValidation:true,
+      codeAudit1115:true
+    };
+  }
+  applyPatch1115();
 
   function v36SelfAudit(){
     const issues=[];
