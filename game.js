@@ -33,7 +33,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.9.5";
+  const BUILD_ID = "v1.9.6";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -1546,13 +1546,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     avoidAttempts:0,avoidSuccess:0,avoidFail:0,
     reactionTimeTotalMs:0,reactionSamples:0,
     predictedGapMin:Infinity,predictedGapTotal:0,predictedGapSamples:0,
-    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,emergencyEscapes:0,
+    lateralTotal:0,lateralSamples:0,lateralMax:0,directionChanges:0,zigzags:0,slowdowns:0,emergencyEscapes:0,safeCorridors:0,corridorSwitches:0,emergencyFallbacks:0,edgeCorridorSelections:0,reserveTotal:0,reserveSamples:0,emergencyEscapes:0,
     wave:GAUNTLET_WAVES_190.map(name=>({name,attempts:0,passed:0,deaths:0})),
-    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"기타":0},
+    reasons:{"위험 미감지":0,"경로 선택 실패":0,"이동속도 부족":0,"연속 위협 대응 실패":0,"옵저버 예측 실패":0,"충돌판정 불일치":0,"가장자리 고립":0,"통로 선택 지연":0,"기타":0},
     deathLog:[]
   };
 
   function pct191(v){return `${(Number(v)||0).toFixed(1)}%`;}
+
 
 
   function classifyDeath191(p,dbg,actual,nearbyCount){
@@ -1564,11 +1565,14 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(Number.isFinite(pred)&&pred>20&&Number.isFinite(sensor)&&sensor<6)return "옵저버 예측 실패";
     if(Number.isFinite(pred)&&pred>4.0&&actual<1.5)return "충돌판정 불일치";
     if(Number.isFinite(pred)&&pred>3.2&&actual<2.0)return "옵저버 예측 실패";
-    if(nearbyCount>=4)return "연속 위협 대응 실패";
-    if(Math.abs(Number(p._laneVelSec181)||0)<.35&&action.includes("survival"))return "이동속도 부족";
-    if(action.includes("survival")||action.includes("escape")||action.includes("veto"))return "경로 선택 실패";
+    if(nearbyCount>=5)return "연속 위협 대응 실패";
+    if(Math.abs(Number(p._lane120)||0)>2.35 && action==="safe-corridor")return "가장자리 고립";
+    if(action==="safe-corridor" && Number.isFinite(pred) && pred<1.4)return "통로 선택 지연";
+    if(Math.abs(Number(p._laneVelSec181)||0)<.35 && action.includes("survival"))return "이동속도 부족";
+    if(action.includes("survival")||action.includes("escape")||action.includes("corridor")||action.includes("veto"))return "경로 선택 실패";
     return "기타";
   }
+
 
 
   function recordGauntletProgress191(){
@@ -1616,7 +1620,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     if(decision.dangerous){
       gauntletAnalytics191.avoidAttempts++;
-      if(decision.corridor195)gauntletAnalytics191.safeCorridors++;
+      if(decision.corridor195){
+        gauntletAnalytics191.safeCorridors++;
+        const rr=Number(decision.reserve);
+        if(Number.isFinite(rr)){
+          gauntletAnalytics191.reserveTotal+=rr;
+          gauntletAnalytics191.reserveSamples++;
+          if(rr<.18)gauntletAnalytics191.edgeCorridorSelections++;
+        }
+      }
       if(decision.emergency193){
         gauntletAnalytics191.emergencyEscapes++;
         gauntletAnalytics191.emergencyFallbacks++;
@@ -1678,7 +1690,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(aiHost){
       const predAvg=a.predictedGapSamples?a.predictedGapTotal/a.predictedGapSamples:0,reactAvg=a.reactionSamples?a.reactionTimeTotalMs/a.reactionSamples:0;
       const latAvg=a.lateralSamples?a.lateralTotal/a.lateralSamples:0;
-      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0]];
+      const items=[["회피 시도",a.avoidAttempts],["회피 성공",a.avoidSuccess],["회피 실패",a.avoidFail],["평균 반응시간",`${reactAvg.toFixed(0)}ms`],["평균 예측 안전거리",predAvg.toFixed(2)],["최저 예측 안전거리",Number.isFinite(a.predictedGapMin)?a.predictedGapMin.toFixed(2):"-"],["평균 좌우 이동",latAvg.toFixed(2)],["최대 좌우 이동",a.lateralMax.toFixed(2)],["방향 전환",a.directionChanges],["지그재그/변칙",a.zigzags],["감속 횟수",a.slowdowns],["Safe Corridor",a.safeCorridors||0],["Corridor 변경",a.corridorSwitches||0],["Emergency Fallback",a.emergencyFallbacks||0],["가장자리 Corridor",a.edgeCorridorSelections||0],["평균 Escape Reserve",a.reserveSamples?(a.reserveTotal/a.reserveSamples).toFixed(2):"-"]];
       aiHost.innerHTML=items.map(([k,v])=>`<div class="gauntlet-stat-box-191"><span>${k}</span><b>${v}</b></div>`).join("");
     }
 
@@ -12170,47 +12182,110 @@ function updateDestinyPlayer183(p,now,dt){
 
 
 
+
   function safeCorridor195(p,now,info){
     const d=driver120(p);
     const maxLane=roadHalf120(p,info,info.prog);
     const current=Number(p._lane120)||0;
 
-    let nearby=robustNearby192(p,13.0+d.prediction*2.0);
+    let nearby=robustNearby192(p,14.5+d.prediction*2.2);
     if(!nearby.length)return null;
-    nearby=nearby.map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
-      .sort((a,b)=>a.dist-b.dist).slice(0,18).map(x=>x.o);
 
-    const sensor=immediateSensorCheck192(p,10.0);
-    if(sensor.count===0||sensor.nearest>7.8)return null;
+    nearby=nearby
+      .map(o=>({o,dist:Math.hypot(o.x-p.x,o.y-p.y)}))
+      .sort((a,b)=>a.dist-b.dist)
+      .slice(0,20)
+      .map(x=>x.o);
 
-    const lanes=[-1,-.78,-.56,-.34,-.16,0,.16,.34,.56,.78,1].map(v=>v*maxLane);
-    const speeds=[1.00,.96,.92,.86];
+    const sensor=immediateSensorCheck192(p,10.5);
+    if(sensor.count===0||sensor.nearest>8.4)return null;
+
+    const laneFracs=[-1,-.82,-.66,-.50,-.34,-.18,0,.18,.34,.50,.66,.82,1];
+    const lanes=laneFracs.map(v=>v*maxLane);
+    const speeds=[1.00,.97,.93,.89,.84];
+
     let best=null;
 
     for(const lane of lanes){
       for(const sm of speeds){
-        const s=trajectorySafety172(p,info,lane,sm,nearby,.95);
-        const score=
-          s.hardHits*25000+
-          s.risk*145+
-          s.nearFrames*40+
-          Math.max(0,4.2-s.minGap)*100+
-          Math.abs(lane-current)*.025+
-          (1-sm)*.018;
-        if(!best||score<best.score)best={lane,speedMul:sm,score,...s};
+        // stage 1: immediate safety
+        const near=trajectorySafety172(p,info,lane,sm,nearby,.78);
+
+        // stage 2: continuation / next-escape safety
+        const far=trajectorySafety172(p,info,lane,sm,nearby,1.32);
+
+        const edgeRatio=Math.abs(lane)/Math.max(.001,maxLane);
+        const reserve=Math.max(0,1-edgeRatio); // 1=center, 0=edge
+        const lateralMove=Math.abs(lane-current);
+
+        // Strong edge penalty unless hard-hit count is actually improved.
+        let edgePenalty=0;
+        if(edgeRatio>.82) edgePenalty+=(edgeRatio-.82)*3.8;
+        if(edgeRatio>.92) edgePenalty+=1.10;
+
+        // Prefer lanes that leave escape room on BOTH sides.
+        // This is the core v1.9.6 "escape reserve" value.
+        const escapeReserve=reserve*2.4;
+
+        let score=
+          near.hardHits*30000 +
+          far.hardHits*18000 +
+          near.risk*165 +
+          far.risk*95 +
+          near.nearFrames*46 +
+          far.nearFrames*24 +
+          Math.max(0,4.4-near.minGap)*115 +
+          Math.max(0,3.8-far.minGap)*55 +
+          lateralMove*.022 +
+          (1-sm)*.014 +
+          edgePenalty -
+          escapeReserve;
+
+        // if two options have the same hard-hit result, reward future freedom more
+        if(near.hardHits===0 && far.hardHits===0){
+          score-=reserve*1.1;
+        }
+
+        if(!best||score<best.score){
+          best={
+            lane,speedMul:sm,score,
+            hardHits:near.hardHits,
+            futureHardHits:far.hardHits,
+            minGap:near.minGap,
+            futureMinGap:far.minGap,
+            risk:near.risk,
+            reserve,
+            edgeRatio
+          };
+        }
       }
     }
+
     if(!best)return null;
 
     const prev=Number(p._safeCorridorLane195);
-    if(Number.isFinite(prev)&&Math.abs(prev-best.lane)>.55){
+    if(Number.isFinite(prev)&&Math.abs(prev-best.lane)>.48){
       p._safeCorridorSwitches195=(p._safeCorridorSwitches195||0)+1;
     }
-    p._safeCorridorLane195=best.lane;
-    p._safeCorridorUntil195=now+45;
 
-    return {lane:best.lane,speedMul:best.speedMul,dangerous:true,corridor195:true,minGap:best.minGap,hardHits:best.hardHits,risk:best.risk};
+    p._safeCorridorLane195=best.lane;
+    p._safeCorridorUntil195=now+55;
+
+    return {
+      lane:best.lane,
+      speedMul:best.speedMul,
+      dangerous:true,
+      corridor195:true,
+      minGap:best.minGap,
+      futureMinGap:best.futureMinGap,
+      hardHits:best.hardHits,
+      futureHardHits:best.futureHardHits,
+      risk:best.risk,
+      reserve:best.reserve,
+      edgeRatio:best.edgeRatio
+    };
   }
+
 
   function emergencyTtc195(p,info){
     const threat=imminentThreat193(p,info);
@@ -12470,6 +12545,10 @@ function updateDestinyPlayer183(p,now,dt){
         dangerous:true,
         corridor195:true,
         minGap:corridor195.minGap,
+        futureMinGap:corridor195.futureMinGap,
+        hardHits:corridor195.hardHits,
+        futureHardHits:corridor195.futureHardHits,
+        reserve:corridor195.reserve,
         risk:corridor195.risk
       };
       p._freePlan130=null;p._freePlanUntil130=0;
@@ -12478,7 +12557,8 @@ function updateDestinyPlayer183(p,now,dt){
     }
 
     const ttc195=emergencyTtc195(p,info);
-    const emergency193=ttc195<=.20?emergencyEscape193(p,now,info):null;
+    const corridorBad195=!!(decision.corridor195 && Number(decision.hardHits)>0);
+    const emergency193=(ttc195<=.14 || corridorBad195)?emergencyEscape193(p,now,info):null;
     if(emergency193){
       decision={
         ...decision,
@@ -12540,7 +12620,9 @@ function updateDestinyPlayer183(p,now,dt){
       predMin:Number.isFinite(decision.minGap)?+decision.minGap.toFixed(2):null,
       speedMul:+(Number(decision.speedMul)||1).toFixed(2),
       sensorNearest:Number.isFinite(sensor192.nearest)?+sensor192.nearest.toFixed(2):null,
-      sensorCount:sensor192.count
+      sensorCount:sensor192.count,
+      futureMinGap:Number.isFinite(decision.futureMinGap)?+decision.futureMinGap.toFixed(2):null,
+      reserve:Number.isFinite(decision.reserve)?+decision.reserve.toFixed(2):null
     };
 
     const moved=movementStep120(p,now,dt,info,decision.lane,decision.speedMul);
@@ -16819,6 +16901,22 @@ function seasonCardHtml(p){
     };
   }
   applyPatch195();
+
+
+  function applyPatch196(){
+    window.__OBSERVER_FM_V196__={
+      escapeReserve:true,
+      twoStageCorridor:true,
+      nearLookaheadSec:.78,
+      futureLookaheadSec:1.32,
+      corridorCandidates:13,
+      speedCandidates:5,
+      emergencyOnlyBelowTtc:.14,
+      edgePenalty:true,
+      futureEscapeRoomScoring:true
+    };
+  }
+  applyPatch196();
 
   function v36SelfAudit(){
     const issues=[];
