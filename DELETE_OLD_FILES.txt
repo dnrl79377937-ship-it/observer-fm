@@ -1,8 +1,3 @@
-After v1.53.0 is confirmed working, these obsolete Clover assets can be deleted:
-map_clover_131.png
-map_clover_142.png
-map_clover_150.png
-map_clover_151.png
-map_clover_152.png
-
-v1.53.0 loads game-v153.js directly. The old game.js is no longer loaded by index.html and can be deleted after verification.
+After v1.54.0 works, delete:
+game-v153.js
+map_clover_153.png
