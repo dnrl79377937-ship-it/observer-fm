@@ -16220,3 +16220,107 @@ function observerCountForMap120(map){
     clover.racingLineMode772='clover-6-3-1-12-11-9-7-6-full-road-v1.45.0';
   }
   applyPatch1450();
+
+// ============================================================
+// v1.46.0 — THREE-LEAF CLOVER STRICT VISIBLE-ROAD LAP
+// One authoritative centre path only. No shortcut/rejoin branch may select
+// a neighbouring clover road. Route: 6 -> 3 -> 1 -> 12 -> 11 -> 9 -> 7 -> 6.
+// ============================================================
+(function applyPatch1460(){
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(!clover)return;
+  clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+  clover.image='map_clover_142.png?v=1460';
+  clover.imageSize={w:1284,h:1225}; clover.logicalSize={w:178,h:170};
+
+  // Traced against the visible centre of the light-green road in map_clover_142.png.
+  // The points deliberately stay on the OUTER continuous clover lap and never use
+  // the central plaza as a shortcut between leaves.
+  const route=[
+    // 6 stem -> 7/right-entry junction
+    [89,166],[89,158],[89,150],[89,142],[89,134],[89,126],[96,120],[106,117],
+    // lower-right arc -> 3 o'clock
+    [118,121],[132,126],[146,126],[158,120],[167,111],[171,100],[171,89],[166,80],[157,74],[146,71],[134,72],[123,76],[115,82],
+    // 3 -> 1: stay on the visible upper-right connector, never turn down to 6
+    [110,88],[108,79],[111,69],[117,61],[124,54],[129,45],[131,35],[128,25],[121,18],[111,14],[100,12],[89,12],
+    // 12 -> 11 across the full top leaf
+    [78,12],[67,14],[58,19],[51,27],[48,37],[49,47],[54,56],[61,63],[68,69],
+    // 11 -> 9 via upper-left connector and full left leaf
+    [64,76],[57,72],[47,70],[36,71],[25,76],[16,84],[11,94],[10,105],[14,115],[22,123],[33,128],[45,130],[57,128],[67,123],[75,117],
+    // 9 -> 7 lower-left arc -> lower junction
+    [79,111],[82,116],[78,121],[70,126],[60,130],[49,132],[38,131],[29,127],[23,122],[32,126],[44,129],[57,128],[69,123],[79,118],[86,120],
+    // 7 -> 6 finish stem
+    [89,126],[89,134],[89,142],[89,150],[89,158],[89,166]
+  ];
+  clover.route770=route;
+  clover.widths770=new Array(route.length-1).fill(10.8);
+  const centre=densifyLine772(route,.12);
+  clover.racingSpline770=centre;
+  clover.globalOptimal770=centre;
+  clover.start={x:89,y:166}; clover.goal={x:89,y:166};
+  clover.sharedGate778=true; clover.courseType775='circuit'; clover.finishRule775='one-lap-gate'; clover.lapRequired775=true;
+  clover.strictRoadFollow778=true; clover.strictNoChord795=true;
+  clover.roadFollowMode778='clover-visible-centre-only-v146';
+  clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+  clover.retiredSlot6HardCenter896=true; // disables all lateral execution fingerprints
+  clover.retiredSlot6CenterOnly895=true;
+  clover.extraRoads771=[]; clover.forbiddenZones770=[]; clover.roadMask770=undefined;
+  clover.racingLineMode772='clover-6-3-1-12-11-9-7-6-visible-road-v1.46.0';
+
+  // If Clover is already active while hot-reloading, rebuild all runtime geometry now.
+  if(currentMap770()?.id==='double_hairpin'){
+    route=clover.route770.map(p=>[...p]); widths=[...clover.widths770];
+    GLOBAL_OPTIMAL_LINE_710=clover.globalOptimal770; RACING_SPLINE_720=clover.racingSpline770;
+    rebuildRouteGeometry770(); rebuildGlobalOptimal770(); rebuildRacingSpline770();
+    for(const p of players||[]){p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;p._lane120=0;p._lineOffset720=0;}
+  }
+  window.__OPF_BUILD__='v1.46.0';
+})();
+
+
+// ============================================================
+// v1.47.0 — THREE-LEAF CLOVER ORDER-LOCKED FULL LAP
+// Fix: the old 3->1 segment first moved down/left ([115,82] -> [110,88]),
+// which visually sent racers toward the 6 o'clock connector. This route is
+// strictly ordered and the 3->1 leg is now monotonically upward along the road.
+// ============================================================
+(function applyPatch1470(){
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(!clover)return;
+  clover.image='map_clover_142.png?v=1470';
+  clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+  clover.logicalSize={w:178,h:170};
+  const route=[
+    // 6 -> junction -> right leaf -> 3
+    [89,166],[89,158],[89,150],[89,142],[89,134],[89,126],[96,120],[106,117],
+    [118,121],[132,126],[146,126],[158,120],[167,111],[171,100],[171,89],[166,80],[157,74],[146,71],[134,72],[123,76],[115,82],
+    // 3 -> 1: NEVER descend toward the centre/6. Follow the visible upper connector only.
+    [111,76],[110,70],[113,64],[118,58],[123,52],[127,45],[130,37],[130,29],[126,22],[120,17],[111,14],[100,12],[89,12],
+    // 12 -> 11 -> left leaf -> 9
+    [78,12],[67,14],[58,19],[51,27],[48,37],[49,47],[54,56],[61,63],[68,69],
+    [64,76],[57,72],[47,70],[36,71],[25,76],[16,84],[11,94],[10,105],[14,115],[22,123],[33,128],[45,130],[57,128],[67,123],[75,117],
+    // 9 -> 7: stay on the lower-left road, then return to the bottom junction
+    [79,111],[82,116],[78,121],[70,126],[60,130],[49,132],[38,131],[29,127],[23,122],[29,126],[39,130],[50,132],[61,130],[72,125],[82,120],[89,126],
+    // 7 -> 6 goal
+    [89,134],[89,142],[89,150],[89,158],[89,166]
+  ];
+  clover.route770=route;
+  clover.widths770=new Array(route.length-1).fill(9.8);
+  const centre=densifyLine772(route,.10);
+  clover.racingSpline770=centre; clover.globalOptimal770=centre;
+  clover.start={x:89,y:166}; clover.goal={x:89,y:166};
+  clover.strictRoadFollow778=true; clover.strictNoChord795=true;
+  clover.retiredSlot6HardCenter896=true; clover.retiredSlot6CenterOnly895=true;
+  clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+  clover.roadFollowMode778='clover-order-locked-centre-v147';
+  clover.racingLineMode772='clover-6-3-1-12-11-9-7-6-order-lock-v1.47.0';
+  clover.extraRoads771=[]; clover.forbiddenZones770=[]; clover.roadMask770=undefined;
+  clover.cloverOrderLock147=true;
+  if(currentMap770()?.id==='double_hairpin'){
+    route=clover.route770.map(p=>[...p]); widths=[...clover.widths770];
+    GLOBAL_OPTIMAL_LINE_710=clover.globalOptimal770; RACING_SPLINE_720=clover.racingSpline770;
+    rebuildRouteGeometry770(); rebuildGlobalOptimal770(); rebuildRacingSpline770();
+    for(const p of players||[]){p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;p._lane120=0;p._lineOffset720=0;}
+  }
+  window.__OPF_BUILD__='v1.47.0';
+})();

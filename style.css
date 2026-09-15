@@ -26,3 +26,9 @@
 .league-map-cell-133 img{width:100px!important;height:76px!important;object-fit:contain!important;object-position:center center!important;background:#05080d}
 .league-map-cell-133 small{margin-top:1px}
 @media(max-width:760px){.league-map-cell-133 img{width:82px!important;height:62px!important;object-fit:contain!important}}
+
+/* v1.46.0 — matchup map thumbnails must stay fully inside their cards. */
+.league-map-cell-133{overflow:hidden!important;min-width:0!important;padding:6px 6px 5px!important;align-items:center!important;justify-content:center!important}
+.league-map-cell-133 img{display:block!important;width:92px!important;height:66px!important;max-width:100%!important;max-height:66px!important;object-fit:contain!important;object-position:center center!important;margin:0 auto 3px!important;border-radius:6px!important}
+.league-map-cell-133 small{display:block!important;max-width:100%!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+@media(max-width:760px){.league-map-cell-133 img{width:76px!important;height:55px!important;max-height:55px!important}}
