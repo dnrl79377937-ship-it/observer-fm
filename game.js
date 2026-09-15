@@ -9701,6 +9701,26 @@ function updateDestinyPlayer183(p,now,dt){
     const step=Math.max(-.085,Math.min(.245,rawStep));
     const next=Math.max(0,Math.min(info.total,prog+step));
 
+    // v1.48.0 — Three-Leaf Clover hard path authority.
+    // The generic vehicle heading/inertia model can cut across nearby branches on
+    // self-near clover geometry. On Clover, macro movement is therefore advanced
+    // directly on the ordered spline. Observer avoidance may use only a very small
+    // lateral offset; it can never select or drift onto another branch.
+    if(currentMap770().id==="double_hairpin"){
+      const frame=smoothFrame120(info,next);
+      const nx=-frame.uy,ny=frame.ux;
+      const lane=Math.max(-.72,Math.min(.72,Number(targetLane)||0));
+      p.x=frame.x+nx*lane;
+      p.y=frame.y+ny*lane;
+      p._headingUx121=frame.ux;p._headingUy121=frame.uy;
+      p._lane120=lane;p._laneVelSec181=0;p._laneVel120=0;
+      p._v120Prog=next;p._v120Total=info.total;
+      p._splineProg720=next;p._splineFloor754=next;p._lineOffset720=lane;
+      const frac=Math.max(0,Math.min(1,next/info.total));
+      p.seg=Math.max(0,Math.min(segs.length-1,Math.floor(frac*Math.max(1,segs.length-1))));
+      return {frac,step,turn};
+    }
+
     const targetFrame=smoothFrame120(info,next);
 
     let ux=Number(p._headingUx121),uy=Number(p._headingUy121);
@@ -16323,4 +16343,16 @@ function observerCountForMap120(map){
     for(const p of players||[]){p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;p._lane120=0;p._lineOffset720=0;}
   }
   window.__OPF_BUILD__='v1.47.0';
+})();
+
+
+// v1.48.0 — Clover generic-inertia shortcut fix
+(function applyPatch1480(){
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(clover){
+    clover.image='map_clover_142.png?v=1480';
+    clover.cloverDirectSplineMovement148=true;
+    clover.racingLineMode772='clover-hard-ordered-spline-v1.48.0';
+  }
+  window.__OPF_BUILD__='v1.48.0';
 })();
