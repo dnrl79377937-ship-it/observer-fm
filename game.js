@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.40.0";
+  const BUILD_ID = "v1.41.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -704,8 +704,6 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
   }
   function openLeaguePlayer140(sourceIndex){
     if(!Number.isInteger(sourceIndex)||!playerStats[sourceIndex])return;
-    const active=players.find(p=>p.sourceIndex===sourceIndex);
-    if(active){openPlayerCard(active);return;}
     const stats={...playerStats[sourceIndex]};
     const pf=profiles[sourceIndex]||{};
     const style=pf.style||pf.drivingStyle||"balanced";
@@ -796,13 +794,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       schedule.innerHTML=rows.join("");
     }
 
-    // v1.40.0 bracket interactions: map preview + player data.
-    document.querySelectorAll(".league-map-open-140[data-map-id]").forEach(el=>{
-      el.onclick=()=>openLeagueMap140(el.dataset.mapId);
-    });
-    document.querySelectorAll(".league-player-open-140[data-source-index]").forEach(el=>{
-      el.onclick=()=>openLeaguePlayer140(Number(el.dataset.sourceIndex));
-    });
+    // v1.41.0 uses one delegated pointer handler (installed once below).
+    // Avoid rebinding every schedule render; this also fixes delayed/missed taps.
 
     if(msg){
       if(league100.winner){
@@ -15971,6 +15964,66 @@ function observerCountForMap120(map){
   }
 
   window.ObserverFMStats = { advancedStats697, getAll:()=>players.map(p=>({name:p.name,...(advancedStats697(p)||{})})) };
+
+
+  // ============================================================
+  // v1.41.0 — THREE-LEAF CLOVER FINAL ROUTE + INSTANT BRACKET UI
+  // 6 o'clock shared start/finish -> up -> take RIGHT fork -> one
+  // counter-clockwise loop on the right leaf -> junction -> back to 6 o'clock.
+  // This final override intentionally supersedes all retired slot-6/black-hole
+  // route patches above.
+  // ============================================================
+  function applyPatch1410(){
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(clover){
+      clover.name='세잎 클로버'; clover.en='Three-Leaf Clover';
+      clover.image='map_clover_131.png?v=1410-clean';
+      const route=[
+        [80,151],[80,142],[80,132],[80,121],[80,110],[80,99],[80,90],
+        [88,91],[97,98],[108,104],[120,106],[132,102],[141,94],[146,83],
+        [146,71],[142,60],[134,51],[123,46],[112,46],[102,51],[95,59],
+        [91,69],[91,78],[87,86],[80,90],
+        [80,101],[80,113],[80,125],[80,137],[80,151]
+      ];
+      clover.route770=route;
+      clover.widths770=new Array(route.length-1).fill(10.5);
+      clover.start={x:80,y:151}; clover.goal={x:80,y:151};
+      clover.safeZones={start:{x0:74,y0:146,x1:86,y1:157},goal:{x0:74,y0:146,x1:86,y1:157}};
+      clover.sharedGate778=true;
+      clover.courseType775='circuit'; clover.finishRule775='one-lap-gate'; clover.lapRequired775=true;
+      clover.strictRoadFollow778=true; clover.roadFollowMode778='route-center-hard';
+      clover.strictNoChord795=true; clover.outerSoftLimit789=true;
+      clover.hideRuntimeSharedGate7992=false;
+      const exact=densifyLine772(route,.22);
+      clover.racingSpline770=exact; clover.globalOptimal770=exact;
+      clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+      clover.racingLineMode772='clover-right-ccw-shared-gate-v1.41.0';
+      // Explicit legal-road ribbon: no crossing to the left/top leaves and no outer excursion.
+      clover.roadMask770=(x,y)=>{
+        let best=1e9;
+        for(let i=0;i<route.length-1;i++){
+          const a=route[i],b=route[i+1],dx=b[0]-a[0],dy=b[1]-a[1];
+          const ll=dx*dx+dy*dy||1;
+          const t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/ll));
+          const qx=a[0]+dx*t,qy=a[1]+dy*t;
+          best=Math.min(best,Math.hypot(x-qx,y-qy));
+        }
+        return best<=10.5;
+      };
+      clover.miniCrop={x:0,y:0,w:160,h:160};
+      clover.blackOuterRemoved1410=true;
+    }
+  }
+  applyPatch1410();
+
+  // One capture-phase pointer handler makes map/player cards react immediately
+  // on mouse and touch, even after the bracket HTML is re-rendered.
+  document.addEventListener('pointerdown',e=>{
+    const mapEl=e.target.closest?.('.league-map-open-140[data-map-id]');
+    if(mapEl && mapEl.dataset.mapId){ e.preventDefault(); openLeagueMap140(mapEl.dataset.mapId); return; }
+    const playerEl=e.target.closest?.('.league-player-open-140[data-source-index]');
+    if(playerEl && !playerEl.disabled){ e.preventDefault(); openLeaguePlayer140(Number(playerEl.dataset.sourceIndex)); }
+  },true);
 
   // v1.0.0 starts on the randomized matchup board, never directly on Neon Drift.
   resetLeague100();
