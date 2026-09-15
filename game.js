@@ -26,7 +26,7 @@
   function observerCountForMap791(m=currentMap770()){
     if(!m)return 100;
     const id=String(m.id||"").toLowerCase();
-    if(id==="double_hairpin")return 40;   // 블랙홀
+    if(id==="double_hairpin")return 40;   // 세잎 클로버
     if(id==="cliff_hanger")return 100;    // 스카이클리프
     if(id==="skyway")return 130;          // 스페이스
     if(id==="s_map")return 100;           // 네온드리프트
@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.2.4";
+  const BUILD_ID = "v1.32.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -673,6 +673,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return league100?.results?.find(r=>r.setNo===setNo)||null;
   }
 
+  function leagueMapVisual133(mapId){
+    const m=mapId?MAP_DEFINITIONS_770[mapId]:null;
+    const src=m?.image||"";
+    const name=m?.name||mapId||"맵 미정";
+    return {src,name};
+  }
+
   function renderLeagueBoard100(){
     if(!league100)return;
     const rosterA=document.getElementById("leagueRosterA100");
@@ -694,9 +701,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(bans){
       const banA=league100.bannedMaps?.A?(MAP_DEFINITIONS_770[league100.bannedMaps.A]?.name||league100.bannedMaps.A):"-";
       const banB=league100.bannedMaps?.B?(MAP_DEFINITIONS_770[league100.bannedMaps.B]?.name||league100.bannedMaps.B):"-";
+      const banAV=leagueMapVisual133(league100.bannedMaps?.A);
+      const banBV=leagueMapVisual133(league100.bannedMaps?.B);
       bans.innerHTML=`
-        <div class="league-ban-a-100"><em>A TEAM BAN</em><strong>${banA}</strong></div>
-        <div class="league-ban-b-100"><em>B TEAM BAN</em><strong>${banB}</strong></div>`;
+        <div class="league-ban-a-100"><div class="league-ban-card-133">${banAV.src?`<img src="${banAV.src}" alt="${banA}">`:""}<div class="league-ban-copy-133"><em>RED TEAM BAN</em><strong>${banA}</strong></div></div></div>
+        <div class="league-ban-b-100"><div class="league-ban-card-133"><div class="league-ban-copy-133"><em>BLUE TEAM BAN</em><strong>${banB}</strong></div>${banBV.src?`<img src="${banBV.src}" alt="${banB}">`:""}</div></div>`;
     }
 
     if(schedule){
@@ -713,9 +722,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
           !r&&league100.setNo===setNo&&!league100.winner?"current":""
         ].filter(Boolean).join(" ");
 
+        const mapV=leagueMapVisual133(mapId);
         rows.push(`<div class="${cls}">
           <span class="set">${setNo}세트</span>
-          <span class="map">${mapName}</span>
+          <span class="league-map-cell-133">${mapV.src?`<img src="${mapV.src}" alt="${mapName}">`:""}<small>${mapName}</small></span>
           <b class="a">${names[a]}</b>
           <span class="vs">VS</span>
           <b class="b">${names[b]}</b>
@@ -738,9 +748,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const aceA=aceActivated&&league100.ace.A!=null?names[league100.ace.A]:"???";
       const aceB=aceActivated&&league100.ace.B!=null?names[league100.ace.B]:"???";
 
+      const aceMapV=leagueMapVisual133(aceMapId);
       rows.push(`<div class="league-schedule-row-100 ace ${!aceResult&&league100.setNo===7?"current":""} ${aceResult?"done":""}">
         <span class="set">7세트<br>ACE</span>
-        <span class="map">${aceMapName}</span>
+        <span class="league-map-cell-133">${aceMapV.src?`<img src="${aceMapV.src}" alt="${aceMapName}">`:""}<small>${aceMapName}</small></span>
         <b class="a">${aceA}</b>
         <span class="vs">VS</span>
         <b class="b">${aceB}</b>
@@ -752,10 +763,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     if(msg){
       if(league100.winner){
-        msg.textContent=`${league100.winner} TEAM 승리 · 최종 ${league100.teamScore.A} : ${league100.teamScore.B}`;
+        msg.textContent=`${league100.winner==="A"?"RED":"BLUE"} TEAM 승리 · 최종 ${league100.teamScore.A} : ${league100.teamScore.B}`;
       }else if(league100.results.length){
         const last=league100.results[league100.results.length-1];
-        msg.textContent=`${last.setNo}세트 ${last.winner} TEAM 승리 (${last.score.A}:${last.score.B}) · 팀 스코어 ${league100.teamScore.A}:${league100.teamScore.B}`;
+        msg.textContent=`${last.setNo}세트 ${last.winner==="A"?"RED":"BLUE"} TEAM 승리 (${last.score.A}:${last.score.B}) · 팀 스코어 ${league100.teamScore.A}:${league100.teamScore.B}`;
       }else{
         msg.textContent="12명 랜덤 팀 배정 · 출전 순서 랜덤 완료";
       }
@@ -780,13 +791,13 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     const pair=leaguePair100();
 
     if(score)score.innerHTML=`
-      <div class="league-side-team-100 a"><span>A TEAM</span><strong>${league100.teamScore.A}</strong></div>
+      <div class="league-side-team-100 a"><span>RED TEAM</span><strong>${league100.teamScore.A}</strong></div>
       <em>VS</em>
-      <div class="league-side-team-100 b"><span>B TEAM</span><strong>${league100.teamScore.B}</strong></div>`;
+      <div class="league-side-team-100 b"><span>BLUE TEAM</span><strong>${league100.teamScore.B}</strong></div>`;
 
     if(current){
       if(league100.winner){
-        current.innerHTML=`<small>FINAL RESULT</small><div class="league-side-heat-100">${league100.winner} TEAM WIN</div>`;
+        current.innerHTML=`<small>FINAL RESULT</small><div class="league-side-heat-100">${league100.winner==="A"?"RED":"BLUE"} TEAM WIN</div>`;
       }else{
         const mapName100=league100.currentMapId?(MAP_DEFINITIONS_770[league100.currentMapId]?.name||league100.currentMapId):"맵 준비";
         current.innerHTML=`<small>${league100.setNo===7?"ACE DECIDER":`${league100.setNo} SET`} · ${mapName100} · ${league100.heatNo}번째 경기</small>
@@ -5698,7 +5709,7 @@ function applyMapSet776(){
     ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_787.png?v=793-ice-crown-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
     neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_7891_clean.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
-    double_hairpin:{slot:6,name:"블랙홀",en:"Black Hole",theme:"Black Hole Spiral",tags:["고난도","나선","테크니컬"],image:"map_black_hole_776.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    double_hairpin:{slot:6,name:"세잎 클로버",en:"Three-Leaf Clover",theme:"Tropical Clover Circuit",tags:["세잎클로버","우측루프","반시계"],image:"map_clover_131.png?v=132-audit",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_894.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     triple_diamond:{slot:9,name:"데스티니 게이트",en:"Destiny Gate",theme:"Heaven vs Hell Destiny Gate",tags:["데스티니게이트","2스타트","천국vs지옥"],image:"map_destiny_gate_8113.png?v=817-destiny-gate",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:true,verticality:false}}
@@ -5773,7 +5784,7 @@ applyMapSet776();
       lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
     });
     set777("double_hairpin",{
-      image:"map_black_hole_776.png?v=803-theme-tile",imageSize:{w:1122,h:1402},
+      image:"map_clover_131.png?v=132-audit",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[32.721,128.013],[25.467,120.68],[19.564,112.346],[15.142,103.251],[12.292,93.653],[11.057,83.819],[11.439,74.017],[13.394,64.507],[16.838,55.537],[21.648,47.337],[27.666,40.108],[34.707,34.024],[42.561,29.223],[50.998,25.806],[59.782,23.834],[68.669,23.328],[77.42,24.268],[85.802,26.597],[93.6,30.222],[100.618,35.014],[106.687,40.818],[111.666,47.454],[115.447,54.725],[117.958,62.421],[119.162,70.323],[119.061,78.216],[117.688,85.886],[115.114,93.134],[111.438,99.775],[106.788,105.647],[101.315,110.611],[95.188,114.559],[88.591,117.411],[81.713,119.12],[74.749,119.673],[67.889,119.086],[61.315,117.409],[55.196,114.718],[49.686,111.116],[44.915,106.728],[40.989,101.696],[37.99,96.178],[35.969,90.337],[34.951,84.343],[34.931,78.363],[35.878,72.561],[37.732,67.088],[40.412,62.084],[43.818,57.667],[47.83,53.939],[52.317,50.977],[57.138,48.836],[62.149,47.542],[67.205,47.101],[72.164,47.492],[76.893,48.671],[81.271,50.575],[85.19,53.121],[88.56,56.213],[91.311,59.74],[93.392,63.586],[94.774,67.63],[95.45,71.748],[95.433,75.82],[94.757,79.735],[93.471,83.389],[91.643,86.69],[89.351,89.561],[86.686,91.943],[83.745,93.791],[80.627,95.083],[77.433,95.81]],widths770:[15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5],
       start:{x:32.721,y:128.013},goal:{x:77.433,y:95.81},
@@ -5889,9 +5900,9 @@ applyMapSet776();
   applyIceCrownPatch792();
 
   // ============================================================
-  // v7.793 — Heart / Black Hole / Space targeted tuning
+  // v7.793 — Heart / retired slot 6 course / Space targeted tuning
   // 1) Heart: move shared red gate upward and start slightly higher
-  // 2) Black Hole: use only the lower start gate and make the normal line
+  // 2) retired slot 6 course: use only the lower start gate and make the normal line
   //    follow the road with a safer outer bias (avoid over-apex lane hopping)
   // 3) Space: widen the narrow corridor a bit visually + logically
   // ============================================================
@@ -6258,11 +6269,11 @@ applyMapSet776();
 
 
   // ============================================================
-  // v7.87 — ICE CROWN LOAD FIX + CLEAN ART + BLACK HOLE REVERSE START
+  // v7.87 — ICE CROWN LOAD FIX + CLEAN ART + RETIRED SLOT 6 COURSE REVERSE START
   // 1) Ice Crown: stop using the temporary v7.87 asset reference; use the cleaned
   //    v7.87 artwork and keep the existing safe-shortest geometry/racing line.
   // 2) Heart: restore the pre-mosaic original artwork.
-  // 3) Black Hole: remove the outer-left start marker from artwork, make the old
+  // 3) retired slot 6 course: remove the outer-left start marker from artwork, make the old
   //    inner-right marker the new START, reverse the route, and launch rightward.
   // ============================================================
   function applyPatch787(){
@@ -6281,7 +6292,7 @@ applyMapSet776();
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_black_hole_776.png?v=803-theme-tile";
+      black.image="map_clover_131.png?v=132-audit";
       const oldRoute=(black.route770||[]).map(q=>[q[0],q[1]]);
       if(oldRoute.length>=2){
         black.route770=oldRoute.reverse();
@@ -6300,7 +6311,7 @@ applyMapSet776();
       black.finishRule775="end-gate";
       black.lapRequired775=false;
       black.sharedGate778=false;
-      black.blackHoleReverse787=true;
+      black.retiredSlot6Reverse787=true;
       black.startDirection787="right";
       black.strictRoadFollow778=true;
       black.roadFollowMode778="route-center-hard";
@@ -6313,17 +6324,17 @@ applyMapSet776();
   applyPatch787();
 
   // ============================================================
-  // v7.88 — BLACK HOLE GATE CORRECTION + SPACE +2 ROAD ROWS
+  // v7.88 — RETIRED SLOT 6 COURSE GATE CORRECTION + SPACE +2 ROAD ROWS
   // ============================================================
   function applyPatch788(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
       // v7.87 had yellow/green roles reversed. Restore the opposite gate roles.
       // Start at the outer-left gate; finish at the inner-right gate.
-      black.image="map_black_hole_776.png?v=803-theme-tile";
+      black.image="map_clover_131.png?v=132-audit";
       let r=(black.route770||[]).map(q=>[q[0],q[1]]);
       // v7.87 reversed the original route. Put it back to outer -> inner.
-      if(black.blackHoleReverse787 && r.length>=2) r=r.reverse();
+      if(black.retiredSlot6Reverse787 && r.length>=2) r=r.reverse();
       black.route770=r;
       if((black.widths770||[]).length) black.widths770=black.widths770.slice().reverse();
       black.start={x:14.6,y:145.0};
@@ -6336,7 +6347,7 @@ applyMapSet776();
       black.finishRule775="end-gate";
       black.lapRequired775=false;
       black.sharedGate778=false;
-      black.blackHoleReverse787=false;
+      black.retiredSlot6Reverse787=false;
       black.startDirection788="route-forward";
       black.strictRoadFollow778=true;
       black.roadFollowMode778="route-center-hard";
@@ -6496,10 +6507,10 @@ applyMapSet776();
         return {...t,x:q.x,y:q.y,kind:(t.kind||'race720')+'-no-chord795'};
       }
     }
-    // v7.896 Black Hole hard center: never project an EVADE target onto the
+    // v7.896 retired slot 6 course hard center: never project an EVADE target onto the
     // nearest spiral ring (which can be the adjacent lane). Use the authoritative
     // center spline progress itself for NORMAL / EVADE / REJOIN.
-    if(m.blackHoleHardCenter896){
+    if(m.retiredSlot6HardCenter896){
       p.desiredOffset=0; p.routeBand=0; p.openingLineBias=0;
       const prog=Number.isFinite(p._splineProg720)?p._splineProg720:nearestSplineProgress720(p.x,p.y);
       const look=mode==='NORMAL'?5.20:3.10;
@@ -6510,9 +6521,9 @@ applyMapSet776();
     if(!info)return t;
     const turn=mapTurn789(m,info.i),half=info.half;
     let lat=info.lat;
-    // v7.895 Black Hole: keep every steering mode close to the traced spiral
+    // v7.895 retired slot 6 course: keep every steering mode close to the traced spiral
     // center so adjacent rings are never selected as a "wide" lane.
-    if(m.blackHoleCenterOnly895){
+    if(m.retiredSlot6CenterOnly895){
       const frac=mode==='EVADE'?.24:mode==='REJOIN'?.14:.08;
       lat=Math.max(-half*frac,Math.min(half*frac,lat));
       const x=info.cx+info.nx*lat,y=info.cy+info.ny*lat;
@@ -6563,7 +6574,7 @@ applyMapSet776();
 
 
   // ============================================================
-  // v7.892 — BLACK HOLE TRUE OUTER-TO-INNER SPIRAL
+  // v7.892 — RETIRED SLOT 6 COURSE TRUE OUTER-TO-INNER SPIRAL
   // - Remove the duplicate LEFT runtime yellow gate by aligning START to the
   //   single yellow artwork gate immediately to its right.
   // - Start moves RIGHT along the bottom road (7 -> 5), then winds through
@@ -6573,7 +6584,7 @@ applyMapSet776();
   function applyPatch7892(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(!black)return;
-    black.image="map_black_hole_776.png?v=803-theme-tile";
+    black.image="map_clover_131.png?v=132-audit";
     black.route770=[[20.007,149.93],[21.187,149.973],[23.44,150.037],[26.821,150.132],[31.328,150.259],[36.136,150.354],[41.247,150.418],[46.658,150.449],[52.372,150.449],[58.006,150.251],[63.56,149.854],[69.035,149.259],[74.431,148.466],[79.589,147.394],[84.509,146.045],[89.191,144.419],[93.634,142.514],[97.84,140.372],[101.807,137.991],[105.537,135.373],[109.028,132.516],[112.321,129.263],[115.416,125.613],[118.312,121.566],[121.01,117.122],[123.431,112.44],[125.573,107.521],[127.438,102.363],[129.025,96.967],[130.215,91.571],[131.009,86.175],[131.405,80.779],[131.405,75.383],[130.969,70.027],[130.096,64.711],[128.787,59.434],[127.041,54.197],[124.859,49.317],[122.24,44.794],[119.185,40.628],[115.694,36.819],[111.885,33.486],[107.759,30.629],[103.315,28.249],[98.554,26.345],[93.634,24.797],[88.556,23.607],[83.319,22.774],[77.923,22.298],[72.606,22.258],[67.369,22.655],[62.211,23.488],[57.133,24.757],[52.292,26.345],[47.69,28.249],[43.326,30.471],[39.199,33.01],[35.391,35.787],[31.899,38.803],[28.725,42.056],[25.868,45.547],[23.329,49.198],[21.107,53.006],[19.203,56.974],[17.616,61.1],[16.307,65.226],[15.275,69.353],[14.521,73.479],[14.045,77.605],[13.886,81.731],[14.045,85.858],[14.521,89.984],[15.315,94.11],[16.346,97.998],[17.616,101.649],[19.124,105.061],[20.869,108.235],[22.774,111.091],[24.837,113.631],[27.059,115.852],[29.439,117.757],[32.256,119.463],[35.51,120.97],[39.199,122.28],[43.326,123.391],[47.69,124.303],[52.292,125.017],[57.133,125.533],[62.211,125.851],[67.131,125.89],[71.892,125.652],[76.494,125.136],[80.938,124.343],[85.223,123.192],[89.349,121.685],[93.317,119.82],[97.126,117.598],[100.577,115.059],[103.672,112.202],[106.41,109.028],[108.79,105.537],[110.853,101.807],[112.599,97.84],[114.027,93.634],[115.138,89.19],[115.813,84.905],[116.051,80.779],[115.853,76.812],[115.218,73.003],[114.186,69.392],[112.758,65.98],[110.933,62.767],[108.711,59.751],[106.172,57.053],[103.315,54.673],[100.141,52.61],[96.65,50.864],[93.079,49.396],[89.429,48.206],[85.699,47.293],[81.89,46.658],[78.081,46.301],[74.273,46.222],[70.464,46.42],[66.655,46.896],[63.084,47.69],[59.751,48.801],[56.657,50.229],[53.8,51.975],[51.181,53.919],[48.801,56.061],[46.658,58.402],[44.754,60.942],[43.088,63.639],[41.659,66.496],[40.469,69.511],[39.517,72.685],[38.882,75.82],[38.565,78.914],[38.565,81.97],[38.882,84.985],[39.517,87.921],[40.469,90.777],[41.739,93.555],[43.326,96.253],[45.27,98.752],[47.571,101.053],[50.229,103.156],[53.245,105.061],[56.339,106.687],[59.513,108.036],[62.767,109.108],[66.099,109.901],[69.392,110.417],[72.646,110.655],[75.86,110.615],[79.034,110.298],[82.009,109.742],[84.787,108.949],[87.366,107.917],[89.746,106.648],[91.928,105.18],[93.912,103.513],[95.697,101.649],[97.284,99.585],[98.673,97.403],[99.863,95.102],[100.855,92.682],[101.649,90.143],[102.164,87.603],[102.403,85.064],[102.363,82.525],[102.045,79.986],[101.49,77.526],[100.696,75.145],[99.665,72.844],[98.395,70.622],[96.967,68.559],[95.38,66.655],[93.634,64.909],[91.73,63.322],[89.706,61.933],[87.564,60.743],[85.302,59.751],[82.922,58.958],[80.541,58.442],[78.161,58.204],[75.78,58.244],[73.4,58.561],[71.138,59.116],[68.996,59.91],[66.972,60.942],[65.068,62.211],[63.401,63.639],[61.973,65.226],[60.783,66.972],[59.831,68.877],[59.077,70.821],[58.521,72.804],[58.164,74.828],[58.006,76.891],[58.085,78.914],[58.402,80.898],[58.958,82.842],[59.751,84.747],[60.783,86.493],[62.053,88.08],[63.56,89.508],[65.306,90.777],[67.052,91.888],[68.797,92.841],[70.543,93.634],[72.289,94.269],[73.836,94.769],[75.185,95.134],[76.336,95.364],[77.288,95.459],[78.002,95.531],[78.478,95.578],[78.738,95.661]];
     black.widths770=[13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5];
     black.start={x:20.007,y:149.93};
@@ -6589,7 +6600,7 @@ applyMapSet776();
     black.sharedGate778=false;
     black.strictRoadFollow778=true;
     black.roadFollowMode778="route-center-hard";
-    black.blackHoleReverse787=false;
+    black.retiredSlot6Reverse787=false;
     black.startDirection788="right-along-bottom-road";
     black.startDirection892="right";
     black.spiralDirection892="7->5->1->11->9->inward";
@@ -6605,11 +6616,11 @@ applyMapSet776();
 
 
   // ============================================================
-  // v7.893 — Mosaic cleanup + Heart runtime refresh + tighter Black Hole line
+  // v7.893 — Mosaic cleanup + Heart runtime refresh + tighter retired slot 6 course line
   // 1) Use the clean Heart/Ice artwork for thumbnails and runtime so leftover
   //    gray mosaic/checker patches are gone.
   // 2) Reaffirm the Heart shared red gate runtime setup with the clean asset.
-  // 3) Pull Black Hole's normal racing line slightly inward so it does not
+  // 3) Pull retired slot 6 course's normal racing line slightly inward so it does not
   //    take a huge outer setup arc that leaks into the adjacent lane.
   // ============================================================
   function applyPatch7893(){
@@ -6664,18 +6675,18 @@ applyMapSet776();
       black.racingLineMode772=(black.racingLineMode772||'outer-to-inner-spiral-v7.892')+"+inboard-v7.893";
       black.insideTune789="tighter-inboard-spiral-v7.893";
       black.outerSoftLimit789=true;
-      black.blackHoleLaneTight893=true;
+      black.retiredSlot6LaneTight893=true;
     }
   }
   applyPatch7893();
 
 
   // ============================================================
-  // v7.894 — Star Fish stall guard + Black Hole single yellow gate + Desert cleanup
+  // v7.894 — Star Fish stall guard + retired slot 6 course single yellow gate + Desert cleanup
   // 1) Star Fish: use a safer, more center-biased authoritative racing spline and
   //    a slightly wider legal ribbon so touching the visual wall no longer makes
   //    racers appear to stall or pin in place.
-  // 2) Black Hole: refresh the runtime artwork to the fully single-yellow version.
+  // 2) retired slot 6 course: refresh the runtime artwork to the fully single-yellow version.
   // 3) Desert Oasis: refresh the cleaned artwork so the start-side mosaic is gone.
   // ============================================================
   function applyPatch7894(){
@@ -6712,9 +6723,9 @@ applyMapSet776();
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_black_hole_776.png?v=803-theme-tile";
+      black.image="map_clover_131.png?v=132-audit";
       black.leftDuplicateGateRemoved892=true;
-      black.blackHoleSingleYellow894=true;
+      black.retiredSlot6SingleYellow894=true;
     }
 
     const desert=MAP_DEFINITIONS_770.desert_oasis;
@@ -6727,7 +6738,7 @@ applyMapSet776();
 
 
   // ============================================================
-  // v7.895 — STAR FISH TRUE PASS-THROUGH + BLACK HOLE CENTERLINE LOCK
+  // v7.895 — STAR FISH TRUE PASS-THROUGH + RETIRED SLOT 6 COURSE CENTERLINE LOCK
   // ============================================================
   function applyPatch7895(){
     const star=MAP_DEFINITIONS_770.star_fish;
@@ -6750,7 +6761,7 @@ applyMapSet776();
       black.lockOptimalExecution784=true;
       black.strictRoadFollow778=true;
       black.roadFollowMode778="route-center-hard";
-      black.blackHoleCenterOnly895=true;
+      black.retiredSlot6CenterOnly895=true;
       black.racingLineMode772="spiral-road-center-v7.895";
       black.insideTune789="centerline-only-v7.895";
       black.outerSoftLimit789=true;
@@ -6760,7 +6771,7 @@ applyMapSet776();
 
 
   // ============================================================
-  // v7.896 — BLACK HOLE EXACT CENTER + SPACE +2 MORE ROAD ROWS
+  // v7.896 — RETIRED SLOT 6 COURSE EXACT CENTER + SPACE +2 MORE ROAD ROWS
   // ============================================================
   function applyPatch7896(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
@@ -6772,8 +6783,8 @@ applyMapSet776();
       black.optimizedSplineAuthority783=true;
       black.strictRoadFollow778=true;
       black.roadFollowMode778="route-center-hard";
-      black.blackHoleCenterOnly895=true;
-      black.blackHoleHardCenter896=true;
+      black.retiredSlot6CenterOnly895=true;
+      black.retiredSlot6HardCenter896=true;
       black.racingLineMode772="exact-gray-road-center-v7.896";
       black.insideTune789="disabled-center-only-v7.896";
       black.outerSoftLimit789=true;
@@ -6799,7 +6810,7 @@ applyMapSet776();
 
 
   // ============================================================
-  // v7.897 — TRUE BLACK HOLE GRAY-ROAD CENTER + SPACE 4 ROWS
+  // v7.897 — TRUE RETIRED SLOT 6 COURSE GRAY-ROAD CENTER + SPACE 4 ROWS
   // ============================================================
   function applyPatch7897(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
@@ -6815,9 +6826,9 @@ applyMapSet776();
       black.optimizedSplineAuthority783=true;
       black.strictRoadFollow778=true;
       black.roadFollowMode778="route-center-hard";
-      black.blackHoleCenterOnly895=true;
-      black.blackHoleHardCenter896=true;
-      black.blackHoleExactCenter897=true;
+      black.retiredSlot6CenterOnly895=true;
+      black.retiredSlot6HardCenter896=true;
+      black.retiredSlot6ExactCenter897=true;
       black.racingLineMode772="actual-gray-road-center-v7.897";
       black.insideTune789="OFF-exact-center-v7.897";
       black.outerSoftLimit789=false;
@@ -6864,7 +6875,7 @@ applyMapSet776();
       cliff.startArtifactClean899=true;
       cliff.mapLoadSafe791=true;
     }
-    // Black Hole keeps its current gameplay route; only artwork cleanup metadata.
+    // retired slot 6 course keeps its current gameplay route; only artwork cleanup metadata.
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black) black.startArtifactAudit899=true;
   }
@@ -6912,11 +6923,11 @@ applyMapSet776();
       m.cornerFlow795=true;
       m.insideAi795=true;
       // Keep every established map-specific racing spline. v7.95 adjusts only
-      // runtime target choice, so Star/Ice/Rolling/Black Hole fixes are preserved.
+      // runtime target choice, so Star/Ice/Rolling/retired slot 6 course fixes are preserved.
     }
 
     // Maps where adjacent road legs are physically close need the strictest
-    // same-leg protection. Black Hole already has exact-center authority.
+    // same-leg protection. retired slot 6 course already has exact-center authority.
     for(const id of ['ice_ring','double_hairpin']){
       const m=MAP_DEFINITIONS_770[id];
       if(m)m.strictNoChord795=true;
@@ -7505,9 +7516,9 @@ applyMapSet776();
 
   function executedSplinePoint720(p,progress){
     const q=splinePointAt720(progress);
-    // v7.896 Black Hole: the route spline IS the road center. No driver fingerprint,
+    // v7.896 retired slot 6 course: the route spline IS the road center. No driver fingerprint,
     // no inside bias and no lateral execution offset may move the unit off it.
-    if(currentMap770().blackHoleHardCenter896){
+    if(currentMap770().retiredSlot6HardCenter896){
       return {...q,executionOffset720:0};
     }
     const nx=-q.uy,ny=q.ux;
@@ -7521,7 +7532,7 @@ applyMapSet776();
     const miss=(1-line739)*.58;
     const variance739=(1-ex.consistency)*.13;
     const stable=.88+variance739*Math.sin(progress*.035+(p.index||0)*.73);
-    const maxExecOff778=currentMap770().blackHoleSmartSpiral797 ? .46 : (currentMap770().strictRoadFollow778?0:.70);
+    const maxExecOff778=currentMap770().retiredSlot6SmartSpiral797 ? .46 : (currentMap770().strictRoadFollow778?0:.70);
     let off=wideSide*Math.min(maxExecOff778,Math.max(0,miss*stable));
 
     // v7.31 local smoothing only:
@@ -12408,6 +12419,15 @@ function updateDestinyPlayer183(p,now,dt){
       ctx.shadowColor=leagueTeamColor105(p)||"rgba(255,255,255,.45)";
       ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
+      // v1.31.0: team races tint the actual unit to the same RED/BLUE identity as its label.
+      if(league100?.phase==="racing" && (p.team==="RED"||p.team==="BLUE")){
+        ctx.globalCompositeOperation="source-atop";
+        ctx.globalAlpha=.48;
+        ctx.fillStyle=leagueTeamColor105(p);
+        ctx.fillRect(-size/2,-size/2,size,size);
+        ctx.globalAlpha=1;
+        ctx.globalCompositeOperation="source-over";
+      }
       ctx.restore();
     }else{
       // Sprite-load fallback stays team-colored; collision never changes the icon.
@@ -12434,7 +12454,7 @@ function updateDestinyPlayer183(p,now,dt){
     if(ctx.roundRect) ctx.roundRect(-tw/2,ly-lh,tw,lh,5);
     else ctx.rect(-tw/2,ly-lh,tw,lh);
     ctx.fill();ctx.stroke();
-    ctx.fillStyle="#fff";ctx.textBaseline="bottom";
+    ctx.fillStyle=leagueTeamColor105(p);ctx.textBaseline="bottom";
     ctx.fillText(label,0,ly-2);
 
     ctx.restore();
@@ -14198,7 +14218,7 @@ function seasonCardHtml(p){
   applyPatch7942();
 
   // ============================================================
-  // v7.943 — FOUR-MAP QA LOCK (Desert Oasis + Heart + Black Hole + Space only)
+  // v7.943 — FOUR-MAP QA LOCK (Desert Oasis + Heart + retired slot 6 course + Space only)
   // Preserve approved artwork/route behavior and freeze the four QA points.
   // No intentional changes to the other five maps.
   // ============================================================
@@ -14225,9 +14245,9 @@ function seasonCardHtml(p){
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.blackHoleCenterOnly895=true;
-      black.blackHoleHardCenter896=true;
-      black.blackHoleExactCenter897=true;
+      black.retiredSlot6CenterOnly895=true;
+      black.retiredSlot6HardCenter896=true;
+      black.retiredSlot6ExactCenter897=true;
       black.strictRoadFollow778=true;
       black.roadFollowMode778='route-center-hard';
       black.qaSpiralCenter7943=true;
@@ -14252,7 +14272,7 @@ function seasonCardHtml(p){
   applyPatch7943();
 
   // ============================================================
-  // v7.97 — BLACK HOLE SMART SPIRAL AI + OBSERVER 70
+  // v7.97 — RETIRED SLOT 6 COURSE SMART SPIRAL AI + OBSERVER 70
   // Keep adjacent spiral rings protected, but remove the old absolute
   // centerline lock so racers can use small legal lane offsets and real
   // observer-avoidance choices inside the current gray-road ribbon.
@@ -14260,10 +14280,10 @@ function seasonCardHtml(p){
   function applyPatch797(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(!black)return;
-    black.blackHoleSmartSpiral797=true;
-    black.blackHoleExactCenter897=false;
-    black.blackHoleHardCenter896=false;
-    black.blackHoleCenterOnly895=true;
+    black.retiredSlot6SmartSpiral797=true;
+    black.retiredSlot6ExactCenter897=false;
+    black.retiredSlot6HardCenter896=false;
+    black.retiredSlot6CenterOnly895=true;
     black.strictNoChord795=true;
     black.strictRoadFollow778=true;
     black.roadFollowMode778='route-center-hard';
@@ -14867,7 +14887,7 @@ function seasonCardHtml(p){
     window.__OBSERVER_FM_V106__={
       observerCounts:{
         default:100,
-        blackHole:30,
+        retiredSlot6:30,
         space:70,
         skyCliff:70
       },
@@ -14882,8 +14902,8 @@ function seasonCardHtml(p){
   function applyPatch107(){
     const space=MAP_DEFINITIONS_770.skyway;
     if(space){
-      space.blackHoleHardCenter896=false;
-      space.blackHoleExactCenter897=false;
+      space.retiredSlot6HardCenter896=false;
+      space.retiredSlot6ExactCenter897=false;
       space.spaceFreeLane107=true;
       space.spaceReactionBoost107=true;
       space.spaceMaxLane107=2.25;
@@ -15608,7 +15628,7 @@ function observerCountForMap120(map){
   window.__OBSERVER_FM_V120__={
     version:"v1.2.4",
     mapObserverCounts:{
-      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
+      "세잎 클로버":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
       "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
       "하트":200,"사막오아시스":200
     },
@@ -15636,7 +15656,7 @@ function observerCountForMap120(map){
     currentObserverQaAdded:true,
     neonDriftObserverCount:100,
     currentMapObserverCounts:{
-      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
+      "세잎 클로버":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
       "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
       "하트":200,"사막오아시스":200
     },
@@ -15653,19 +15673,94 @@ function observerCountForMap120(map){
     spawnAndDisplayUnified:true,
     neonDriftActualObservers:100,
     currentMapObserverCounts:{
-      "블랙홀":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
+      "세잎 클로버":40,"스카이클리프":100,"스페이스":130,"네온드리프트":100,
       "스타피쉬":180,"데스티니게이트":180,"아이스크라운":200,
       "하트":200,"사막오아시스":200
     },
     aiBehaviorChanged:false
   };
 
+  // ============================================================
+  // v1.3.0 — RETIRED SLOT 6 COURSE REMOVED / THREE-LEAF CLOVER ADDED
+  // Start/finish share the bottom 6-o'clock gate. Racers climb to the
+  // junction, take the right branch, run the right loop counter-clockwise,
+  // return to the junction, then descend to the same 6-o'clock gate.
+  // ============================================================
+  function applyPatch130(){
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(!clover)return;
+    Object.assign(clover,{
+      slot:6,name:"세잎 클로버",en:"Three-Leaf Clover",theme:"Tropical Clover Circuit",
+      tags:["세잎클로버","우측루프","반시계"],
+      image:"map_clover_131.png?v=132-audit",imageSize:{w:1536,h:1536},logicalSize:{w:178,h:178},
+      route770:[
+        [89.0,163.0],[89.0,151.0],[89.0,137.0],[89.0,124.0],[96.0,114.0],
+        [108.0,118.0],[121.0,124.0],[136.0,126.0],[150.0,121.0],[159.0,111.0],
+        [164.0,98.0],[163.0,84.0],[157.0,72.0],[147.0,64.0],[134.0,61.0],
+        [121.0,63.0],[111.0,69.0],[105.0,79.0],[105.0,91.0],[108.0,103.0],
+        [103.0,110.0],[96.0,114.0],[89.0,124.0],[89.0,137.0],[89.0,151.0],[89.0,163.0]
+      ],
+      start:{x:89.0,y:163.0},goal:{x:89.0,y:163.0},
+      safeZones:{start:{x0:82,y0:156,x1:96,y1:170},goal:{x0:82,y0:156,x1:96,y1:170}},
+      miniCrop:{x:4,y:4,w:170,h:170},
+      courseType775:"circuit",finishRule775:"one-lap-gate",lapRequired775:true,lapArmFraction775:.72,
+      sharedGate778:true,strictRoadFollow778:true,roadFollowMode778:"route-center-hard",
+      special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false},
+      observerProfile:"technical",observerCount797:40,
+      retiredSlot6SmartSpiral797:false,retiredSlot6CenterOnly895:false,retiredSlot6ExactCenter897:false,retiredSlot6HardCenter896:false,
+      qaSpiralCenter7943:false,qaSmartSpiral797:false,clover130:true,cloverRightBranch130:true,cloverCounterClockwise130:true
+    });
+    clover.widths770=new Array(clover.route770.length-1).fill(10.5);
+    clover.extraRoads771=[];clover.forbiddenZones770=[];clover.geometryReady=true;clover.approvedImageShape772=true;
+    const line=conservativeRacingLine778(clover);
+    clover.racingSpline770=line;clover.globalOptimal770=line;clover.racingLineMode772="clover-right-ccw-v1.31.0";
+    POINT_TO_POINT_MAPS_775.delete("double_hairpin");
+    CIRCUIT_MAPS_775.add("double_hairpin");
+  }
+  applyPatch130();
+
+  // v1.3.1 — CLOVER GRASS ROAD + TIGHT ROAD/INSIDE-LINE DISCIPLINE
+  function applyPatch131(){
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(!clover)return;
+    clover.image="map_clover_131.png?v=131-grass-road";
+    clover.imageSize={w:1536,h:1536};
+    clover.logicalSize={w:178,h:178};
+    clover.strictRoadFollow778=true;
+    clover.roadFollowMode778="route-center-hard";
+    clover.cloverGrassRoad131=true;
+    clover.cloverInsidePriority131=true;
+    clover.cloverNoOuterLine131=true;
+    clover.normalLaneLimit131=.48;
+    clover.racingLineMode772="clover-right-ccw-inside-v1.31.0";
+    // Narrow the legal guidance ribbon so normal AI follows the visible pale-grass road
+    // and does not drift toward the outside scenery.
+    clover.widths770=new Array(clover.route770.length-1).fill(9.2);
+    const line=conservativeRacingLine778(clover);
+    clover.racingSpline770=line;clover.globalOptimal770=line;
+  }
+  applyPatch131();
+
+
+  // v1.31.0 — FULL CODE / ASSET AUDIT
+  // Removed all remaining retired-course names and asset references.
+  // Slot id double_hairpin is intentionally retained as a compatibility key only;
+  // its runtime definition is the Three-Leaf Clover from v1.3.0+.
+  window.__OBSERVER_FM_V132__={
+    version:"v1.32.0",fullCodeAudit:true,retiredCourseReferencesRemoved:true,
+    cloverAsset:"map_clover_131.png",compatibilityMapId:"double_hairpin"
+  };
+  // v1.32.0 — stabilization pass: lightweight runtime diagnostics without changing race balance.
+  window.__OBSERVER_FM_STABILITY_1320__={version:"v1.32.0",uiOverflowGuard:true,runtimeErrorCapture:true,gameBalanceChanged:false};
+  window.addEventListener("error",(e)=>{ window.__OBSERVER_FM_LAST_ERROR_1320__={message:String(e.message||""),source:String(e.filename||""),line:e.lineno||0,col:e.colno||0}; });
+  window.addEventListener("unhandledrejection",(e)=>{ window.__OBSERVER_FM_LAST_REJECTION_1320__=String(e.reason&&e.reason.message||e.reason||""); });
+
   function v36SelfAudit(){
     const issues=[];
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
 
     // v1.2.4 current Observer balance QA
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==40)issues.push("블랙홀옵저버40");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==40)issues.push("세잎클로버옵저버40");
     if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==100)issues.push("스카이클리프옵저버100");
     if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==130)issues.push("스페이스옵저버130");
     if(observerCountForMap791(MAP_DEFINITIONS_770.s_map)!==100)issues.push("네온드리프트옵저버100");
@@ -15675,7 +15770,7 @@ function observerCountForMap120(map){
     if(observerCountForMap791(MAP_DEFINITIONS_770.neon_city)!==200)issues.push("하트옵저버200");
     if(observerCountForMap791(MAP_DEFINITIONS_770.desert_oasis)!==200)issues.push("사막오아시스옵저버200");
     if(!MAP_DEFINITIONS_770.neon_city?.qaSingleRedGate7943||!MAP_DEFINITIONS_770.neon_city?.sharedGate778||!MAP_DEFINITIONS_770.neon_city?.lapRequired775)issues.push("하트공용게이트7943");
-    if(!MAP_DEFINITIONS_770.double_hairpin?.qaSpiralCenter7943||!MAP_DEFINITIONS_770.double_hairpin?.qaSmartSpiral797||MAP_DEFINITIONS_770.double_hairpin?.blackHoleExactCenter897||MAP_DEFINITIONS_770.double_hairpin?.blackHoleHardCenter896||MAP_DEFINITIONS_770.double_hairpin?.roadFollowMode778!=="route-center-hard")issues.push("블랙홀스마트나선797");
+    if(!MAP_DEFINITIONS_770.double_hairpin?.clover130||!MAP_DEFINITIONS_770.double_hairpin?.cloverRightBranch130||!MAP_DEFINITIONS_770.double_hairpin?.cloverCounterClockwise130||MAP_DEFINITIONS_770.double_hairpin?.roadFollowMode778!=="route-center-hard")issues.push("세잎클로버130");
     if(!MAP_DEFINITIONS_770.skyway?.qaFourRowRoad7943||MAP_DEFINITIONS_770.skyway?.spaceRoadRows897!==4||!MAP_DEFINITIONS_770.skyway?.spaceExtraGateArtRemoved794)issues.push("스페이스4줄7943");
     if(!MAP_DEFINITIONS_770.s_map?.openingInsideLock7942||MAP_DEFINITIONS_770.s_map?.racingSpline770!==S_MAP_RACING_SPLINE_770)issues.push("네온드리프트시작인코스7942");
     if(!MAP_DEFINITIONS_770.star_fish?.qaEdgeFlow7942||MAP_DEFINITIONS_770.star_fish?.wallCollision786!==false||!MAP_DEFINITIONS_770.star_fish?.edgePassThrough786||!MAP_DEFINITIONS_770.star_fish?.starFishNoEdgeRollback895)issues.push("스타피쉬끝라인7942");

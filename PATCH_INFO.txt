@@ -1,0 +1,3 @@
+Observer FM v1.2.4 -> v1.32.0 changed-files patch
+Replace/copy all included files over v1.2.4.
+Delete files listed in DELETED_FILES.txt.
