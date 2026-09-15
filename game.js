@@ -4661,11 +4661,9 @@ function calibratedFastCorridor79(si){
 
   function forceStartCenter625(p){
     const m810=currentMap770();
-    const sp=(m810.id==='double_hairpin')
-      ? {x:73.4,y:162.7}
-      : (m810.id==='triple_diamond'&&Array.isArray(m810.dualStarts810))
-        ? m810.dualStarts810[(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813>=0)?p._dgStartIndex813:((p.index||0)<Math.ceil(players.length/2)?0:1)]
-        : mapStart770(),sx=sp.x,sy=sp.y;
+    const sp=(m810.id==='triple_diamond'&&Array.isArray(m810.dualStarts810))
+      ? m810.dualStarts810[(Number.isInteger(p._dgStartIndex813)&&p._dgStartIndex813>=0)?p._dgStartIndex813:((p.index||0)<Math.ceil(players.length/2)?0:1)]
+      : mapStart770(),sx=sp.x,sy=sp.y;
     p.x=sx; p.y=sy;
     p.prevX=sx; p.prevY=sy;
     p.simPrevX=sx; p.simPrevY=sy;
@@ -5747,7 +5745,7 @@ function applyMapSet776(){
     ice_ring:{slot:3,name:"아이스 크라운",en:"Ice Crown",theme:"Frozen Crown Canyon",tags:["기본","M자","아이스"],image:"map_ice_m_787.png?v=793-ice-crown-clean",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     desert_oasis:{slot:4,name:"사막 오아시스",en:"Desert Oasis",theme:"Desert Ruins Oasis",tags:["기본","사막","한바퀴"],image:"map_desert_oasis_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
     neon_city:{slot:5,name:"하트",en:"Heart",theme:"Cherry Blossom Heart",tags:["기본","하트","한바퀴"],image:"map_heart_7891_clean.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:false,verticality:false}},
-    double_hairpin:{slot:6,name:"세잎 클로버",en:"Three-Leaf Clover",theme:"Tropical Clover Circuit",tags:["세잎클로버","우측루프","반시계"],image:"map_clover_154.png?v=1540",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
+    double_hairpin:{slot:6,name:"세잎 클로버",en:"Three-Leaf Clover",theme:"Tropical Clover Circuit",tags:["세잎클로버","우측루프","반시계"],image:"map_clover_151.png?v=1510",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:false}},
     skyway:{slot:7,name:"스페이스",en:"Space",theme:"Deep Space Narrow Run",tags:["좁은길","직선","우주"],image:"map_space_894.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     cliff_hanger:{slot:8,name:"스카이 클리프",en:"Sky Cliff",theme:"Frozen Cliff Run",tags:["좁은길","절벽","정밀"],image:"map_cliff_hanger_899.png?v=803-theme-tile",special:{shortcuts:false,obstacles:false,wideRoad:false,multiRoute:false,verticality:true}},
     triple_diamond:{slot:9,name:"데스티니 게이트",en:"Destiny Gate",theme:"Heaven vs Hell Destiny Gate",tags:["데스티니게이트","2스타트","천국vs지옥"],image:"map_destiny_gate_8113.png?v=817-destiny-gate",special:{shortcuts:false,obstacles:false,wideRoad:true,multiRoute:true,verticality:false}}
@@ -5822,7 +5820,7 @@ applyMapSet776();
       lapArmFraction775:.82,racingLineMode772:"generated-v7.77"
     });
     set777("double_hairpin",{
-      image:"map_clover_154.png?v=1540",imageSize:{w:1122,h:1402},
+      image:"map_clover_151.png?v=1510",imageSize:{w:1122,h:1402},
       logicalSize:{w:142.451,h:178},
       route770:[[32.721,128.013],[25.467,120.68],[19.564,112.346],[15.142,103.251],[12.292,93.653],[11.057,83.819],[11.439,74.017],[13.394,64.507],[16.838,55.537],[21.648,47.337],[27.666,40.108],[34.707,34.024],[42.561,29.223],[50.998,25.806],[59.782,23.834],[68.669,23.328],[77.42,24.268],[85.802,26.597],[93.6,30.222],[100.618,35.014],[106.687,40.818],[111.666,47.454],[115.447,54.725],[117.958,62.421],[119.162,70.323],[119.061,78.216],[117.688,85.886],[115.114,93.134],[111.438,99.775],[106.788,105.647],[101.315,110.611],[95.188,114.559],[88.591,117.411],[81.713,119.12],[74.749,119.673],[67.889,119.086],[61.315,117.409],[55.196,114.718],[49.686,111.116],[44.915,106.728],[40.989,101.696],[37.99,96.178],[35.969,90.337],[34.951,84.343],[34.931,78.363],[35.878,72.561],[37.732,67.088],[40.412,62.084],[43.818,57.667],[47.83,53.939],[52.317,50.977],[57.138,48.836],[62.149,47.542],[67.205,47.101],[72.164,47.492],[76.893,48.671],[81.271,50.575],[85.19,53.121],[88.56,56.213],[91.311,59.74],[93.392,63.586],[94.774,67.63],[95.45,71.748],[95.433,75.82],[94.757,79.735],[93.471,83.389],[91.643,86.69],[89.351,89.561],[86.686,91.943],[83.745,93.791],[80.627,95.083],[77.433,95.81]],widths770:[15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5,15.5],
       start:{x:32.721,y:128.013},goal:{x:77.433,y:95.81},
@@ -6330,7 +6328,7 @@ applyMapSet776();
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_clover_154.png?v=1540";
+      black.image="map_clover_151.png?v=1510";
       const oldRoute=(black.route770||[]).map(q=>[q[0],q[1]]);
       if(oldRoute.length>=2){
         black.route770=oldRoute.reverse();
@@ -6369,7 +6367,7 @@ applyMapSet776();
     if(black){
       // v7.87 had yellow/green roles reversed. Restore the opposite gate roles.
       // Start at the outer-left gate; finish at the inner-right gate.
-      black.image="map_clover_154.png?v=1540";
+      black.image="map_clover_151.png?v=1510";
       let r=(black.route770||[]).map(q=>[q[0],q[1]]);
       // v7.87 reversed the original route. Put it back to outer -> inner.
       if(black.retiredSlot6Reverse787 && r.length>=2) r=r.reverse();
@@ -6622,7 +6620,7 @@ applyMapSet776();
   function applyPatch7892(){
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(!black)return;
-    black.image="map_clover_154.png?v=1540";
+    black.image="map_clover_151.png?v=1510";
     black.route770=[[20.007,149.93],[21.187,149.973],[23.44,150.037],[26.821,150.132],[31.328,150.259],[36.136,150.354],[41.247,150.418],[46.658,150.449],[52.372,150.449],[58.006,150.251],[63.56,149.854],[69.035,149.259],[74.431,148.466],[79.589,147.394],[84.509,146.045],[89.191,144.419],[93.634,142.514],[97.84,140.372],[101.807,137.991],[105.537,135.373],[109.028,132.516],[112.321,129.263],[115.416,125.613],[118.312,121.566],[121.01,117.122],[123.431,112.44],[125.573,107.521],[127.438,102.363],[129.025,96.967],[130.215,91.571],[131.009,86.175],[131.405,80.779],[131.405,75.383],[130.969,70.027],[130.096,64.711],[128.787,59.434],[127.041,54.197],[124.859,49.317],[122.24,44.794],[119.185,40.628],[115.694,36.819],[111.885,33.486],[107.759,30.629],[103.315,28.249],[98.554,26.345],[93.634,24.797],[88.556,23.607],[83.319,22.774],[77.923,22.298],[72.606,22.258],[67.369,22.655],[62.211,23.488],[57.133,24.757],[52.292,26.345],[47.69,28.249],[43.326,30.471],[39.199,33.01],[35.391,35.787],[31.899,38.803],[28.725,42.056],[25.868,45.547],[23.329,49.198],[21.107,53.006],[19.203,56.974],[17.616,61.1],[16.307,65.226],[15.275,69.353],[14.521,73.479],[14.045,77.605],[13.886,81.731],[14.045,85.858],[14.521,89.984],[15.315,94.11],[16.346,97.998],[17.616,101.649],[19.124,105.061],[20.869,108.235],[22.774,111.091],[24.837,113.631],[27.059,115.852],[29.439,117.757],[32.256,119.463],[35.51,120.97],[39.199,122.28],[43.326,123.391],[47.69,124.303],[52.292,125.017],[57.133,125.533],[62.211,125.851],[67.131,125.89],[71.892,125.652],[76.494,125.136],[80.938,124.343],[85.223,123.192],[89.349,121.685],[93.317,119.82],[97.126,117.598],[100.577,115.059],[103.672,112.202],[106.41,109.028],[108.79,105.537],[110.853,101.807],[112.599,97.84],[114.027,93.634],[115.138,89.19],[115.813,84.905],[116.051,80.779],[115.853,76.812],[115.218,73.003],[114.186,69.392],[112.758,65.98],[110.933,62.767],[108.711,59.751],[106.172,57.053],[103.315,54.673],[100.141,52.61],[96.65,50.864],[93.079,49.396],[89.429,48.206],[85.699,47.293],[81.89,46.658],[78.081,46.301],[74.273,46.222],[70.464,46.42],[66.655,46.896],[63.084,47.69],[59.751,48.801],[56.657,50.229],[53.8,51.975],[51.181,53.919],[48.801,56.061],[46.658,58.402],[44.754,60.942],[43.088,63.639],[41.659,66.496],[40.469,69.511],[39.517,72.685],[38.882,75.82],[38.565,78.914],[38.565,81.97],[38.882,84.985],[39.517,87.921],[40.469,90.777],[41.739,93.555],[43.326,96.253],[45.27,98.752],[47.571,101.053],[50.229,103.156],[53.245,105.061],[56.339,106.687],[59.513,108.036],[62.767,109.108],[66.099,109.901],[69.392,110.417],[72.646,110.655],[75.86,110.615],[79.034,110.298],[82.009,109.742],[84.787,108.949],[87.366,107.917],[89.746,106.648],[91.928,105.18],[93.912,103.513],[95.697,101.649],[97.284,99.585],[98.673,97.403],[99.863,95.102],[100.855,92.682],[101.649,90.143],[102.164,87.603],[102.403,85.064],[102.363,82.525],[102.045,79.986],[101.49,77.526],[100.696,75.145],[99.665,72.844],[98.395,70.622],[96.967,68.559],[95.38,66.655],[93.634,64.909],[91.73,63.322],[89.706,61.933],[87.564,60.743],[85.302,59.751],[82.922,58.958],[80.541,58.442],[78.161,58.204],[75.78,58.244],[73.4,58.561],[71.138,59.116],[68.996,59.91],[66.972,60.942],[65.068,62.211],[63.401,63.639],[61.973,65.226],[60.783,66.972],[59.831,68.877],[59.077,70.821],[58.521,72.804],[58.164,74.828],[58.006,76.891],[58.085,78.914],[58.402,80.898],[58.958,82.842],[59.751,84.747],[60.783,86.493],[62.053,88.08],[63.56,89.508],[65.306,90.777],[67.052,91.888],[68.797,92.841],[70.543,93.634],[72.289,94.269],[73.836,94.769],[75.185,95.134],[76.336,95.364],[77.288,95.459],[78.002,95.531],[78.478,95.578],[78.738,95.661]];
     black.widths770=[13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5,13.5];
     black.start={x:20.007,y:149.93};
@@ -6761,7 +6759,7 @@ applyMapSet776();
 
     const black=MAP_DEFINITIONS_770.double_hairpin;
     if(black){
-      black.image="map_clover_154.png?v=1540";
+      black.image="map_clover_151.png?v=1510";
       black.leftDuplicateGateRemoved892=true;
       black.retiredSlot6SingleYellow894=true;
     }
@@ -12528,6 +12526,7 @@ function updateDestinyPlayer183(p,now,dt){
     const sx=W/MINI_CROP.w,sy=H/MINI_CROP.h;
 
     const zones775=safeZones770();
+    const hideGateOverlay155=currentMap770()?.id==='double_hairpin';
     const miniZone775=(z,color)=>{
       const x=(z.x0-MINI_CROP.x)*sx,y=(z.y0-MINI_CROP.y)*sy;
       const w=(z.x1-z.x0)*sx,h=(z.y1-z.y0)*sy;
@@ -12536,12 +12535,14 @@ function updateDestinyPlayer183(p,now,dt){
     };
     const smx=(zones775.start.x0+zones775.start.x1)*.5,smy=(zones775.start.y0+zones775.start.y1)*.5;
     const gmx=(zones775.goal.x0+zones775.goal.x1)*.5,gmy=(zones775.goal.y0+zones775.goal.y1)*.5;
-    const shared778=currentMap770().id==='double_hairpin'?false:(!!currentMap770().sharedGate778 || Math.hypot(smx-gmx,smy-gmy)<.75);
-    if(shared778){
-      if(!currentMap770().hideRuntimeSharedGate7992) miniZone775(zones775.start,"#ff3b3b");
-    }else{
-      miniZone775(zones775.start,"#ffd92f");
-      miniZone775(zones775.goal,"#39ff6a");
+    const shared778=!!currentMap770().sharedGate778 || Math.hypot(smx-gmx,smy-gmy)<.75;
+    if(!hideGateOverlay155){
+      if(shared778){
+        if(!currentMap770().hideRuntimeSharedGate7992) miniZone775(zones775.start,"#ff3b3b");
+      }else{
+        miniZone775(zones775.start,"#ffd92f");
+        miniZone775(zones775.goal,"#39ff6a");
+      }
     }
 
     for(let i=0;i<players.length;i++){
@@ -12595,6 +12596,8 @@ function updateDestinyPlayer183(p,now,dt){
 
   function drawStartFinish775(view){
     if(!view)return;
+    // v1.55.0: Clover pads are part of the map artwork. Never draw a large runtime gate over them.
+    if(currentMap770()?.id==='double_hairpin')return;
     const zones=safeZones770();
     const drawZone=(z,color,fill=false)=>{
       const x=(z.x0-view.sx)*view.scale,y=(z.y0-view.sy)*view.scale;
@@ -12613,7 +12616,7 @@ function updateDestinyPlayer183(p,now,dt){
     };
     const scx=(zones.start.x0+zones.start.x1)*.5,scy=(zones.start.y0+zones.start.y1)*.5;
     const gcx=(zones.goal.x0+zones.goal.x1)*.5,gcy=(zones.goal.y0+zones.goal.y1)*.5;
-    const sameGate778=currentMap770().id==='double_hairpin'?false:(!!currentMap770().sharedGate778 || Math.hypot(scx-gcx,scy-gcy)<.75);
+    const sameGate778=!!currentMap770().sharedGate778 || Math.hypot(scx-gcx,scy-gcy)<.75;
     if(sameGate778){
       if(!currentMap770().hideRuntimeSharedGate7992) drawZone(zones.start,"#ff3b3b",false);
     }else{
@@ -15738,7 +15741,7 @@ function observerCountForMap120(map){
     Object.assign(clover,{
       slot:6,name:"세잎 클로버",en:"Three-Leaf Clover",theme:"Tropical Clover Circuit",
       tags:["세잎클로버","우측루프","반시계"],
-      image:"map_clover_154.png?v=1540",imageSize:{w:1536,h:1536},logicalSize:{w:178,h:178},
+      image:"map_clover_151.png?v=1510",imageSize:{w:1536,h:1536},logicalSize:{w:178,h:178},
       route770:[
         [89.0,163.0],[89.0,151.0],[89.0,137.0],[89.0,124.0],[96.0,114.0],
         [108.0,118.0],[121.0,124.0],[136.0,126.0],[150.0,121.0],[159.0,111.0],
@@ -15769,7 +15772,7 @@ function observerCountForMap120(map){
   function applyPatch131(){
     const clover=MAP_DEFINITIONS_770.double_hairpin;
     if(!clover)return;
-    clover.image="map_clover_154.png?v=1540";
+    clover.image="map_clover_151.png?v=1510";
     clover.imageSize={w:1536,h:1536};
     clover.logicalSize={w:178,h:178};
     clover.strictRoadFollow778=true;
@@ -15794,7 +15797,7 @@ function observerCountForMap120(map){
   // its runtime definition is the Three-Leaf Clover from v1.3.0+.
   window.__OBSERVER_FM_V132__={
     version:"v1.32.0",fullCodeAudit:true,retiredCourseReferencesRemoved:true,
-    cloverAsset:"map_clover_154.png?v=1540",compatibilityMapId:"double_hairpin"
+    cloverAsset:"map_clover_151.png?v=1510",compatibilityMapId:"double_hairpin"
   };
   // v1.32.0 — stabilization pass: lightweight runtime diagnostics without changing race balance.
   window.__OBSERVER_FM_STABILITY_1320__={version:"v1.32.0",uiOverflowGuard:true,runtimeErrorCapture:true,gameBalanceChanged:false};
@@ -16001,7 +16004,7 @@ function observerCountForMap120(map){
     const clover=MAP_DEFINITIONS_770.double_hairpin;
     if(clover){
       clover.name='세잎 클로버'; clover.en='Three-Leaf Clover';
-      clover.image='map_clover_154.png?v=1540';
+      clover.image='map_clover_151.png?v=1510';
       const route=[
         [80,151],[80,142],[80,132],[80,121],[80,110],[80,99],[80,90],
         [88,91],[97,98],[108,104],[120,106],[132,102],[141,94],[146,83],
@@ -16066,7 +16069,7 @@ function observerCountForMap120(map){
     }
     const clover=MAP_DEFINITIONS_770.double_hairpin;
     if(clover){
-      clover.image='map_clover_154.png?v=1540';
+      clover.image='map_clover_151.png?v=1510';
       clover.imageSize={w:1536,h:1536}; clover.logicalSize={w:178,h:178};
       // Bottom 6 o'clock -> centre junction -> right leaf only -> CCW loop -> junction -> bottom gate.
       const route=[
@@ -16109,7 +16112,7 @@ function observerCountForMap120(map){
     if(clover){
       // The real PNG is 1284x1225. Earlier square metadata (1536x1536)
       // made drawImage sample outside the bitmap, exposing black canvas edges.
-      clover.image='map_clover_154.png?v=1540';
+      clover.image='map_clover_151.png?v=1510';
       clover.imageSize={w:1284,h:1225};
       clover.logicalSize={w:178,h:178};
       clover.miniCrop={x:0,y:0,w:178,h:178};
@@ -16152,7 +16155,7 @@ function observerCountForMap120(map){
     const clover=MAP_DEFINITIONS_770.double_hairpin;
     if(clover){
       clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
-      clover.image='map_clover_154.png?v=1540';
+      clover.image='map_clover_151.png?v=1510';
       clover.imageSize={w:1284,h:1225}; clover.logicalSize={w:178,h:178};
       // shared bottom stem -> right leaf CCW -> top leaf CCW -> left leaf CCW -> stem finish
       const route=[
@@ -16211,7 +16214,7 @@ function observerCountForMap120(map){
   function applyPatch1450(){
     const clover=MAP_DEFINITIONS_770.double_hairpin;
     if(!clover) return;
-    clover.image='map_clover_154.png?v=1540';
+    clover.image='map_clover_151.png?v=1510';
     clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
     // Road-centre waypoints following the one continuous outer clover road.
     const route=[
@@ -16254,10 +16257,10 @@ function observerCountForMap120(map){
   const clover=MAP_DEFINITIONS_770.double_hairpin;
   if(!clover)return;
   clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
-  clover.image='map_clover_154.png?v=1540';
+  clover.image='map_clover_151.png?v=1510';
   clover.imageSize={w:1284,h:1225}; clover.logicalSize={w:178,h:170};
 
-  // Traced against the visible centre of the light-green road in map_clover_154.png?v=1540
+  // Traced against the visible centre of the light-green road in map_clover_151.png?v=1510.
   // The points deliberately stay on the OUTER continuous clover lap and never use
   // the central plaza as a shortcut between leaves.
   const route=[
@@ -16311,7 +16314,7 @@ function observerCountForMap120(map){
 (function applyPatch1470(){
   const clover=MAP_DEFINITIONS_770.double_hairpin;
   if(!clover)return;
-  clover.image='map_clover_154.png?v=1540';
+  clover.image='map_clover_151.png?v=1510';
   clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
   clover.logicalSize={w:178,h:170};
   const route=[
@@ -16354,7 +16357,7 @@ function observerCountForMap120(map){
 (function applyPatch1480(){
   const clover=MAP_DEFINITIONS_770.double_hairpin;
   if(clover){
-    clover.image='map_clover_154.png?v=1540';
+    clover.image='map_clover_151.png?v=1510';
     clover.cloverDirectSplineMovement148=true;
     clover.racingLineMode772='clover-hard-ordered-spline-v1.48.0';
   }
@@ -16381,7 +16384,7 @@ function observerCountForMap120(map){
   const clover=MAP_DEFINITIONS_770.double_hairpin;
   if(clover){
     clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
-    clover.image='map_clover_154.png?v=1540';
+    clover.image='map_clover_151.png?v=1510';
     clover.imageSize={w:1254,h:1254};
     clover.logicalSize={w:178,h:178};
     clover.miniCrop={x:0,y:0,w:178,h:178};
@@ -16493,7 +16496,7 @@ getView=function(){
   const clover=MAP_DEFINITIONS_770.double_hairpin;
   if(!clover)return;
   clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
-  clover.image='map_clover_154.png?v=1540';
+  clover.image='map_clover_151.png?v=1510';
   clover.imageSize={w:1254,h:1254}; clover.logicalSize={w:178,h:178};
   clover.miniCrop={x:0,y:0,w:178,h:178};
   const route=[
@@ -16541,7 +16544,7 @@ getView=function(){
   const clover=MAP_DEFINITIONS_770.double_hairpin;
   if(!clover)return;
   clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
-  clover.image='map_clover_154.png?v=1540';
+  clover.image='map_clover_152.png?v=1520';
   clover.imageSize={w:1536,h:1536}; clover.logicalSize={w:178,h:178};
   clover.miniCrop={x:0,y:0,w:178,h:178};
   // Centre of the visible road only. No old central/red spawn, no shortcut branches.
@@ -16586,15 +16589,101 @@ getView=function(){
 })();
 
 // ============================================================
-// v1.54.0 — THREE-LEAF CLOVER CLEAN AUTHORITY
-// Actual artwork 1254x1254. Yellow pad -> 9 -> 11 -> 12 -> 1 -> 3 -> 5 -> green pad.
+// v1.53.0 — Three-Leaf Clover single authoritative runtime definition.
+// New uncached asset + distinct left START/right GOAL. This is deliberately
+// last so no retired Clover patch can overwrite it.
 // ============================================================
-(function applyPatch1540(){
-  const clover=MAP_DEFINITIONS_770.double_hairpin;if(!clover)return;
-  const r=[[73.4,162.7],[73.4,154],[73.4,144],[73.4,134],[72,124],[68,116],[59,111],[49,109],[39,106],[30,101],[23,94],[18,85],[16,76],[17,67],[21,59],[28,52],[37,48],[47,46],[57,48],[66,53],[72,57],[70,49],[68,40],[68,31],[71,23],[77,16],[85,12],[89,11],[97,13],[104,18],[109,25],[111,34],[110,43],[107,51],[105,57],[112,53],[121,48],[131,46],[141,48],[150,53],[157,60],[161,68],[162,77],[160,86],[155,95],[148,102],[139,107],[129,110],[119,111],[111,116],[107,124],[104.8,134],[104.3,144],[104.3,154],[104.3,162.7]];
-  Object.assign(clover,{name:'Three-Leaf Clover',en:'Three-Leaf Clover',image:'map_clover_154.png?v=1540',imageSize:{w:1254,h:1254},logicalSize:{w:178,h:178},miniCrop:{x:0,y:0,w:178,h:178},route770:r,widths770:new Array(r.length-1).fill(9.4),start:{x:73.4,y:162.7},goal:{x:104.3,y:162.7},safeZones:{start:{x0:68,y0:157.3,x1:78.8,y1:168.1},goal:{x0:98.9,y0:157.3,x1:109.7,y1:168.1}},sharedGate778:false,courseType775:'point-to-point',finishRule775:'end-gate',lapRequired775:false,hideRuntimeSharedGate7992:true,strictRoadFollow778:true,strictNoChord795:true,roadFollowMode778:'clover-v154-single-centre-route',extraRoads771:[],forbiddenZones770:[],roadMask770:undefined,clover130:false,cloverRightBranch130:false,cloverCounterClockwise130:false,retiredSlot6HardCenter896:false,retiredSlot6CenterOnly895:false,retiredSlot6ExactCenter897:false,retiredSlot6SmartSpiral797:false,cloverOrderLock147:false,cloverDirectSplineMovement148:false,observerCount797:150});
-  const centre=densifyLine772(r,.10);clover.racingSpline770=centre;clover.globalOptimal770=centre;clover.lockOptimalExecution784=true;clover.optimizedSplineAuthority783=true;clover.racingLineMode772='yellow-9-11-12-1-3-5-green-v154';
+(function applyPatch1530(){
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(!clover)return;
+  const r=[
+    [66,166],[66,157],[66,147],[66,137],[66,126],[64,117],
+    [55,112],[44,111],[34,107],[25,101],[19,93],[15,83],[14,73],[17,63],[23,55],[31,49],[41,45],[51,45],[60,49],[67,55],
+    [72,50],[69,42],[67,33],[68,24],[73,17],[80,12],[89,10],
+    [98,12],[105,17],[110,24],[111,33],[109,42],[106,50],
+    [111,55],[118,49],[127,45],[137,45],[147,49],[155,55],[161,63],[164,73],[163,83],[159,93],[153,101],[144,107],[134,111],[123,112],[114,117],
+    [112,126],[112,137],[112,147],[112,157],[112,166]
+  ];
+  Object.assign(clover,{
+    name:'Three-Leaf Clover',en:'Three-Leaf Clover',image:'map_clover_153.png?v=1530',
+    imageSize:{w:1536,h:1536},logicalSize:{w:178,h:178},miniCrop:{x:0,y:0,w:178,h:178},
+    route770:r,widths770:new Array(r.length-1).fill(9.8),
+    start:{x:66,y:166},goal:{x:112,y:166},
+    safeZones:{start:{x0:60,y0:160,x1:72,y1:174},goal:{x0:106,y0:160,x1:118,y1:174}},
+    sharedGate778:false,courseType775:'point-to-point',finishRule775:'end-gate',lapRequired775:false,
+    hideRuntimeSharedGate7992:true,strictRoadFollow778:true,strictNoChord795:true,
+    roadFollowMode778:'clover-v153-authoritative-centre',extraRoads771:[],forbiddenZones770:[],roadMask770:undefined,
+    clover130:false,cloverRightBranch130:false,cloverCounterClockwise130:false,
+    retiredSlot6HardCenter896:false,retiredSlot6CenterOnly895:false,retiredSlot6ExactCenter897:false,retiredSlot6SmartSpiral797:false,
+    cloverOrderLock147:false,cloverDirectSplineMovement148:false,observerCount797:150
+  });
+  const centre=densifyLine772(r,.10);
+  clover.racingSpline770=centre;clover.globalOptimal770=centre;
+  clover.lockOptimalExecution784=true;clover.optimizedSplineAuthority783=true;
+  clover.racingLineMode772='yellow-9-11-12-1-3-5-green-v153';
   POINT_TO_POINT_MAPS_775.add('double_hairpin');CIRCUIT_MAPS_775.delete('double_hairpin');
-  if(currentMap770()?.id==='double_hairpin'){activeMap770=clover;route=r.map(p=>[...p]);widths=[...clover.widths770];GLOBAL_OPTIMAL_LINE_710=centre;RACING_SPLINE_720=centre;rebuildRouteGeometry770();rebuildGlobalOptimal770();rebuildRacingSpline770();if(map)map.src=clover.image;for(const p of players||[]){forceStartCenter625(p);p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;}}
-  window.__OPF_BUILD__='v1.54.0';
+  if(currentMap770()?.id==='double_hairpin'){
+    activeMap770=clover;route=r.map(p=>[...p]);widths=[...clover.widths770];
+    GLOBAL_OPTIMAL_LINE_710=centre;RACING_SPLINE_720=centre;
+    rebuildRouteGeometry770();rebuildGlobalOptimal770();rebuildRacingSpline770();
+    if(map)map.src=clover.image;
+    for(const p of players||[]){forceStartCenter625(p);p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;}
+  }
+  window.__OPF_BUILD__='v1.53.0';
+})();
+
+
+// ============================================================
+// v1.55.0 — THREE-LEAF CLOVER ACTUAL PAD START / PAD GOAL AUTHORITY
+// Actual loaded asset is 1254x1254. Embedded pads are approximately:
+// LEFT yellow center = logical (74,162), RIGHT green center = logical (104,162).
+// No central/shared runtime gate is permitted. Route is strictly point-to-point:
+// yellow -> 9 -> 11 -> 12 -> 1 -> 3 -> 5 -> green.
+// ============================================================
+(function applyPatch1550(){
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(!clover)return;
+  const r=[
+    // yellow pad -> left stem
+    [74,162],[74,154],[74,146],[74,137],[74,128],[73,119],[68,113],
+    // 9 o'clock -> 11 o'clock
+    [59,109],[49,108],[39,105],[30,100],[22,93],[17,84],[15,74],[17,64],[22,56],[30,49],[40,45],[50,45],[59,48],[66,54],
+    // 11 -> 12 -> 1
+    [71,50],[69,42],[68,33],[69,24],[74,17],[81,12],[89,10],[97,12],[104,17],[109,24],[110,33],[109,42],[106,50],
+    // 1 -> 3 -> 5
+    [112,54],[119,49],[128,45],[138,45],[148,49],[156,56],[161,64],[163,74],[161,84],[156,93],[148,100],[139,105],[129,108],[119,109],[111,113],
+    // 5 -> right stem -> green pad
+    [105,119],[104,128],[104,137],[104,146],[104,154],[104,162]
+  ];
+  Object.assign(clover,{
+    name:'Three-Leaf Clover',en:'Three-Leaf Clover',
+    image:'map_clover_153.png?v=1550',imageSize:{w:1254,h:1254},logicalSize:{w:178,h:178},miniCrop:{x:0,y:0,w:178,h:178},
+    route770:r,widths770:new Array(r.length-1).fill(9.6),
+    start:{x:74,y:162},goal:{x:104,y:162},
+    // Small logical zones only for collision/safety rules; they are NOT rendered for Clover.
+    safeZones:{start:{x0:69.5,y0:157.5,x1:78.5,y1:166.5},goal:{x0:99.5,y0:157.5,x1:108.5,y1:166.5}},
+    sharedGate778:false,courseType775:'point-to-point',finishRule775:'end-gate',lapRequired775:false,
+    hideRuntimeSharedGate7992:true,hideRuntimeStartFinish155:true,
+    strictRoadFollow778:true,strictNoChord795:true,roadFollowMode778:'clover-v155-pad-to-pad-centre-only',
+    extraRoads771:[],forbiddenZones770:[],roadMask770:undefined,geometryReady:true,
+    clover130:false,cloverRightBranch130:false,cloverCounterClockwise130:false,
+    retiredSlot6HardCenter896:false,retiredSlot6CenterOnly895:false,retiredSlot6ExactCenter897:false,retiredSlot6SmartSpiral797:false,
+    cloverOrderLock147:false,cloverDirectSplineMovement148:false,observerCount797:150
+  });
+  const centre=densifyLine772(r,.10);
+  clover.racingSpline770=centre;clover.globalOptimal770=centre;
+  clover.lockOptimalExecution784=true;clover.optimizedSplineAuthority783=true;
+  clover.racingLineMode772='yellow-pad-9-11-12-1-3-5-green-pad-v155';
+  POINT_TO_POINT_MAPS_775.add('double_hairpin');CIRCUIT_MAPS_775.delete('double_hairpin');
+  if(currentMap770()?.id==='double_hairpin'){
+    activeMap770=clover;route=r.map(p=>[...p]);widths=[...clover.widths770];
+    GLOBAL_OPTIMAL_LINE_710=centre;RACING_SPLINE_720=centre;
+    rebuildRouteGeometry770();rebuildGlobalOptimal770();rebuildRacingSpline770();
+    if(map)map.src=clover.image;
+    for(const p of players||[]){
+      forceStartCenter625(p); // now resolves to the actual yellow pad (74,162)
+      p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;p._lane120=0;p._lineOffset720=0;
+    }
+  }
+  window.__OPF_BUILD__='v1.55.0';
 })();
