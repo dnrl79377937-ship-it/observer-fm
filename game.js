@@ -26,7 +26,7 @@
   function observerCountForMap791(m=currentMap770()){
     if(!m)return 100;
     const id=String(m.id||"").toLowerCase();
-    if(id==="double_hairpin")return 40;   // 세잎 클로버
+    if(id==="double_hairpin")return 180;  // Three-Leaf Clover
     if(id==="cliff_hanger")return 100;    // 스카이클리프
     if(id==="skyway")return 130;          // 스페이스
     if(id==="s_map")return 100;           // 네온드리프트
@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.42.0";
+  const BUILD_ID = "v1.43.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -15782,7 +15782,7 @@ function observerCountForMap120(map){
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
 
     // v1.2.4 current Observer balance QA
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==40)issues.push("세잎클로버옵저버40");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==180)issues.push("Three-Leaf Clover observer count 180");
     if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==100)issues.push("스카이클리프옵저버100");
     if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==130)issues.push("스페이스옵저버130");
     if(observerCountForMap791(MAP_DEFINITIONS_770.s_map)!==100)issues.push("네온드리프트옵저버100");
@@ -16077,6 +16077,47 @@ function observerCountForMap120(map){
   }
   applyPatch1420();
 
-  // v1.42.0 starts on the randomized matchup board.
+  // ============================================================
+  // v1.43.0 — CLOVER IMAGE FIT + 180 OBSERVERS + BRACKET MODAL FIX
+  // ============================================================
+  function applyPatch1430(){
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(clover){
+      // The real PNG is 1284x1225. Earlier square metadata (1536x1536)
+      // made drawImage sample outside the bitmap, exposing black canvas edges.
+      clover.image='map_clover_142.png?v=1430';
+      clover.imageSize={w:1284,h:1225};
+      clover.logicalSize={w:178,h:178};
+      clover.miniCrop={x:0,y:0,w:178,h:178};
+      clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+    }
+    // Ensure already-created map element reloads the cache-busted Clover asset
+    // when Clover is selected during this build.
+    if(currentMap770()?.id==='double_hairpin' && map){
+      map.src=clover.image;
+    }
+  }
+  applyPatch1430();
+
+  // Bracket is z-index 10000. Map/player modals must sit above it so the
+  // information appears immediately instead of only becoming visible after
+  // "Proceed Set" hides the bracket.
+  function bringLeagueModalToFront1430(modal){
+    if(!modal)return;
+    modal.style.zIndex='20050';
+    modal.style.pointerEvents='auto';
+  }
+  const _openLeagueMap1430=openLeagueMap140;
+  openLeagueMap140=function(mapId){
+    _openLeagueMap1430(mapId);
+    bringLeagueModalToFront1430(document.getElementById('leagueMapModal140'));
+  };
+  const _openLeaguePlayer1430=openLeaguePlayer140;
+  openLeaguePlayer140=function(sourceIndex){
+    _openLeaguePlayer1430(sourceIndex);
+    bringLeagueModalToFront1430(document.getElementById('playerModal'));
+  };
+
+  // v1.43.0 starts on the randomized matchup board.
   resetLeague100();
 })();

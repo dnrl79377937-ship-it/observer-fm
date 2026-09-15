@@ -17,3 +17,6 @@
 .league-map-cell-133 img,.league-map-cell-133 small,.league-ban-card-133 img,.league-ban-card-133 *{pointer-events:none}
 #leagueBoard100{isolation:isolate}
 #leagueMapModal140,#playerModal{z-index:2200!important}
+
+/* v1.43.0: bracket itself is z-index 10000; interactive detail modals must be above it. */
+#leagueMapModal140,#playerModal{z-index:20050!important;pointer-events:auto!important}
