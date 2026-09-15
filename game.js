@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.33.0";
+  const BUILD_ID = "v1.40.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -565,11 +565,15 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       currentMapId:null
     };
 
-    // v1.0.8 map draft:
-    // 9 maps total / each team bans 1 / Neon Drift cannot be banned.
-    // Set 1 is always Neon Drift. Remaining set maps are randomized.
+    // v1.40.0 test draft:
+    // Set 1 is fixed to Three-Leaf Clover for route testing.
+    // Neon Drift is no longer fixed and is mixed into the randomized remaining sets.
+    // Neither the Clover test map nor Neon Drift can be banned during this test build.
     const neon108=neonDriftMapId108();
-    const banPool108=shuffle100(MAP_POOL_770.map(m=>m.id).filter(id=>id!==neon108));
+    const clover140=MAP_DEFINITIONS_770?.double_hairpin ? "double_hairpin" :
+      (MAP_POOL_770.find(m=>(m?.name||"").includes("세잎"))?.id||null);
+    const protected140=new Set([clover140,neon108].filter(Boolean));
+    const banPool108=shuffle100(MAP_POOL_770.map(m=>m.id).filter(id=>!protected140.has(id)));
 
     league100.bannedMaps.A=banPool108[0]??null;
     league100.bannedMaps.B=banPool108.find(id=>id!==league100.bannedMaps.A)??banPool108[1]??null;
@@ -578,12 +582,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       MAP_POOL_770.map(m=>m.id).filter(id=>
         id!==league100.bannedMaps.A &&
         id!==league100.bannedMaps.B &&
-        id!==neon108
+        id!==clover140
       )
     );
 
     league100.setMaps=[
-      neon108,
+      clover140||neon108,
       ...available108.slice(0,6)
     ];
     prepareLeaguePair100();
@@ -680,6 +684,37 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     return {src,name};
   }
 
+  function ensureLeagueMapModal140(){
+    let modal=document.getElementById("leagueMapModal140");
+    if(modal)return modal;
+    modal=document.createElement("div");
+    modal.id="leagueMapModal140"; modal.className="overlay hidden";
+    modal.innerHTML=`<div class="modalCard league-map-modal-card-140"><button type="button" class="closeBtn" aria-label="닫기">×</button><h2 id="leagueMapModalTitle140">맵</h2><img id="leagueMapModalImage140" alt="맵 확대 이미지"></div>`;
+    document.body.appendChild(modal);
+    modal.querySelector(".closeBtn").onclick=()=>modal.classList.add("hidden");
+    modal.onclick=e=>{if(e.target===modal)modal.classList.add("hidden")};
+    return modal;
+  }
+  function openLeagueMap140(mapId){
+    const m=MAP_DEFINITIONS_770?.[mapId]; if(!m)return;
+    const modal=ensureLeagueMapModal140();
+    modal.querySelector("#leagueMapModalTitle140").textContent=m.name||mapId;
+    const img=modal.querySelector("#leagueMapModalImage140"); img.src=m.image||""; img.alt=`${m.name||mapId} 확대 이미지`;
+    modal.classList.remove("hidden");
+  }
+  function openLeaguePlayer140(sourceIndex){
+    if(!Number.isInteger(sourceIndex)||!playerStats[sourceIndex])return;
+    const active=players.find(p=>p.sourceIndex===sourceIndex);
+    if(active){openPlayerCard(active);return;}
+    const stats={...playerStats[sourceIndex]};
+    const pf=profiles[sourceIndex]||{};
+    const style=pf.style||pf.drivingStyle||"balanced";
+    const modal=document.getElementById("playerModal");
+    document.getElementById("playerModalTitle").textContent=`${names[sourceIndex]} · 선수 데이터`;
+    document.getElementById("playerModalBody").innerHTML=`<div class="profile-hero">${avatarHtml(sourceIndex,"profile-avatar")}<div><b>${names[sourceIndex]}</b><span>대진표 선수 정보</span><small>기본 능력치</small></div></div><div class="statGrid">${Object.entries(stats).map(([k,v])=>`<div class="statCell"><span>${statLabel(k)}</span><b>${v}</b></div>`).join("")}</div>`;
+    modal.classList.remove("hidden");
+  }
+
   function renderLeagueBoard100(){
     if(!league100)return;
     const rosterA=document.getElementById("leagueRosterA100");
@@ -704,8 +739,8 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const banAV=leagueMapVisual133(league100.bannedMaps?.A);
       const banBV=leagueMapVisual133(league100.bannedMaps?.B);
       bans.innerHTML=`
-        <div class="league-ban-a-100"><div class="league-ban-card-133">${banAV.src?`<img src="${banAV.src}" alt="${banA}">`:""}<div class="league-ban-copy-133"><em>RED TEAM BAN</em><strong>${banA}</strong></div></div></div>
-        <div class="league-ban-b-100"><div class="league-ban-card-133"><div class="league-ban-copy-133"><em>BLUE TEAM BAN</em><strong>${banB}</strong></div>${banBV.src?`<img src="${banBV.src}" alt="${banB}">`:""}</div></div>`;
+        <div class="league-ban-a-100"><div class="league-ban-card-133 league-map-open-140" data-map-id="${league100.bannedMaps?.A||""}">${banAV.src?`<img src="${banAV.src}" alt="${banA}">`:""}<div class="league-ban-copy-133"><em>RED TEAM BAN</em><strong>${banA}</strong></div></div></div>
+        <div class="league-ban-b-100"><div class="league-ban-card-133 league-map-open-140" data-map-id="${league100.bannedMaps?.B||""}"><div class="league-ban-copy-133"><em>BLUE TEAM BAN</em><strong>${banB}</strong></div>${banBV.src?`<img src="${banBV.src}" alt="${banB}">`:""}</div></div>`;
     }
 
     if(schedule){
@@ -725,10 +760,10 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
         const mapV=leagueMapVisual133(mapId);
         rows.push(`<div class="${cls}">
           <span class="set">${setNo}세트</span>
-          <span class="league-map-cell-133">${mapV.src?`<img src="${mapV.src}" alt="${mapName}">`:""}<small>${mapName}</small></span>
-          <b class="a">${names[a]}</b>
+          <button type="button" class="league-map-cell-133 league-map-open-140" data-map-id="${mapId||""}" aria-label="${mapName} 확대 보기">${mapV.src?`<img src="${mapV.src}" alt="${mapName}">`:""}<small>${mapName}</small></button>
+          <button type="button" class="a league-player-open-140" data-source-index="${a}">${names[a]}</button>
           <span class="vs">VS</span>
-          <b class="b">${names[b]}</b>
+          <button type="button" class="b league-player-open-140" data-source-index="${b}">${names[b]}</button>
           <span class="result">${r?`${r.score.A} : ${r.score.B}`:"-"}</span>
         </div>`);
       }
@@ -751,15 +786,23 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       const aceMapV=leagueMapVisual133(aceMapId);
       rows.push(`<div class="league-schedule-row-100 ace ${!aceResult&&league100.setNo===7?"current":""} ${aceResult?"done":""}">
         <span class="set">7세트<br>ACE</span>
-        <span class="league-map-cell-133">${aceMapV.src?`<img src="${aceMapV.src}" alt="${aceMapName}">`:""}<small>${aceMapName}</small></span>
-        <b class="a">${aceA}</b>
+        <button type="button" class="league-map-cell-133 league-map-open-140" data-map-id="${aceMapId||""}" aria-label="${aceMapName} 확대 보기">${aceMapV.src?`<img src="${aceMapV.src}" alt="${aceMapName}">`:""}<small>${aceMapName}</small></button>
+        <button type="button" class="a league-player-open-140" ${aceActivated&&league100.ace.A!=null?`data-source-index="${league100.ace.A}"`:"disabled"}>${aceA}</button>
         <span class="vs">VS</span>
-        <b class="b">${aceB}</b>
+        <button type="button" class="b league-player-open-140" ${aceActivated&&league100.ace.B!=null?`data-source-index="${league100.ace.B}"`:"disabled"}>${aceB}</button>
         <span class="result">${aceResult?`${aceResult.score.A} : ${aceResult.score.B}`:"-"}</span>
       </div>`);
 
       schedule.innerHTML=rows.join("");
     }
+
+    // v1.40.0 bracket interactions: map preview + player data.
+    document.querySelectorAll(".league-map-open-140[data-map-id]").forEach(el=>{
+      el.onclick=()=>openLeagueMap140(el.dataset.mapId);
+    });
+    document.querySelectorAll(".league-player-open-140[data-source-index]").forEach(el=>{
+      el.onclick=()=>openLeaguePlayer140(Number(el.dataset.sourceIndex));
+    });
 
     if(msg){
       if(league100.winner){
@@ -12430,24 +12473,17 @@ function updateDestinyPlayer183(p,now,dt){
       ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
     }
 
-    ctx.fillStyle="#07111a";
-    ctx.font=`900 ${Math.max(12,r*.85)}px system-ui`;
-    ctx.textAlign="center";ctx.textBaseline="middle";
-    ctx.fillText(String(rank),0,1);
-
-    // Nickname directly over the icon.
-    ctx.font=`800 ${Math.max(10,r*.82)}px system-ui`;
+    // v1.40.0: keep the unit silhouette unobstructed. No rank badge or team-colour rectangle.
+    // Nickname remains team-coloured above the sprite with a subtle text outline only.
+    ctx.font=`900 ${Math.max(10,r*.82)}px system-ui`;
+    ctx.textAlign="center";
+    ctx.textBaseline="bottom";
     const label=p.name;
-    const tw=ctx.measureText(label).width+14;
-    const lh=Math.max(15,r*1.02);
-    const ly=-r*1.48;
-    ctx.fillStyle="rgba(5,8,13,.88)";
-    ctx.strokeStyle=leagueTeamColor105(p);ctx.lineWidth=1.5;
-    ctx.beginPath();
-    if(ctx.roundRect) ctx.roundRect(-tw/2,ly-lh,tw,lh,5);
-    else ctx.rect(-tw/2,ly-lh,tw,lh);
-    ctx.fill();ctx.stroke();
-    ctx.fillStyle=leagueTeamColor105(p);ctx.textBaseline="bottom";
+    const ly=-r*1.55;
+    ctx.lineWidth=Math.max(2,r*.13);
+    ctx.strokeStyle="rgba(3,7,12,.95)";
+    ctx.strokeText(label,0,ly-2);
+    ctx.fillStyle=leagueTeamColor105(p);
     ctx.fillText(label,0,ly-2);
 
     ctx.restore();
