@@ -20,3 +20,9 @@
 
 /* v1.43.0: bracket itself is z-index 10000; interactive detail modals must be above it. */
 #leagueMapModal140,#playerModal{z-index:20050!important;pointer-events:auto!important}
+
+/* v1.44.0 — bracket thumbnails show the complete map without top cropping. */
+.league-map-cell-133{overflow:visible!important;padding-top:5px!important}
+.league-map-cell-133 img{width:100px!important;height:76px!important;object-fit:contain!important;object-position:center center!important;background:#05080d}
+.league-map-cell-133 small{margin-top:1px}
+@media(max-width:760px){.league-map-cell-133 img{width:82px!important;height:62px!important;object-fit:contain!important}}

@@ -26,7 +26,7 @@
   function observerCountForMap791(m=currentMap770()){
     if(!m)return 100;
     const id=String(m.id||"").toLowerCase();
-    if(id==="double_hairpin")return 180;  // Three-Leaf Clover
+    if(id==="double_hairpin")return 150;  // Three-Leaf Clover
     if(id==="cliff_hanger")return 100;    // 스카이클리프
     if(id==="skyway")return 130;          // 스페이스
     if(id==="s_map")return 100;           // 네온드리프트
@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.43.0";
+  const BUILD_ID = "v1.44.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -15782,7 +15782,7 @@ function observerCountForMap120(map){
     if(!MAP_DEFINITIONS_770.desert_oasis?.qaStartClean7943||!MAP_DEFINITIONS_770.desert_oasis?.startArtifactClean899)issues.push("사막오아시스시작부7943");
 
     // v1.2.4 current Observer balance QA
-    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==180)issues.push("Three-Leaf Clover observer count 180");
+    if(observerCountForMap791(MAP_DEFINITIONS_770.double_hairpin)!==150)issues.push("Three-Leaf Clover observer count 150");
     if(observerCountForMap791(MAP_DEFINITIONS_770.cliff_hanger)!==100)issues.push("스카이클리프옵저버100");
     if(observerCountForMap791(MAP_DEFINITIONS_770.skyway)!==130)issues.push("스페이스옵저버130");
     if(observerCountForMap791(MAP_DEFINITIONS_770.s_map)!==100)issues.push("네온드리프트옵저버100");
@@ -16118,6 +16118,62 @@ function observerCountForMap120(map){
     bringLeagueModalToFront1430(document.getElementById('playerModal'));
   };
 
-  // v1.43.0 starts on the randomized matchup board.
+  // ============================================================
+  // v1.44.0 — CLOVER FULL 3-LEAF ROUTE + SPACE CAMERA + 150 OBS
+  // Clover: 6 -> right(3) -> top(12) -> left(9) -> 6.
+  // The racing line intentionally tracks the road centre instead of forcing
+  // an aggressive inside line, preventing the old 3 -> 6 shortcut.
+  // ============================================================
+  function applyPatch1440(){
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(clover){
+      clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+      clover.image='map_clover_142.png?v=1440';
+      clover.imageSize={w:1284,h:1225}; clover.logicalSize={w:178,h:178};
+      // shared bottom stem -> right leaf CCW -> top leaf CCW -> left leaf CCW -> stem finish
+      const route=[
+        [89,166],[89,154],[89,142],[89,130],[89,118],[89,105],
+        // right leaf: junction -> 3 o'clock -> upper return to junction
+        [101,111],[116,117],[132,120],[148,116],[160,106],[166,93],[165,79],[158,68],[146,61],[132,59],[119,63],[109,72],[104,84],[105,96],[99,104],[89,105],
+        // top leaf: junction -> right side -> 12 -> left side -> junction
+        [98,96],[103,82],[104,66],[101,49],[94,34],[83,23],[70,17],[57,17],[45,23],[36,34],[31,48],[30,63],[34,78],[42,91],[54,100],[68,105],[79,104],[89,105],
+        // left leaf: junction -> upper side -> 9 o'clock -> lower return to junction
+        [79,104],[67,99],[54,94],[40,94],[27,99],[18,109],[13,121],[14,134],[21,145],[33,152],[47,155],[61,152],[72,145],[79,135],[81,123],[79,113],[89,105],
+        // finish down the 6 o'clock stem
+        [89,118],[89,130],[89,142],[89,154],[89,166]
+      ];
+      clover.route770=route;
+      clover.widths770=new Array(route.length-1).fill(11.8);
+      clover.start={x:89,y:166}; clover.goal={x:89,y:166};
+      clover.safeZones={start:{x0:83,y0:160,x1:95,y1:173},goal:{x0:83,y0:160,x1:95,y1:173}};
+      clover.sharedGate778=true; clover.courseType775='circuit'; clover.finishRule775='one-lap-gate'; clover.lapRequired775=true;
+      clover.strictRoadFollow778=true; clover.roadFollowMode778='route-center-hard'; clover.strictNoChord795=true;
+      clover.extraRoads771=[]; clover.forbiddenZones770=[]; clover.geometryReady=true;
+      const centre=densifyLine772(route,.18);
+      clover.racingSpline770=centre; clover.globalOptimal770=centre;
+      clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+      clover.racingLineMode772='clover-6-3-12-9-6-road-centre-v1.44.0';
+      clover.roadMask770=undefined;
+    }
+  }
+  applyPatch1440();
+
+  // Space is unusually tall/narrow. A little extra zoom removes the visible
+  // right-side canvas gutter while keeping the common 300% zoom elsewhere.
+  const _getView1440=getView;
+  getView=function(){
+    if(currentMap770()?.id!=='skyway') return _getView1440();
+    const W=canvas.width,H=canvas.height;
+    const fitScale=Math.min(W/MAP_W,H/MAP_H);
+    const scale=fitScale*3.28;
+    const viewW=W/scale,viewH=H/scale;
+    const a=running?renderAlpha730:1;
+    const rcx=lerp730(prevCamX730,camX,a),rcy=lerp730(prevCamY730,camY,a);
+    let sx=rcx-viewW/2,sy=rcy-viewH/2;
+    sx=Math.max(0,Math.min(MAP_W-viewW,sx)); sy=Math.max(0,Math.min(MAP_H-viewH,sy));
+    return {sx,sy,viewW,viewH,scale};
+  };
+
+  // v1.44.0 starts on the randomized matchup board.
   resetLeague100();
 })();
