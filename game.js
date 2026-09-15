@@ -16356,3 +16356,124 @@ function observerCountForMap120(map){
   }
   window.__OPF_BUILD__='v1.48.0';
 })();
+
+// ============================================================
+// v1.50.0 — CONSOLIDATED POST-v1.40 PATCH
+// Replaces the obsolete v1.41~v1.48 Clover overrides with one authoritative
+// implementation. Clover is now point-to-point: LEFT START -> full clover road
+// -> RIGHT GOAL. No shared start/finish gate and no legacy slot-6 route logic.
+// ============================================================
+(function applyPatch1500(){
+  const labels={
+    s_map:'ObserverS', star_fish:'Star Fish', ice_ring:'Ice Crown',
+    desert_oasis:'Desert Oasis', neon_city:'Heart', double_hairpin:'Three-Leaf Clover',
+    skyway:'Space', cliff_hanger:'Sky Cliff', triple_diamond:'Destiny Gate'
+  };
+  for(const m of MAP_POOL_770){
+    const label=labels[m.id]||m.en||m.name;
+    m.name=label; m.en=label;
+  }
+
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(clover){
+    clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+    clover.image='map_clover_150.png?v=1500';
+    clover.imageSize={w:1254,h:1254};
+    clover.logicalSize={w:178,h:178};
+    clover.miniCrop={x:0,y:0,w:178,h:178};
+
+    // One continuous visible-road centreline.
+    // LEFT 6 START -> left lobe -> top lobe -> right lobe -> RIGHT 6 GOAL.
+    const route=[
+      [74,166],[74,156],[74,145],[74,134],[74,123],[72,115],
+      [61,111],[49,111],[37,107],[27,100],[20,91],[17,80],[18,69],[23,60],
+      [31,53],[41,49],[52,49],[62,53],[70,59],
+      [74,52],[71,43],[68,34],[69,25],[74,17],[82,12],[89,10],
+      [97,12],[104,17],[109,25],[110,34],[107,43],[104,52],
+      [112,59],[120,53],[130,49],[141,49],[151,53],[159,60],[164,69],[165,80],
+      [162,91],[155,100],[145,107],[133,111],[121,111],[110,115],
+      [104,123],[104,134],[104,145],[104,156],[104,166]
+    ];
+    clover.route770=route;
+    clover.widths770=new Array(route.length-1).fill(10.8);
+    clover.start={x:74,y:166};
+    clover.goal={x:104,y:166};
+    clover.safeZones={
+      start:{x0:68,y0:159,x1:80,y1:174},
+      goal:{x0:98,y0:159,x1:110,y1:174}
+    };
+    clover.sharedGate778=false;
+    clover.courseType775='point-to-point';
+    clover.finishRule775='end-gate';
+    clover.lapRequired775=false;
+    clover.strictRoadFollow778=true;
+    clover.strictNoChord795=true;
+    clover.roadFollowMode778='clover-left-start-full-road-right-goal-v150';
+    clover.extraRoads771=[];
+    clover.forbiddenZones770=[];
+    clover.roadMask770=undefined;
+    clover.geometryReady=true;
+    // Explicitly disable all retired slot-6 / old Clover special cases.
+    clover.retiredSlot6HardCenter896=false;
+    clover.retiredSlot6CenterOnly895=false;
+    clover.retiredSlot6ExactCenter897=false;
+    clover.retiredSlot6SmartSpiral797=false;
+    clover.cloverOrderLock147=false;
+    clover.cloverDirectSplineMovement148=false;
+    const centre=densifyLine772(route,.14);
+    clover.racingSpline770=centre;
+    clover.globalOptimal770=centre;
+    clover.lockOptimalExecution784=true;
+    clover.optimizedSplineAuthority783=true;
+    clover.racingLineMode772='clover-left-start-full-lap-right-goal-v1.50.0';
+  }
+
+  if(mapSelect774){
+    for(const opt of mapSelect774.options){
+      const m=MAP_DEFINITIONS_770[opt.value];
+      if(m)opt.textContent=`${m.slot}. ${m.name}`;
+    }
+  }
+
+  // Map/player cards: a single capture handler so bracket clicks open immediately.
+  if(!window.__leaguePointer1500){
+    window.__leaguePointer1500=true;
+    document.addEventListener('pointerdown',e=>{
+      const mapEl=e.target.closest?.('.league-map-open-140[data-map-id]');
+      if(mapEl&&mapEl.dataset.mapId){e.preventDefault();openLeagueMap140(mapEl.dataset.mapId);return;}
+      const playerEl=e.target.closest?.('.league-player-open-140[data-source-index]');
+      if(playerEl&&!playerEl.disabled){e.preventDefault();openLeaguePlayer140(Number(playerEl.dataset.sourceIndex));}
+    },true);
+  }
+
+  // Bracket is z-index 10000; modals must be above it.
+  const mapModal=document.getElementById('leagueMapModal140');
+  if(mapModal){mapModal.style.zIndex='20050';mapModal.style.pointerEvents='auto';}
+  const playerModal=document.getElementById('playerModal');
+  if(playerModal){playerModal.style.zIndex='20050';playerModal.style.pointerEvents='auto';}
+
+  // If Clover is active during a hot reload, rebuild its runtime geometry now.
+  if(currentMap770()?.id==='double_hairpin'){
+    route=clover.route770.map(p=>[...p]); widths=[...clover.widths770];
+    GLOBAL_OPTIMAL_LINE_710=clover.globalOptimal770;
+    RACING_SPLINE_720=clover.racingSpline770;
+    rebuildRouteGeometry770(); rebuildGlobalOptimal770(); rebuildRacingSpline770();
+    if(map)map.src=clover.image;
+    for(const p of players||[]){p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;p._lane120=0;p._lineOffset720=0;}
+  }
+
+  window.__OPF_BUILD__='v1.50.0';
+})();
+
+// Space is tall/narrow: retain its dedicated extra zoom to suppress side gutters.
+const _getView1500=getView;
+getView=function(){
+  if(currentMap770()?.id!=='skyway')return _getView1500();
+  const W=canvas.width,H=canvas.height;
+  const fitScale=Math.min(W/MAP_W,H/MAP_H),scale=fitScale*3.28;
+  const viewW=W/scale,viewH=H/scale,a=running?renderAlpha730:1;
+  const rcx=lerp730(prevCamX730,camX,a),rcy=lerp730(prevCamY730,camY,a);
+  let sx=rcx-viewW/2,sy=rcy-viewH/2;
+  sx=Math.max(0,Math.min(MAP_W-viewW,sx));sy=Math.max(0,Math.min(MAP_H-viewH,sy));
+  return {sx,sy,viewW,viewH,scale};
+};
