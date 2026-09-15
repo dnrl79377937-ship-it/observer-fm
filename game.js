@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.44.0";
+  const BUILD_ID = "v1.45.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -16119,7 +16119,7 @@ function observerCountForMap120(map){
   };
 
   // ============================================================
-  // v1.44.0 — CLOVER FULL 3-LEAF ROUTE + SPACE CAMERA + 150 OBS
+  // v1.45.0 — CLOVER FULL 3-LEAF ROUTE + SPACE CAMERA + 150 OBS
   // Clover: 6 -> right(3) -> top(12) -> left(9) -> 6.
   // The racing line intentionally tracks the road centre instead of forcing
   // an aggressive inside line, preventing the old 3 -> 6 shortcut.
@@ -16128,7 +16128,7 @@ function observerCountForMap120(map){
     const clover=MAP_DEFINITIONS_770.double_hairpin;
     if(clover){
       clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
-      clover.image='map_clover_142.png?v=1440';
+      clover.image='map_clover_142.png?v=1450';
       clover.imageSize={w:1284,h:1225}; clover.logicalSize={w:178,h:178};
       // shared bottom stem -> right leaf CCW -> top leaf CCW -> left leaf CCW -> stem finish
       const route=[
@@ -16152,7 +16152,7 @@ function observerCountForMap120(map){
       const centre=densifyLine772(route,.18);
       clover.racingSpline770=centre; clover.globalOptimal770=centre;
       clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
-      clover.racingLineMode772='clover-6-3-12-9-6-road-centre-v1.44.0';
+      clover.racingLineMode772='clover-6-3-12-9-6-road-centre-v1.45.0';
       clover.roadMask770=undefined;
     }
   }
@@ -16174,6 +16174,49 @@ function observerCountForMap120(map){
     return {sx,sy,viewW,viewH,scale};
   };
 
-  // v1.44.0 starts on the randomized matchup board.
+  // v1.45.0 starts on the randomized matchup board.
   resetLeague100();
 })();
+
+
+  // ============================================================
+  // v1.45.0 — THREE-LEAF CLOVER CONTINUOUS OUTER-LAP ROUTE
+  // Full road sweep: 6 -> 3 -> 1 -> 12 -> 11 -> 9 -> 7 -> 6.
+  // Never returns to the centre junction between leaves.
+  // ============================================================
+  function applyPatch1450(){
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(!clover) return;
+    clover.image='map_clover_142.png?v=1450';
+    clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+    // Road-centre waypoints following the one continuous outer clover road.
+    const route=[
+      // 6 o'clock stem -> lower junction
+      [89,166],[89,156],[89,146],[89,136],[89,126],[94,118],[103,113],
+      // right leaf: lower-right -> 3 -> upper-right -> 1
+      [116,119],[132,124],[148,122],[160,114],[168,103],[171,90],[168,78],[160,69],[148,64],[135,63],[123,66],[114,72],
+      // climb from 1 o'clock into the top leaf (do NOT cut through centre)
+      [109,63],[112,52],[118,40],[117,28],[109,19],[98,13],[89,11],
+      // 12 -> 11 along the top loop
+      [78,11],[66,14],[57,20],[51,30],[49,42],[53,54],[59,63],[64,70],
+      // 11 -> left leaf upper entry -> 9
+      [55,66],[43,63],[30,65],[18,72],[10,83],[7,96],[10,108],[18,118],[30,124],[44,126],
+      // 9 -> 7 along lower-left road -> lower junction
+      [56,124],[67,119],[76,112],[82,106],[86,112],[82,118],[75,123],
+      // shared lower road -> 6 o'clock finish
+      [84,120],[89,126],[89,136],[89,146],[89,156],[89,166]
+    ];
+    clover.route770=route;
+    // Wider centre-line corridor: follow the visible road, not an aggressive inside line.
+    clover.widths770=new Array(route.length-1).fill(12.6);
+    clover.start={x:89,y:166}; clover.goal={x:89,y:166};
+    clover.sharedGate778=true; clover.courseType775='circuit';
+    clover.finishRule775='one-lap-gate'; clover.lapRequired775=true;
+    clover.strictRoadFollow778=true; clover.roadFollowMode778='route-center-hard';
+    clover.strictNoChord795=true; clover.extraRoads771=[]; clover.forbiddenZones770=[];
+    const centre=densifyLine772(route,.16);
+    clover.racingSpline770=centre; clover.globalOptimal770=centre;
+    clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+    clover.racingLineMode772='clover-6-3-1-12-11-9-7-6-full-road-v1.45.0';
+  }
+  applyPatch1450();
