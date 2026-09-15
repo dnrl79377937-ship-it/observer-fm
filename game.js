@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.41.0";
+  const BUILD_ID = "v1.42.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -565,7 +565,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       currentMapId:null
     };
 
-    // v1.40.0 test draft:
+    // v1.42.0 test draft:
     // Set 1 is fixed to Three-Leaf Clover for route testing.
     // Neon Drift is no longer fixed and is mixed into the randomized remaining sets.
     // Neither the Clover test map nor Neon Drift can be banned during this test build.
@@ -794,7 +794,7 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
       schedule.innerHTML=rows.join("");
     }
 
-    // v1.41.0 uses one delegated pointer handler (installed once below).
+    // v1.42.0 uses one delegated pointer handler (installed once below).
     // Avoid rebinding every schedule render; this also fixes delayed/missed taps.
 
     if(msg){
@@ -12455,7 +12455,7 @@ function updateDestinyPlayer183(p,now,dt){
       ctx.shadowColor=leagueTeamColor105(p)||"rgba(255,255,255,.45)";
       ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
-      // v1.33.0: sprite A is the RED-side asset and sprite B is the BLUE-side asset.
+      // v1.42.0: sprite A is the RED-side asset and sprite B is the BLUE-side asset.
       // Do not paint a rectangular source-atop tint over the PNG; preserve the unit silhouette.
       ctx.restore();
     }else{
@@ -12466,7 +12466,7 @@ function updateDestinyPlayer183(p,now,dt){
       ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.stroke();
     }
 
-    // v1.40.0: keep the unit silhouette unobstructed. No rank badge or team-colour rectangle.
+    // v1.42.0: keep the unit silhouette unobstructed. No rank badge or team-colour rectangle.
     // Nickname remains team-coloured above the sprite with a subtle text outline only.
     ctx.font=`900 ${Math.max(10,r*.82)}px system-ui`;
     ctx.textAlign="center";
@@ -15967,7 +15967,7 @@ function observerCountForMap120(map){
 
 
   // ============================================================
-  // v1.41.0 — THREE-LEAF CLOVER FINAL ROUTE + INSTANT BRACKET UI
+  // v1.42.0 — THREE-LEAF CLOVER FINAL ROUTE + INSTANT BRACKET UI
   // 6 o'clock shared start/finish -> up -> take RIGHT fork -> one
   // counter-clockwise loop on the right leaf -> junction -> back to 6 o'clock.
   // This final override intentionally supersedes all retired slot-6/black-hole
@@ -15997,7 +15997,7 @@ function observerCountForMap120(map){
       const exact=densifyLine772(route,.22);
       clover.racingSpline770=exact; clover.globalOptimal770=exact;
       clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
-      clover.racingLineMode772='clover-right-ccw-shared-gate-v1.41.0';
+      clover.racingLineMode772='clover-right-ccw-shared-gate-v1.42.0';
       // Explicit legal-road ribbon: no crossing to the left/top leaves and no outer excursion.
       clover.roadMask770=(x,y)=>{
         let best=1e9;
@@ -16025,6 +16025,58 @@ function observerCountForMap120(map){
     if(playerEl && !playerEl.disabled){ e.preventDefault(); openLeaguePlayer140(Number(playerEl.dataset.sourceIndex)); }
   },true);
 
-  // v1.0.0 starts on the randomized matchup board, never directly on Neon Drift.
+  // ============================================================
+  // v1.42.0 — AUTHORITATIVE MAP LABELS + CLOVER ROUTE/CACHE FIX
+  // English display names only. Neon Drift is renamed ObserverS.
+  // Clover uses a new asset filename to defeat stale GitHub Pages/browser cache.
+  // ============================================================
+  function applyPatch1420(){
+    const labels={
+      s_map:'ObserverS', star_fish:'Star Fish', ice_ring:'Ice Crown',
+      desert_oasis:'Desert Oasis', neon_city:'Heart', double_hairpin:'Three-Leaf Clover',
+      skyway:'Space', cliff_hanger:'Sky Cliff', triple_diamond:'Destiny Gate'
+    };
+    for(const m of MAP_POOL_770){
+      const label=labels[m.id]||m.en||m.name;
+      m.name=label; m.en=label;
+    }
+    const clover=MAP_DEFINITIONS_770.double_hairpin;
+    if(clover){
+      clover.image='map_clover_142.png?v=1420';
+      clover.imageSize={w:1536,h:1536}; clover.logicalSize={w:178,h:178};
+      // Bottom 6 o'clock -> centre junction -> right leaf only -> CCW loop -> junction -> bottom gate.
+      const route=[
+        [89,166],[89,154],[89,142],[89,130],[89,118],[96,111],
+        [107,116],[121,122],[136,123],[150,118],[159,108],[164,95],
+        [163,82],[157,70],[147,62],[134,59],[121,61],[111,67],
+        [105,77],[104,89],[107,101],[102,108],[96,111],
+        [89,118],[89,130],[89,142],[89,154],[89,166]
+      ];
+      clover.route770=route;
+      clover.widths770=new Array(route.length-1).fill(9.4);
+      clover.start={x:89,y:166}; clover.goal={x:89,y:166};
+      clover.safeZones={start:{x0:83,y0:160,x1:95,y1:173},goal:{x0:83,y0:160,x1:95,y1:173}};
+      clover.miniCrop={x:0,y:0,w:178,h:178};
+      clover.sharedGate778=true; clover.courseType775='circuit'; clover.finishRule775='one-lap-gate'; clover.lapRequired775=true;
+      clover.strictRoadFollow778=true; clover.roadFollowMode778='route-center-hard'; clover.strictNoChord795=true;
+      clover.extraRoads771=[]; clover.forbiddenZones770=[]; clover.geometryReady=true;
+      const exact=densifyLine772(route,.16);
+      clover.racingSpline770=exact; clover.globalOptimal770=exact;
+      clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+      clover.racingLineMode772='clover-right-ccw-shared-gate-v1.42.0';
+      // Do not use a special black/off-road visual mask for Clover. The full clean map artwork is always rendered.
+      clover.roadMask770=undefined;
+      clover.blackOuterRemoved1410=true; clover.blackOuterRemoved1420=true;
+    }
+    if(mapSelect774){
+      for(const opt of mapSelect774.options){
+        const m=MAP_DEFINITIONS_770[opt.value];
+        if(m) opt.textContent=`${m.slot}. ${m.name}`;
+      }
+    }
+  }
+  applyPatch1420();
+
+  // v1.42.0 starts on the randomized matchup board.
   resetLeague100();
 })();
