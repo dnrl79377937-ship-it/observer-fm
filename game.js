@@ -16528,3 +16528,57 @@ getView=function(){
   }
   window.__OPF_BUILD__='v1.51.0';
 })();
+
+
+// ============================================================
+// v1.52.0 — Three-Leaf Clover authoritative clean route
+// Retires all legacy Clover path decisions at runtime. The only valid route is:
+// yellow left gate -> 9 -> 11 -> 12 -> 1 -> 3 -> 5 -> green right gate.
+// ============================================================
+(function applyPatch1520(){
+  const clover=MAP_DEFINITIONS_770.double_hairpin;
+  if(!clover)return;
+  clover.name='Three-Leaf Clover'; clover.en='Three-Leaf Clover';
+  clover.image='map_clover_152.png?v=1520';
+  clover.imageSize={w:1536,h:1536}; clover.logicalSize={w:178,h:178};
+  clover.miniCrop={x:0,y:0,w:178,h:178};
+  // Centre of the visible road only. No old central/red spawn, no shortcut branches.
+  const route=[
+    [66,166],[66,157],[66,147],[66,137],[66,126],[64,117],
+    [55,112],[44,111],[34,107],[25,101],[19,93],[15,83],[14,73],[17,63],[23,55],[31,49],[41,45],[51,45],[60,49],[67,55],
+    [72,50],[69,42],[67,33],[68,24],[73,17],[80,12],[89,10],
+    [98,12],[105,17],[110,24],[111,33],[109,42],[106,50],
+    [111,55],[118,49],[127,45],[137,45],[147,49],[155,55],[161,63],[164,73],[163,83],[159,93],[153,101],[144,107],[134,111],[123,112],[114,117],
+    [112,126],[112,137],[112,147],[112,157],[112,166]
+  ];
+  clover.route770=route;
+  clover.widths770=new Array(route.length-1).fill(9.8);
+  clover.start={x:66,y:166}; clover.goal={x:112,y:166};
+  clover.safeZones={start:{x0:60,y0:160,x1:72,y1:174},goal:{x0:106,y0:160,x1:118,y1:174}};
+  clover.sharedGate778=false; clover.courseType775='point-to-point';
+  clover.finishRule775='end-gate'; clover.lapRequired775=false;
+  clover.strictRoadFollow778=true; clover.strictNoChord795=true;
+  clover.roadFollowMode778='clover-152-only-centre-route';
+  clover.extraRoads771=[]; clover.forbiddenZones770=[]; clover.roadMask770=undefined;
+  // Explicitly neutralize every legacy Clover-special routing flag.
+  clover.clover130=false; clover.cloverRightBranch130=false; clover.cloverCounterClockwise130=false;
+  clover.retiredSlot6HardCenter896=false; clover.retiredSlot6CenterOnly895=false;
+  clover.retiredSlot6ExactCenter897=false; clover.retiredSlot6SmartSpiral797=false;
+  clover.cloverOrderLock147=false; clover.cloverDirectSplineMovement148=false;
+  const centre=densifyLine772(route,.10);
+  clover.racingSpline770=centre; clover.globalOptimal770=centre;
+  clover.lockOptimalExecution784=true; clover.optimizedSplineAuthority783=true;
+  clover.racingLineMode772='clover-yellow-9-11-12-1-3-5-green-v1.52.0';
+  if(currentMap770()?.id==='double_hairpin'){
+    route=clover.route770.map(p=>[...p]); widths=[...clover.widths770];
+    GLOBAL_OPTIMAL_LINE_710=clover.globalOptimal770; RACING_SPLINE_720=clover.racingSpline770;
+    rebuildRouteGeometry770(); rebuildGlobalOptimal770(); rebuildRacingSpline770();
+    if(map)map.src=clover.image;
+    for(const p of players||[]){
+      p.x=clover.start.x; p.y=clover.start.y;
+      p._v120Prog=0;p._splineProg720=0;p._splineFloor754=0;
+      p._lane120=0;p._lineOffset720=0;p._laneVelSec181=0;p._laneVel120=0;
+    }
+  }
+  window.__OPF_BUILD__='v1.52.0';
+})();
