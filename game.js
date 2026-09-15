@@ -42,7 +42,7 @@
   const STUN_MS = 0;
   const INV_MS = 0;
   const CAMERA_ZOOM = 3.00;
-  const BUILD_ID = "v1.32.0";
+  const BUILD_ID = "v1.33.0";
 window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
   const RACER_KEYS=["A","B","C","D","E","F","G","H"];
@@ -840,12 +840,12 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
 
     matchMode="team";
     activeSourceIndexes=[pair.A,pair.B];
-    teamAssignments={0:"BLUE",1:"RED"};
+    teamAssignments={0:"RED",1:"BLUE"};
     playerTournament={};
     activeSourceIndexes.forEach((src,i)=>{
       playerTournament[i]={
         name:names[src],
-        team:i===0?"BLUE":"RED",
+        team:i===0?"RED":"BLUE",
         total:0,rounds:[],sourceIndex:src
       };
     });
@@ -1033,11 +1033,11 @@ window.__OBSERVER_FM_BUILD__ = BUILD_ID;
     if(league100?.phase==="racing"){
       const pair=leaguePair100();
       activeSourceIndexes=[pair.A,pair.B];
-      teamAssignments={0:"BLUE",1:"RED"};
+      teamAssignments={0:"RED",1:"BLUE"};
       return;
     }
     activeSourceIndexes=[0,1];
-    teamAssignments={0:"BLUE",1:"RED"};
+    teamAssignments={0:"RED",1:"BLUE"};
   }
   function initTournament(){
     currentRound=1;teamTotals={RED:0,BLUE:0};
@@ -12419,15 +12419,8 @@ function updateDestinyPlayer183(p,now,dt){
       ctx.shadowColor=leagueTeamColor105(p)||"rgba(255,255,255,.45)";
       ctx.shadowBlur=Math.max(2,r*.18);
       ctx.drawImage(sprite,-size/2,-size/2,size,size);
-      // v1.31.0: team races tint the actual unit to the same RED/BLUE identity as its label.
-      if(league100?.phase==="racing" && (p.team==="RED"||p.team==="BLUE")){
-        ctx.globalCompositeOperation="source-atop";
-        ctx.globalAlpha=.48;
-        ctx.fillStyle=leagueTeamColor105(p);
-        ctx.fillRect(-size/2,-size/2,size,size);
-        ctx.globalAlpha=1;
-        ctx.globalCompositeOperation="source-over";
-      }
+      // v1.33.0: sprite A is the RED-side asset and sprite B is the BLUE-side asset.
+      // Do not paint a rectangular source-atop tint over the PNG; preserve the unit silhouette.
       ctx.restore();
     }else{
       // Sprite-load fallback stays team-colored; collision never changes the icon.
